@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -28,11 +28,14 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <algorithm>
+#include <memory>
 #include <string>
 
 #include "base/codegen_bytearray_stream.h"
 #include "base/file_stream.h"
 #include "base/flags.h"
+#include "base/hash.h"
+#include "base/init_mozc.h"
 #include "base/logging.h"
 #include "base/util.h"
 #include "storage/existence_filter.h"
@@ -45,7 +48,7 @@ DEFINE_string(name, "SuggestionFilterData",
               "name for variable name in the header file");
 
 namespace {
-void ReadWords(const string &name, vector<uint64> *words) {
+void ReadWords(const string &name, std::vector<uint64> *words) {
   string line;
   mozc::InputFileStream input(name.c_str());
   while (getline(input, line)) {
@@ -54,7 +57,7 @@ void ReadWords(const string &name, vector<uint64> *words) {
     }
     string lower_value = line;
     mozc::Util::LowerString(&lower_value);
-    words->push_back(mozc::Util::Fingerprint(lower_value));
+    words->push_back(mozc::Hash::Fingerprint(lower_value));
   }
 }
 
@@ -66,7 +69,7 @@ using mozc::storage::ExistenceFilter;
 // read per-line word list and generate
 // bloom filter in raw byte array or header file format
 int main(int argc, char **argv) {
-  InitGoogle(argv[0], &argc, &argv, true);
+  mozc::InitMozc(argv[0], &argc, &argv, true);
 
   if ((FLAGS_input.empty() ||
        FLAGS_output.empty()) && argc > 2) {
@@ -74,21 +77,21 @@ int main(int argc, char **argv) {
     FLAGS_output = argv[2];
   }
 
-  vector<uint64> words;
+  std::vector<uint64> words;
 
   ReadWords(FLAGS_input, &words);
 
   LOG(INFO) << words.size() << " words found";
 
   static const float kErrorRate = 0.00001;
-  const size_t num_bytes = max(
-      ExistenceFilter::MinFilterSizeInBytesForErrorRate(
-          kErrorRate, words.size()),
-      kMinimumFilterBytes);
+  const size_t num_bytes =
+      std::max(ExistenceFilter::MinFilterSizeInBytesForErrorRate(kErrorRate,
+                                                                 words.size()),
+               kMinimumFilterBytes);
 
   LOG(INFO) << "num_bytes: " << num_bytes;
 
-  scoped_ptr<ExistenceFilter> filter(
+  std::unique_ptr<ExistenceFilter> filter(
       ExistenceFilter::CreateOptimal(num_bytes, words.size()));
   for (size_t i = 0; i < words.size(); ++i) {
     filter->Insert(words[i]);
@@ -108,8 +111,9 @@ int main(int argc, char **argv) {
     codegen_stream.write(buf, size);
     codegen_stream.CloseVarDef();
   } else {
-    mozc::OutputFileStream ofs(FLAGS_output.c_str(),
-                               ios::out | ios::trunc | ios::binary);
+    mozc::OutputFileStream ofs(
+        FLAGS_output.c_str(),
+        std::ios::out | std::ios::trunc | std::ios::binary);
     ofs.write(buf, size);
   }
 

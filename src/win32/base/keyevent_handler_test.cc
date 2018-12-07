@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -40,7 +40,7 @@
 #include "client/client_interface.h"
 #include "config/config_handler.h"
 #include "ipc/ipc_mock.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
 #include "win32/base/input_state.h"
@@ -166,7 +166,7 @@ class TestServerLauncher : public client::ServerLauncherInterface {
   bool start_server_called_;
   uint32 server_protocol_version_;
   string response_;
-  map<int, int> error_map_;
+  std::map<int, int> error_map_;
 };
 
 class KeyboardMock : public Win32KeyboardInterface {
@@ -202,7 +202,7 @@ class KeyboardMock : public Win32KeyboardInterface {
     return JapaneseKeyboardLayoutEmulator::ToUnicode(
         wVirtKey, wScanCode, lpKeyState, pwszBuff, cchBuff, wFlags);
   }
-  virtual UINT SendInput(const vector<INPUT> &input) {
+  virtual UINT SendInput(const std::vector<INPUT> &input) {
     // Not implemented.
     return 0;
   }
@@ -267,11 +267,11 @@ class KeyEventHandlerTest : public testing::Test {
     mozc::config::ConfigHandler::SetConfig(default_config_);
   }
 
-  vector<KeyInformation> GetDefaultDirectModeKeys() const {
+  std::vector<KeyInformation> GetDefaultDirectModeKeys() const {
     return KeyInfoUtil::ExtractSortedDirectModeKeys(default_config_);
   }
 
-  vector<KeyInformation> GetDirectModeKeysCtrlJToEnableIME() const {
+  std::vector<KeyInformation> GetDirectModeKeysCtrlJToEnableIME() const {
     config::Config config;
     config.CopyFrom(default_config_);
 
@@ -285,7 +285,8 @@ class KeyEventHandlerTest : public testing::Test {
     return KeyInfoUtil::ExtractSortedDirectModeKeys(config);
   }
 
-  vector<KeyInformation> GetDirectModeKeysCtrlBackslashToEnableIME() const {
+  std::vector<KeyInformation>
+      GetDirectModeKeysCtrlBackslashToEnableIME() const {
     config::Config config;
     config.CopyFrom(default_config_);
 
@@ -1923,8 +1924,7 @@ TEST_F(KeyEventHandlerTest,
     EXPECT_TRUE(actual_input.key().has_key_code());
     EXPECT_EQ('a', actual_input.key().key_code());
     EXPECT_TRUE(actual_input.key().has_key_string());
-    // "あ"
-    EXPECT_EQ("\xE3\x81\xA1", actual_input.key().key_string());
+    EXPECT_EQ("ち", actual_input.key().key_string());
     EXPECT_TRUE(actual_input.key().has_activated());
     EXPECT_TRUE(actual_input.key().activated());
     EXPECT_TRUE(actual_input.key().has_mode());
@@ -2213,8 +2213,7 @@ TEST_F(KeyEventHandlerTest, Issue3029665_KanaLocked_WO) {
     EXPECT_TRUE(actual_input.key().has_key_code());
     EXPECT_EQ('0', actual_input.key().key_code());
     EXPECT_TRUE(actual_input.key().has_key_string());
-    // "を"
-    EXPECT_EQ("\343\202\222", actual_input.key().key_string());
+    EXPECT_EQ("を", actual_input.key().key_string());
     EXPECT_TRUE(actual_input.key().has_activated());
     EXPECT_TRUE(actual_input.key().activated());
     EXPECT_TRUE(actual_input.key().has_mode());
@@ -2749,8 +2748,7 @@ TEST_F(KeyEventHandlerTest, Issue3504241_VKPacketAsRawInput) {
     EXPECT_TRUE(actual_input.has_key());
     EXPECT_FALSE(actual_input.key().has_key_code());
     EXPECT_TRUE(actual_input.key().has_key_string());
-    // "あ"
-    EXPECT_EQ("\343\201\202", actual_input.key().key_string());
+    EXPECT_EQ("あ", actual_input.key().key_string());
     EXPECT_TRUE(actual_input.key().has_activated());
     EXPECT_TRUE(actual_input.key().activated());
     EXPECT_TRUE(actual_input.key().has_mode());

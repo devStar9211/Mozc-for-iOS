@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,15 +27,16 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifdef OS_NACL
+
 #include "chrome/nacl/dictionary_downloader.h"
 
 #include <ppapi/utility/completion_callback_factory.h>
 
 #include "base/logging.h"
 #include "base/mutex.h"
-#include "base/port.h"
 #include "base/pepper_file_util.h"
-#include "base/scoped_ptr.h"
+#include "base/port.h"
 #include "base/util.h"
 #include "chrome/nacl/url_loader_util.h"
 #include "net/http_client_pepper.h"
@@ -74,7 +75,6 @@ class DictionaryDownloader::Impl {
   uint32 max_retry_;
   pp::CompletionCallbackFactory<Impl> callback_factory_;
   Mutex mutex_;
-  bool shut_down_;
   DISALLOW_COPY_AND_ASSIGN(Impl);
 };
 
@@ -92,8 +92,7 @@ DictionaryDownloader::Impl::Impl(
       random_delay_(0),
       retry_interval_(0),
       retry_backoff_count_(0),
-      max_retry_(0),
-      shut_down_(false) {
+      max_retry_(0) {
   callback_factory_.Initialize(this);
 }
 
@@ -207,3 +206,5 @@ DictionaryDownloader::DownloadStatus DictionaryDownloader::GetStatus() {
 }  // namespace nacl
 }  // namespace chrome
 }  // namespace mozc
+
+#endif  // OS_NACL

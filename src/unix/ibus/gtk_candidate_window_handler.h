@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,10 +36,15 @@
 #include "unix/ibus/candidate_window_handler_interface.h"
 
 namespace mozc {
+namespace commands {
+class RendererCommand;
+}  // namespace commands
 namespace renderer {
 class RendererInterface;
 }  // namespace renderer
 namespace ibus {
+
+class GSettingsObserver;
 
 class GtkCandidateWindowHandler : public CandidateWindowHandlerInterface {
  public:
@@ -48,6 +53,7 @@ class GtkCandidateWindowHandler : public CandidateWindowHandlerInterface {
   virtual ~GtkCandidateWindowHandler();
 
   virtual void Update(IBusEngine *engine, const commands::Output &output);
+  virtual void UpdateCursorRect(IBusEngine *engine);
   virtual void Hide(IBusEngine *engine);
   virtual void Show(IBusEngine *engine);
 
@@ -57,8 +63,12 @@ class GtkCandidateWindowHandler : public CandidateWindowHandlerInterface {
   virtual void OnIBusUseCustomFontDescriptionChanged(
       bool use_custom_font_description);
 
+  void RegisterGSettingsObserver();
+
  protected:
-  bool SendUpdateCommand(const commands::Output &output, bool visibility) const;
+  bool SendUpdateCommand(IBusEngine *engine,
+                         const commands::Output &output,
+                         bool visibility) const;
 
   std::unique_ptr<renderer::RendererInterface> renderer_;
   std::unique_ptr<commands::Output> last_update_output_;
@@ -67,6 +77,8 @@ class GtkCandidateWindowHandler : public CandidateWindowHandlerInterface {
   string GetFontDescription() const;
   string custom_font_description_;
   bool use_custom_font_description_;
+  std::unique_ptr<GSettingsObserver> settings_observer_;
+
   DISALLOW_COPY_AND_ASSIGN(GtkCandidateWindowHandler);
 };
 

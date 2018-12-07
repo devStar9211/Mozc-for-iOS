@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -32,30 +32,22 @@
   'conditions': [['use_qt=="YES"', {
 
   'variables': {
-    'includes': ['qt_vars.gypi'],
     'conditions': [
-      ['qt_dir', {
+      ['target_platform=="Linux"', {
+        'rcc_path': '<!(pkg-config --variable=host_bins Qt5Core)/rcc',
+      }, 'qt_dir', {
         'rcc_path': '<(qt_dir)/bin/rcc<(EXECUTABLE_SUFFIX)',
       }, {
-        'conditions': [
-          ['pkg_config_command', {
-            # seems that --variable=rcc_location is not supported
-            'rcc_path':
-              '<!(<(pkg_config_command) --variable=exec_prefix QtGui)/bin/rcc',
-          }, {
-            'rcc_path': '<(qt_dir_env)/bin/rcc<(EXECUTABLE_SUFFIX)',
-          }],
-        ],
+        'rcc_path': 'rcc<(EXECUTABLE_SUFFIX)',
       }],
     ],
   },
+  # In order to specify file dependencies correctly (e.g. *.png), we need to use
+  # 'actions' instead of 'rules'.
   'actions': [
     {
-      # Need to use actions for qrc files to workaround a gyp issue.
       'action_name': 'qrc',
-      'inputs': [
-        '<(subdir)/<(qrc_base_name).qrc',
-      ],
+      'inputs': ['<@(qrc_inputs)'],
       'outputs': [
         '<(gen_out_dir)/<(subdir)/qrc_<(qrc_base_name).cc'
       ],

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,18 +37,20 @@
 #include "dictionary/file/section.h"
 
 namespace mozc {
+namespace dictionary {
 
 class DictionaryFileCodecInterface {
  public:
-  // Write sections to output file stream
-  virtual void WriteSections(const vector<DictionaryFileSection> &sections,
-                             ostream *ofs) const = 0;
+  // Writes sections to an output file stream.
+  virtual void WriteSections(const std::vector<DictionaryFileSection> &sections,
+                             std::ostream *ofs) const = 0;
 
-  // Read sections from memory image
-  virtual bool ReadSections(const char *image, int length,
-                            vector<DictionaryFileSection> *sections) const = 0;
+  // Reads sections from memory image.
+  virtual bool ReadSections(
+      const char *image, int length,
+      std::vector<DictionaryFileSection> *sections) const = 0;
 
-  // Get section name
+  // Gets section name.
   virtual string GetSectionName(const string &name) const = 0;
 
  protected:
@@ -59,18 +61,7 @@ class DictionaryFileCodecInterface {
   DISALLOW_COPY_AND_ASSIGN(DictionaryFileCodecInterface);
 };
 
-class DictionaryFileCodecFactory {
- public:
-  // return singleton object
-  static DictionaryFileCodecInterface *GetCodec();
-
-  // dependency injectin for unittesting
-  static void SetCodec(DictionaryFileCodecInterface *codec);
-
- private:
-  DISALLOW_IMPLICIT_CONSTRUCTORS(DictionaryFileCodecFactory);
-};
-
+}  // namespace dictionary
 }  // namespace mozc
 
 #endif  // MOZC_DICTIONARY_FILE_CODEC_INTERFACE_H_

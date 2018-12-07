@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,9 +27,11 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include <cstddef>
 #include <cstdio>
 
 #include "base/flags.h"
+#include "base/init_mozc.h"
 #include "base/logging.h"
 #include "base/version.h"
 #include "unix/ibus/main.h"
@@ -41,7 +43,6 @@ DEFINE_bool(ibus, false, "The engine is started by ibus-daemon");
 namespace {
 
 IBusBus *g_bus = NULL;
-IBusConfig *g_config = NULL;
 
 #ifndef NO_LOGGING
 void EnableVerboseLog() {
@@ -95,12 +96,6 @@ void InitIBusComponent(bool executed_by_ibus_daemon) {
                    "disconnected",
                    G_CALLBACK(mozc::ibus::MozcEngine::Disconnected),
                    NULL);
-  g_config = ibus_bus_get_config(g_bus);
-  g_object_ref_sink(g_config);
-  g_signal_connect(g_config,
-                   "value-changed",
-                   G_CALLBACK(mozc::ibus::MozcEngine::ConfigValueChanged),
-                   NULL);
 
   IBusComponent *component = GetIBusComponent();
   IBusFactory *factory = ibus_factory_new(ibus_bus_get_connection(g_bus));
@@ -123,19 +118,13 @@ void InitIBusComponent(bool executed_by_ibus_daemon) {
 }  // namespace
 
 int main(gint argc, gchar **argv) {
-  InitGoogle(argv[0], &argc, &argv, true);
+  mozc::InitMozc(argv[0], &argc, &argv, true);
   ibus_init();
   InitIBusComponent(FLAGS_ibus);
-  mozc::ibus::MozcEngine::InitConfig(g_config);
 #ifndef NO_LOGGING
   EnableVerboseLog();
 #endif  // NO_LOGGING
   IgnoreSigChild();
   ibus_main();
-
-  if (g_config) {
-    g_object_unref(g_config);
-  }
-
   return 0;
 }

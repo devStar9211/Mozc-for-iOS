@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -34,57 +34,38 @@
     # gui/gui.gyp).
     'copying_frameworks%': [],
   },
-  'conditions': [
-    ['branding=="GoogleJapaneseInput"', {
-      'includes': [
-        'breakpad_mac.gypi',
+  'link_settings': {
+    'libraries': [
+      '<(mac_breakpad_framework)',
+    ],
+  },
+  'dependencies': ['../base/base.gyp:breakpad'],
+  'copies': [
+    {
+      'files': [
+        '<(mac_breakpad_framework)',
+        '<@(copying_frameworks)',
       ],
-      'copies': [
-        {
-          'files': [
-            '<(mac_breakpad_framework)',
-            '<@(copying_frameworks)',
-          ],
-          'destination': '<(PRODUCT_DIR)/<(product_name).app/Contents/Frameworks',
-        },
+      'destination': '<(PRODUCT_DIR)/<(product_name).app/Contents/Frameworks',
+    },
+  ],
+  'postbuilds': [
+    {
+      'postbuild_name': 'dump symbols',
+      'action': [
+        'python', '../build_tools/redirect.py',
+        '${BUILT_PRODUCTS_DIR}/<(product_name)_x86_64.breakpad',
+        '<(mac_breakpad_tools_dir)/dump_syms',
+        '-a', 'x86_64',
+        '${BUILT_PRODUCTS_DIR}/<(product_name).app/Contents/MacOS/<(product_name)',
       ],
-      'postbuilds': [
-        {
-          'postbuild_name': 'dump symbols',
-          'action': [
-            'python', '../build_tools/redirect.py',
-            '${BUILT_PRODUCTS_DIR}/<(product_name)_i386.breakpad',
-            '<(mac_breakpad_dir)/dump_syms',
-            '-a', 'i386',
-            '${BUILT_PRODUCTS_DIR}/<(product_name).app/Contents/MacOS/<(product_name)',
-          ],
-        },
-        {
-          'postbuild_name': 'strip binary',
-          'action': [
-            '/usr/bin/strip',
-            '${BUILT_PRODUCTS_DIR}/<(product_name).app/Contents/MacOS/<(product_name)'
-          ],
-        },
+    },
+    {
+      'postbuild_name': 'strip binary',
+      'action': [
+        '/usr/bin/strip',
+        '${BUILT_PRODUCTS_DIR}/<(product_name).app/Contents/MacOS/<(product_name)'
       ],
-    }, {  # branding != GoogleJapaneseInput
-      'copies': [
-        {
-          'files': [
-            '<@(copying_frameworks)',
-          ],
-          'destination': '<(PRODUCT_DIR)/<(product_name).app/Contents/Frameworks',
-        },
-      ],
-      'postbuilds': [
-        {
-          'postbuild_name': 'strip binary',
-          'action': [
-            '/usr/bin/strip',
-            '${BUILT_PRODUCTS_DIR}/<(product_name).app/Contents/MacOS/<(product_name)'
-          ],
-        },
-      ],
-    }],
+    },
   ],
 }

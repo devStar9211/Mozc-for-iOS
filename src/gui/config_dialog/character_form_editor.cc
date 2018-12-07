@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,9 +27,14 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <QtGui/QtGui>
-#include "config/config_handler.h"
 #include "gui/config_dialog/character_form_editor.h"
+
+#include <QtGui/QtGui>
+#include <QtWidgets/QHeaderView>
+
+#include <memory>
+
+#include "config/config_handler.h"
 #include "gui/config_dialog/combobox_delegate.h"
 
 namespace mozc {
@@ -66,7 +71,7 @@ config::Config::CharacterForm StringToForm(const QString &str) {
 
 QString GroupToString(const string &str) {
   // if (str == "ア") {
-  if (str == "\xE3\x82\xA2") {
+  if (str == "ア") {
     return QObject::tr("Katakana");
   } else if (str == "0") {
     return QObject::tr("Numbers");
@@ -79,7 +84,7 @@ QString GroupToString(const string &str) {
 const string StringToGroup(const QString &str) {
   if (str == QObject::tr("Katakana")) {
     // return "ア";
-    return "\xE3\x82\xA2";
+    return "ア";
   } else if (str == QObject::tr("Numbers")) {
     return "0";
   } else if (str == QObject::tr("Alphabets")) {
@@ -117,7 +122,7 @@ void CharacterFormEditor::Load(const config::Config &config) {
   header << tr("Group") << tr("Composition") << tr("Conversion");
   setHorizontalHeaderLabels(header);
 
-  scoped_ptr<config::Config> default_config;
+  std::unique_ptr<config::Config> default_config;
   const config::Config *target_config = &config;
 
   // make sure that table isn't empty.

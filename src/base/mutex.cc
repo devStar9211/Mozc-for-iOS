@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,65 +35,27 @@
 #include <pthread.h>
 #endif
 
-#ifdef OS_MACOSX
-#include <libkern/OSAtomic.h>
-#endif  // OS_MACOSX
+#include <atomic>
 
 #include "base/port.h"
-#include "base/util.h"
-#include "base/win_util.h"
 
 #if defined(OS_WIN)
 // We do not use pthread on Windows
-#elif defined(OS_ANDROID)
-// pthread rwlock is supported since API Level 9.
-// Currently minimum API Level is 7 so we cannot use it.
-// Note that we cannot use __ANDROID_API__ macro in above condition
-// because it is equal to target API Level, which is greater than
-// min sdk level. Causes runtime crash.
-#elif defined(__native_client__)
+#elif defined(OS_NACL)
 // TODO(team): Consider to use glibc rwlock.
 #else
 #define MOZC_PTHREAD_HAS_READER_WRITER_LOCK
 #endif
 
 namespace mozc {
-
-// Wrapper for Windows InterlockedCompareExchange
 namespace {
-#ifdef OS_LINUX
-// Linux doesn't provide InterlockedCompareExchange-like function.
-inline int InterlockedCompareExchange(volatile int *target,
-                                      int new_value,
-                                      int old_value) {
-  // TODO(yusukes): For now, we use the architecture-neutral implementation,
-  // but I believe it's definitely better to port Chromium's singleton to Mozc.
-  // The implementation should be much faster and supports ARM Linux.
-  // http://src.chromium.org/viewvc/chrome/trunk/src/base/singleton.h
 
-  static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-  pthread_mutex_lock(&lock);
-  int result = *target;
-  if (result == old_value) {
-    *target = new_value;
-  }
-  pthread_mutex_unlock(&lock);
-  return result;
-}
-#endif  // OS_LINUX
-
-// Use OSAtomicCompareAndSwapInt on Mac OSX
-// http://developer.apple.com/iphone/library/documentation/
-// system/conceptual/manpages_iphoneos/man3/OSAtomicCompareAndSwapInt.3.html
-// TODO(taku): should we use OSAtomicCompareAndSwapIntBarrier?
-#ifdef OS_MACOSX
-inline int InterlockedCompareExchange(volatile int *target,
-                                      int new_value,
-                                      int old_value) {
-  return OSAtomicCompareAndSwapInt(old_value, new_value, target)
-      ? old_value : *target;
-}
-#endif  // OX_MACOSX
+// State for once_t.
+enum CallOnceState {
+  ONCE_INIT = 0,
+  ONCE_RUNNING = 1,
+  ONCE_DONE = 2,
+};
 
 }  // namespace
 
@@ -115,96 +77,6 @@ SRWLOCK *AsSRWLock(T* opaque_buffer) {
                 "SRWLOCK structure");
   return reinterpret_cast<SRWLOCK *>(opaque_buffer);
 }
-
-// SlimReaderWriterLock is available on Windows Vista and later.
-class SlimReaderWriterLock {
- public:
-  static bool IsAvailable() {
-    CallOnce(&g_once_, InitializeInternal);
-    return g_is_available_;
-  }
-  static void InitializeSRWLock(__out SRWLOCK* lock) {
-    g_initialize_srw_lock_(lock);
-  }
-  static void AcquireSRWLockExclusive(__inout SRWLOCK* lock) {
-    g_acquire_srw_lock_exclusive_(lock);
-  }
-  static void AcquireSRWLockShared(__inout SRWLOCK* lock) {
-    g_acquire_srw_lock_shared_(lock);
-  }
-  static void ReleaseSRWLockExclusive(__inout SRWLOCK* lock) {
-    g_release_srw_lock_exclusive_(lock);
-  }
-  static void ReleaseSRWLockShared(__inout SRWLOCK* lock) {
-    g_release_srw_lock_shared_(lock);
-  }
-
- private:
-  typedef void (WINAPI *FPInitializeSRWLock)(__out SRWLOCK*);
-  typedef void (WINAPI *FPAcquireSRWLockExclusive)(__inout SRWLOCK*);
-  typedef void (WINAPI *FPAcquireSRWLockShared)(__inout SRWLOCK*);
-  typedef void (WINAPI *FPReleaseSRWLockExclusive)(__inout SRWLOCK*);
-  typedef void (WINAPI *FPReleaseSRWLockShared)(__inout SRWLOCK*);
-
-  static void InitializeInternal() {
-    g_is_available_ = false;
-    const HMODULE module = WinUtil::GetSystemModuleHandle(L"kernel32.dll");
-    if (module == NULL) {
-      return;
-    }
-    g_initialize_srw_lock_ = reinterpret_cast<FPInitializeSRWLock>(
-        ::GetProcAddress(module, "InitializeSRWLock"));
-    if (g_initialize_srw_lock_ == NULL) {
-      return;
-    }
-    g_acquire_srw_lock_exclusive_ =
-        reinterpret_cast<FPAcquireSRWLockExclusive>(
-            ::GetProcAddress(module, "AcquireSRWLockExclusive"));
-    if (g_acquire_srw_lock_exclusive_ == NULL) {
-      return;
-    }
-    g_acquire_srw_lock_shared_ = reinterpret_cast<FPAcquireSRWLockShared>(
-        ::GetProcAddress(module, "AcquireSRWLockShared"));
-    if (g_acquire_srw_lock_shared_ == NULL) {
-      return;
-    }
-    g_release_srw_lock_exclusive_ =
-        reinterpret_cast<FPReleaseSRWLockExclusive>(
-            ::GetProcAddress(module, "ReleaseSRWLockExclusive"));
-    if (g_release_srw_lock_exclusive_ == NULL) {
-      return;
-    }
-    g_release_srw_lock_shared_ = reinterpret_cast<FPReleaseSRWLockShared>(
-        ::GetProcAddress(module, "ReleaseSRWLockShared"));
-    if (g_release_srw_lock_shared_ == NULL) {
-      return;
-    }
-    g_is_available_ = true;
-  }
-
-  static once_t g_once_;
-  static bool g_is_available_;
-  static FPInitializeSRWLock g_initialize_srw_lock_;
-  static FPAcquireSRWLockExclusive g_acquire_srw_lock_exclusive_;
-  static FPAcquireSRWLockShared g_acquire_srw_lock_shared_;
-  static FPReleaseSRWLockExclusive g_release_srw_lock_exclusive_;
-  static FPReleaseSRWLockShared g_release_srw_lock_shared_;
-
-  DISALLOW_IMPLICIT_CONSTRUCTORS(SlimReaderWriterLock);
-};
-
-once_t SlimReaderWriterLock::g_once_ = MOZC_ONCE_INIT;
-bool SlimReaderWriterLock::g_is_available_ = false;
-SlimReaderWriterLock::FPInitializeSRWLock
-    SlimReaderWriterLock::g_initialize_srw_lock_ = NULL;
-SlimReaderWriterLock::FPAcquireSRWLockExclusive
-    SlimReaderWriterLock::g_acquire_srw_lock_exclusive_  = NULL;
-SlimReaderWriterLock::FPAcquireSRWLockShared
-    SlimReaderWriterLock::g_acquire_srw_lock_shared_  = NULL;
-SlimReaderWriterLock::FPReleaseSRWLockExclusive
-    SlimReaderWriterLock::g_release_srw_lock_exclusive_  = NULL;
-SlimReaderWriterLock::FPReleaseSRWLockShared
-    SlimReaderWriterLock::g_release_srw_lock_shared_  = NULL;
 
 }  // namespace
 
@@ -229,53 +101,30 @@ void Mutex::Unlock() {
 }
 
 ReaderWriterMutex::ReaderWriterMutex() {
-  if (MultipleReadersThreadsSupported()) {
-    SlimReaderWriterLock::InitializeSRWLock(AsSRWLock(&opaque_buffer_));
-  } else {
-    ::InitializeCriticalSection(AsCriticalSection(&opaque_buffer_));
-  }
+  ::InitializeSRWLock(AsSRWLock(&opaque_buffer_));
 }
 
 ReaderWriterMutex::~ReaderWriterMutex() {
-  if (!MultipleReadersThreadsSupported()) {
-    ::DeleteCriticalSection(AsCriticalSection(&opaque_buffer_));
-  }
 }
 
 void ReaderWriterMutex::ReaderLock() {
-  if (MultipleReadersThreadsSupported()) {
-    SlimReaderWriterLock::AcquireSRWLockShared(AsSRWLock(&opaque_buffer_));
-  } else {
-    ::EnterCriticalSection(AsCriticalSection(&opaque_buffer_));
-  }
+  ::AcquireSRWLockShared(AsSRWLock(&opaque_buffer_));
 }
 
 void ReaderWriterMutex::WriterLock() {
-  if (MultipleReadersThreadsSupported()) {
-    SlimReaderWriterLock::AcquireSRWLockExclusive(AsSRWLock(&opaque_buffer_));
-  } else {
-    ::EnterCriticalSection(AsCriticalSection(&opaque_buffer_));
-  }
+  ::AcquireSRWLockExclusive(AsSRWLock(&opaque_buffer_));
 }
 
 void ReaderWriterMutex::ReaderUnlock() {
-  if (MultipleReadersThreadsSupported()) {
-    SlimReaderWriterLock::ReleaseSRWLockShared(AsSRWLock(&opaque_buffer_));
-  } else {
-    ::LeaveCriticalSection(AsCriticalSection(&opaque_buffer_));
-  }
+  ::ReleaseSRWLockShared(AsSRWLock(&opaque_buffer_));
 }
 
 void ReaderWriterMutex::WriterUnlock() {
-  if (MultipleReadersThreadsSupported()) {
-    SlimReaderWriterLock::ReleaseSRWLockExclusive(AsSRWLock(&opaque_buffer_));
-  } else {
-    ::LeaveCriticalSection(AsCriticalSection(&opaque_buffer_));
-  }
+  ::ReleaseSRWLockExclusive(AsSRWLock(&opaque_buffer_));
 }
 
 bool ReaderWriterMutex::MultipleReadersThreadsSupported() {
-  return SlimReaderWriterLock::IsAvailable();
+  return true;
 }
 
 #else  // Hereafter, we have pthread-based implementation
@@ -306,7 +155,7 @@ Mutex::Mutex() {
   pthread_mutexattr_init(&attr);
 #if defined(OS_MACOSX)
   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-#elif defined(OS_LINUX)
+#elif defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_NACL)
   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE_NP);
 #else
 #error "This platform is not supported."
@@ -415,34 +264,33 @@ bool ReaderWriterMutex::MultipleReadersThreadsSupported() {
 #endif  // OS_WIN or pthread
 
 void CallOnce(once_t *once, void (*func)()) {
-  if (once == NULL || func == NULL) {
+  if (once == nullptr || func == nullptr) {
     return;
   }
-
-  if (once->state != ONCE_INIT) {
-    return;
-  }
-
-  // change the counter in atomic
-  if (0 == InterlockedCompareExchange(&(once->counter), 1, 0)) {
-    // call func
+  int expected_state = ONCE_INIT;
+  if (once->compare_exchange_strong(expected_state, ONCE_RUNNING)) {
     (*func)();
-    // change the status to be ONCE_DONE in atomic
-    // Maybe we won't use it, but in order to make memory barrier,
-    // we use InterlockedCompareExchange just in case.
-    InterlockedCompareExchange(&(once->state), ONCE_DONE, ONCE_INIT);
-  } else {
-    while (once->state == ONCE_INIT) {
-#ifdef OS_WIN
-      ::YieldProcessor();
-#endif  // OS_WIN
-    }  // busy loop
+    *once = ONCE_DONE;
+    return;
   }
+  // If the above compare_exchange_strong() returns false, it stores the value
+  // of once to expected_state, which is ONCE_RUNNING or ONCE_DONE.
+  if (expected_state == ONCE_DONE) {
+    return;
+  }
+  // Here's the case where expected_state == ONCE_RUNNING, indicating that
+  // another thread is calling func.  Wait for it to complete.
+  while (*once == ONCE_RUNNING) {
+#ifdef OS_WIN
+    ::YieldProcessor();
+#endif  // OS_WIN
+  }  // Busy loop
 }
 
 void ResetOnce(once_t *once) {
-  InterlockedCompareExchange(&(once->state), ONCE_INIT, ONCE_DONE);
-  InterlockedCompareExchange(&(once->counter), 0, 1);
+  if (once) {
+    *once = ONCE_INIT;
+  }
 }
 
 }  // namespace mozc

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,8 +35,7 @@
 #include <shlobj.h>
 #include <time.h>
 #include <sddl.h>
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #else
 #include <pwd.h>
 #include <sys/stat.h>
@@ -53,10 +52,10 @@
 #include "base/mutex.h"
 #endif
 
-#if defined(OS_ANDROID) || defined(__native_client__)
+#if defined(OS_ANDROID) || defined(OS_NACL)
 #include "config/config_handler.h"
-#include "config/config.pb.h"
-#endif  // OS_ANDROID || __native_client__
+#include "protocol/config.pb.h"
+#endif  // OS_ANDROID || OS_NACL
 
 #include "base/file_util.h"
 #include "base/singleton.h"
@@ -184,7 +183,7 @@ bool MacStatsConfigUtilImpl::IsEnabled() {
   scoped_lock l(&mutex_);
   const bool kDefaultValue = false;
 
-  ifstream ifs(config_file_.c_str(), ios::binary | ios::in);
+  std::ifstream ifs(config_file_.c_str(), std::ios::binary | std::ios::in);
 
   if (!ifs.is_open()) {
     return kDefaultValue;
@@ -214,7 +213,8 @@ bool MacStatsConfigUtilImpl::SetEnabled(bool val) {
   if (FileUtil::FileExists(config_file_)) {
     ::chmod(config_file_.c_str(), S_IRUSR | S_IWUSR);  // read/write
   }
-  ofstream ofs(config_file_.c_str(), ios::binary | ios::out | ios::trunc);
+  std::ofstream ofs(config_file_.c_str(),
+                    std::ios::binary | std::ios::out | std::ios::trunc);
   if (!ofs) {
     return false;
   }
@@ -235,7 +235,9 @@ class AndroidStatsConfigUtilImpl : public StatsConfigUtilInterface {
   virtual ~AndroidStatsConfigUtilImpl() {
   }
   virtual bool IsEnabled() {
-    return ConfigHandler::GetConfig().general_config().upload_usage_stats();
+    Config config;
+    ConfigHandler::GetConfig(&config);
+    return config.general_config().upload_usage_stats();
   }
   virtual bool SetEnabled(bool val) {
     // TODO(horo): Implement this.
@@ -247,7 +249,7 @@ class AndroidStatsConfigUtilImpl : public StatsConfigUtilInterface {
 };
 #endif  // OS_ANDROID
 
-#ifdef __native_client__
+#ifdef OS_NACL
 class NaclStatsConfigUtilImpl : public StatsConfigUtilInterface {
  public:
   NaclStatsConfigUtilImpl() {
@@ -255,7 +257,9 @@ class NaclStatsConfigUtilImpl : public StatsConfigUtilInterface {
   virtual ~NaclStatsConfigUtilImpl() {
   }
   virtual bool IsEnabled() {
-    return ConfigHandler::GetConfig().general_config().upload_usage_stats();
+    Config config;
+    ConfigHandler::GetConfig(&config);
+    return config.general_config().upload_usage_stats();
   }
   virtual bool SetEnabled(bool val) {
     return false;
@@ -264,7 +268,7 @@ class NaclStatsConfigUtilImpl : public StatsConfigUtilInterface {
  private:
   DISALLOW_COPY_AND_ASSIGN(NaclStatsConfigUtilImpl);
 };
-#endif  // __native_client__
+#endif  // OS_NACL
 
 #endif  // GOOGLE_JAPANESE_INPUT_BUILD
 
@@ -295,7 +299,7 @@ typedef WinStatsConfigUtilImpl DefaultConfigUtilImpl;
 typedef MacStatsConfigUtilImpl DefaultConfigUtilImpl;
 #elif defined(OS_ANDROID)
 typedef AndroidStatsConfigUtilImpl DefaultConfigUtilImpl;
-#elif __native_client__
+#elif defined(OS_NACL)
 typedef NaclStatsConfigUtilImpl DefaultConfigUtilImpl;
 #else
 // Fall back mode.  Use null implementation.

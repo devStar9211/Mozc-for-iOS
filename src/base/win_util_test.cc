@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -38,10 +38,10 @@ namespace mozc {
 
 namespace {
 
-bool LooksLikeNtPath(const wstring &nt_path) {
+bool LooksLikeNtPath(const std::wstring &nt_path) {
   const wchar_t kPrefix[] = L"\\Device\\";
 
-  return nt_path.find(kPrefix) != wstring::npos;
+  return nt_path.find(kPrefix) != std::wstring::npos;
 }
 
 }  // namespace
@@ -96,194 +96,59 @@ TEST_F(WinUtilLoaderLockTest, IsDLLSynchronizationHeldTest) {
   EXPECT_FALSE(is_lock_held());
 }
 
-TEST(WinUtilTest, Win32EqualStringTest) {
-  if (SystemUtil::IsVistaOrLater()) {
-    bool result = false;
+TEST(WinUtilTest, WindowHandleTest) {
+  // Should round-trip as long as the handle value is in uint32 range.
+  const HWND k32bitSource = reinterpret_cast<HWND>(
+      static_cast<uintptr_t>(0x1234));
+  EXPECT_EQ(k32bitSource, WinUtil::DecodeWindowHandle(
+      WinUtil::EncodeWindowHandle(k32bitSource)));
 
-    result = false;
-    EXPECT_TRUE(WinUtil::Win32EqualString(
-        L"abc",
-        L"AbC",
-        true,
-        &result));
-    EXPECT_TRUE(result);
-
-    // case-sensitive
-    EXPECT_TRUE(WinUtil::Win32EqualString(
-        L"abc",
-        L"AbC",
-        false,
-        &result));
-    EXPECT_FALSE(result);
-
-    // Test case in http://b/2977223
-    result = false;
-    EXPECT_TRUE(WinUtil::Win32EqualString(
-        L"abc",
-        L"a" L"\x202c" L"bc",   // U+202C: POP DIRECTIONAL FORMATTING
-        true,
-        &result));
-    EXPECT_FALSE(result);
-
-    // Test case in http://b/2977235
-    result = false;
-    EXPECT_TRUE(WinUtil::Win32EqualString(
-        L"\x01bf",    // U+01BF: LATIN LETTER WYNN
-        L"\x01f7",    // U+01F7: LATIN CAPITAL LETTER WYNN
-        true,
-        &result));
-    EXPECT_TRUE(result);
-
-    // http://blogs.msdn.com/b/michkap/archive/2005/05/26/421987.aspx
-    result = false;
-    EXPECT_TRUE(WinUtil::Win32EqualString(
-        L"\x03c2",    // U+03C2: GREEK SMALL LETTER FINAL SIGMA
-        L"\x03a3",    // U+03A3: GREEK CAPITAL LETTER SIGMA
-        true,
-        &result));
-    // Windows XP En/Ja: U+03C2 and U+03A3 are the same caracter.
-    // Windows Vista En/Ja: U+03C2 and U+03A3 are the same caracter.
-    // Windows 7 En/Ja: U+03C2 and U+03A3 are different from each other.
-    if (SystemUtil::IsWindows7OrLater()) {
-      EXPECT_FALSE(result);
-    } else {
-      EXPECT_TRUE(result);
-    }
-
-    // http://blogs.msdn.com/b/michkap/archive/2005/05/26/421987.aspx
-    result = false;
-    EXPECT_TRUE(WinUtil::Win32EqualString(
-        L"\x03c3",    // U+03C3: GREEK SMALL LETTER SIGMA
-        L"\x03a3",    // U+03A3: GREEK CAPITAL LETTER SIGMA
-        true,
-        &result));
-    EXPECT_TRUE(result);
-  }
+#if defined(_M_X64)
+  // OK to drop higher 32-bit.
+  const HWND k64bitSource = reinterpret_cast<HWND>(
+      static_cast<uintptr_t>(0xf0f1f2f3e4e5e6e7ULL));
+  const HWND k64bitExpected = reinterpret_cast<HWND>(
+      static_cast<uintptr_t>(0x00000000e4e5e6e7ULL));
+  EXPECT_EQ(k64bitExpected, WinUtil::DecodeWindowHandle(
+      WinUtil::EncodeWindowHandle(k64bitSource)));
+#endif  // _M_X64
 }
 
-TEST(WinUtilTest, NativeEqualStringTest) {
-  bool result = false;
-
-  result = false;
-  EXPECT_TRUE(WinUtil::NativeEqualString(
+TEST(WinUtilTest, SystemEqualStringTest) {
+  EXPECT_TRUE(WinUtil::SystemEqualString(
       L"abc",
       L"AbC",
-      true,
-      &result));
-  EXPECT_TRUE(result);
+      true));
 
   // case-sensitive
-  EXPECT_TRUE(WinUtil::NativeEqualString(
+  EXPECT_FALSE(WinUtil::SystemEqualString(
       L"abc",
       L"AbC",
-      false,
-      &result));
-  EXPECT_FALSE(result);
+      false));
 
   // Test case in http://b/2977223
-  result = false;
-  EXPECT_TRUE(WinUtil::NativeEqualString(
+  EXPECT_FALSE(WinUtil::SystemEqualString(
       L"abc",
       L"a" L"\x202c" L"bc",   // U+202C: POP DIRECTIONAL FORMATTING
-      true,
-      &result));
-  EXPECT_FALSE(result);
+      true));
 
   // Test case in http://b/2977235
-  result = false;
-  EXPECT_TRUE(WinUtil::NativeEqualString(
+  EXPECT_TRUE(WinUtil::SystemEqualString(
       L"\x01bf",    // U+01BF: LATIN LETTER WYNN
       L"\x01f7",    // U+01F7: LATIN CAPITAL LETTER WYNN
-      true,
-      &result));
-  EXPECT_TRUE(result);
+      true));
 
-  // http://blogs.msdn.com/b/michkap/archive/2005/05/26/421987.aspx
-  result = false;
-  EXPECT_TRUE(WinUtil::NativeEqualString(
+  // http://www.siao2.com/2005/05/26/421987.aspx
+  EXPECT_FALSE(WinUtil::SystemEqualString(
       L"\x03c2",    // U+03C2: GREEK SMALL LETTER FINAL SIGMA
       L"\x03a3",    // U+03A3: GREEK CAPITAL LETTER SIGMA
-      true,
-      &result));
-  // Windows XP En/Ja: U+03C2 and U+03A3 are the same caracter.
-  // Windows Vista En/Ja: U+03C2 and U+03A3 are the same caracter.
-  // Windows 7 En/Ja: U+03C2 and U+03A3 are different from each other.
-  if (SystemUtil::IsWindows7OrLater()) {
-    EXPECT_FALSE(result);
-  } else {
-    EXPECT_TRUE(result);
-  }
+      true));
 
-  // http://blogs.msdn.com/b/michkap/archive/2005/05/26/421987.aspx
-  result = false;
-  EXPECT_TRUE(WinUtil::NativeEqualString(
+  // http://www.siao2.com/2005/05/26/421987.aspx
+  EXPECT_TRUE(WinUtil::SystemEqualString(
       L"\x03c3",    // U+03C3: GREEK SMALL LETTER SIGMA
       L"\x03a3",    // U+03A3: GREEK CAPITAL LETTER SIGMA
-      true,
-      &result));
-  EXPECT_TRUE(result);
-}
-
-TEST(WinUtilTest, CrtEqualStringTest) {
-  bool result = false;
-  WinUtil::CrtEqualString(
-    L"abc",
-    L"AbC",
-    true,
-    &result);
-  EXPECT_TRUE(result);
-
-  // case-sensitive
-  WinUtil::CrtEqualString(
-      L"abc",
-      L"AbC",
-      false,
-      &result);
-  EXPECT_FALSE(result);
-
-  // Test case in http://b/2977223
-  result = false;
-  WinUtil::CrtEqualString(
-    L"abc",
-    L"a" L"\x202c" L"bc",   // U+202C: POP DIRECTIONAL FORMATTING
-    true,
-    &result);
-  EXPECT_FALSE(result);
-
-  // Test case in http://b/2977235
-  result = false;
-  WinUtil::CrtEqualString(
-    L"\x01bf",    // U+01BF: LATIN LETTER WYNN
-    L"\x01f7",    // U+01F7: LATIN CAPITAL LETTER WYNN
-    true,
-    &result);
-  if (SystemUtil::IsVistaOrLater()) {
-    EXPECT_TRUE(result);
-  } else {
-    // Unfortunately, this result seems not to be compatible with
-    // Win32EqualString/NativeEqualString on Windows XP.
-    EXPECT_FALSE(result);
-  }
-
-  // http://blogs.msdn.com/b/michkap/archive/2005/05/26/421987.aspx
-  result = false;
-  WinUtil::CrtEqualString(
-      L"\x03c2",    // U+03C2: GREEK SMALL LETTER FINAL SIGMA
-      L"\x03a3",    // U+03A3: GREEK CAPITAL LETTER SIGMA
-      true,
-      &result);
-  // Unfortunately, this result is not compatible with Win32EqualString/
-  // NativeEqualString.
-  EXPECT_FALSE(result);
-
-  // http://blogs.msdn.com/b/michkap/archive/2005/05/26/421987.aspx
-  result = false;
-  WinUtil::CrtEqualString(
-      L"\x03c3",    // U+03C3: GREEK SMALL LETTER SIGMA
-      L"\x03a3",    // U+03A3: GREEK CAPITAL LETTER SIGMA
-      true,
-      &result);
-  EXPECT_TRUE(result);
+      true));
 }
 
 // Actually WinUtil::SystemEqualString raises DCHECK error when argument
@@ -292,8 +157,8 @@ TEST(WinUtilTest, CrtEqualStringTest) {
 TEST(WinUtilTest, SystemEqualStringTestForNUL) {
   {
     const wchar_t kTestBuffer[] = L"abc";
-    const wstring test_string1(kTestBuffer);
-    const wstring test_string2(kTestBuffer,
+    const std::wstring test_string1(kTestBuffer);
+    const std::wstring test_string2(kTestBuffer,
                                kTestBuffer + arraysize(kTestBuffer));
 
     EXPECT_EQ(3, test_string1.size());
@@ -305,8 +170,8 @@ TEST(WinUtilTest, SystemEqualStringTestForNUL) {
   }
   {
     const wchar_t kTestBuffer[] = L"abc\0def";
-    const wstring test_string1(kTestBuffer);
-    const wstring test_string2(kTestBuffer,
+    const std::wstring test_string1(kTestBuffer);
+    const std::wstring test_string2(kTestBuffer,
                                kTestBuffer + arraysize(kTestBuffer));
 
     EXPECT_EQ(3, test_string1.size());
@@ -320,9 +185,9 @@ TEST(WinUtilTest, SystemEqualStringTestForNUL) {
 #endif  // DEBUG
 
 TEST(WinUtilTest, AreEqualFileSystemObjectTest) {
-  const wstring system_dir = SystemUtil::GetSystemDir();
-  const wstring notepad = system_dir + L"\\notepad.exe";
-  const wstring notepad_with_prefix = L"\\\\?\\" + notepad;
+  const std::wstring system_dir = SystemUtil::GetSystemDir();
+  const std::wstring notepad = system_dir + L"\\notepad.exe";
+  const std::wstring notepad_with_prefix = L"\\\\?\\" + notepad;
   const wchar_t kThisFileNeverExists[] = L"/this/file/never/exists";
 
   EXPECT_TRUE(WinUtil::AreEqualFileSystemObject(system_dir, system_dir))
@@ -339,15 +204,11 @@ TEST(WinUtilTest, AreEqualFileSystemObjectTest) {
 }
 
 TEST(WinUtilTest, GetNtPath) {
-  if (!SystemUtil::IsVistaOrLater()) {
-    return;
-  }
-
-  const wstring system_dir = SystemUtil::GetSystemDir();
-  const wstring notepad = system_dir + L"\\notepad.exe";
+  const std::wstring system_dir = SystemUtil::GetSystemDir();
+  const std::wstring notepad = system_dir + L"\\notepad.exe";
   const wchar_t kThisFileNeverExists[] = L"/this/file/never/exists";
 
-  wstring nt_system_dir;
+  std::wstring nt_system_dir;
   EXPECT_TRUE(WinUtil::GetNtPath(system_dir, &nt_system_dir))
       << "Can work against a directory.";
   EXPECT_TRUE(LooksLikeNtPath(nt_system_dir));
@@ -355,14 +216,14 @@ TEST(WinUtilTest, GetNtPath) {
   EXPECT_FALSE(WinUtil::GetNtPath(system_dir, nullptr))
       << "Must fail against a NULL argument.";
 
-  wstring nt_notepad;
+  std::wstring nt_notepad;
   EXPECT_TRUE(WinUtil::GetNtPath(notepad, &nt_notepad))
       << "Can work against a file.";
   EXPECT_TRUE(LooksLikeNtPath(nt_notepad));
 
   EXPECT_TRUE(nt_system_dir != nt_notepad);
 
-  wstring nt_not_exists = L"foo";
+  std::wstring nt_not_exists = L"foo";
   EXPECT_FALSE(WinUtil::GetNtPath(kThisFileNeverExists, &nt_not_exists))
       << "Must fail against non-exist file.";
   EXPECT_TRUE(nt_not_exists.empty())
@@ -370,7 +231,7 @@ TEST(WinUtilTest, GetNtPath) {
 }
 
 TEST(WinUtilTest, GetProcessInitialNtPath) {
-  wstring nt_path;
+  std::wstring nt_path;
   EXPECT_TRUE(WinUtil::GetProcessInitialNtPath(::GetCurrentProcessId(),
                                                &nt_path));
   EXPECT_TRUE(LooksLikeNtPath(nt_path));

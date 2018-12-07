@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,30 +30,17 @@
 #include "base/string_piece.h"
 
 #include <algorithm>
+#include <cassert>
 #include <climits>
 #include <iostream>
 #include <string>
 
-#include "base/logging.h"
-
 namespace mozc {
 
-typedef StringPiece::size_type size_type;
+using size_type = StringPiece::size_type;
 
-StringPiece::StringPiece(const StringPiece str, size_type pos) :
-    ptr_(str.data() + pos),
-    length_(str.size() - pos) {
-  DCHECK_LE(pos, str.size());
-}
-
-StringPiece::StringPiece(const StringPiece str, size_type pos, size_type len) :
-    ptr_(str.data() + pos),
-    length_(min(len, str.size() - pos)) {
-  DCHECK_LE(pos, str.size());
-};
-
-ostream &operator<<(ostream &o, const StringPiece &piece) {
-  o.write(piece.data(), static_cast<streamsize>(piece.size()));
+std::ostream &operator<<(std::ostream &o, const StringPiece &piece) {
+  o.write(piece.data(), static_cast<std::streamsize>(piece.size()));
   return o;
 }
 
@@ -68,7 +55,7 @@ void StringPiece::AppendToString(string *target) const {
 }
 
 size_type StringPiece::copy(char *buf, size_type n, size_type pos) const {
-  const size_type ret = min(length_ - pos, n);
+  const size_type ret = std::min(length_ - pos, n);
   memcpy(buf, ptr_ + pos, ret);
   return ret;
 }
@@ -101,10 +88,10 @@ size_type StringPiece::rfind(const StringPiece &s, size_type pos) const {
   }
 
   if (s.empty()) {
-    return min(length_, pos);
+    return std::min(length_, pos);
   }
 
-  const char *last = ptr_ + min(length_ - s.length_, pos) + s.length_;
+  const char *last = ptr_ + std::min(length_ - s.length_, pos) + s.length_;
   const char *result = std::find_end(ptr_, last, s.ptr_, s.ptr_ + s.length_);
   return result != last ? result - ptr_ : npos;
 }
@@ -114,7 +101,7 @@ size_type StringPiece::rfind(char c, size_type pos) const {
     return npos;
   }
 
-  for (size_type i = min(pos, length_ - 1); ; --i) {
+  for (size_type i = std::min(pos, length_ - 1); ; --i) {
     if (ptr_[i] == c) {
       return i;
     }
@@ -210,7 +197,7 @@ size_type StringPiece::find_last_of(const StringPiece &s,
 
   bool lookup[UCHAR_MAX + 1] = { false };
   BuildLookupTable(s, lookup);
-  for (size_type i = min(pos, length_ - 1); ; --i) {
+  for (size_type i = std::min(pos, length_ - 1); ; --i) {
     if (lookup[static_cast<unsigned char>(ptr_[i])]) {
       return i;
     }
@@ -227,7 +214,7 @@ size_type StringPiece::find_last_not_of(const StringPiece &s,
     return npos;
   }
 
-  size_type i = min(pos, length_ - 1);
+  size_type i = std::min(pos, length_ - 1);
   if (s.length_ == 0) {
     return i;
   }
@@ -253,7 +240,7 @@ size_type StringPiece::find_last_not_of(char c, size_type pos) const {
     return npos;
   }
 
-  for (size_type i = min(pos, length_ - 1); ; --i) {
+  for (size_type i = std::min(pos, length_ - 1); ; --i) {
     if (ptr_[i] != c)
       return i;
     if (i == 0)

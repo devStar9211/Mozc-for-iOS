@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,17 +30,21 @@
 #include "gui/config_dialog/generic_table_editor.h"
 
 #include <QtCore/QFile>
-#include <QtGui/QFileDialog>
 #include <QtGui/QtGui>
+#include <QtWidgets/QFileDialog>
+#include <QtWidgets/QMenu>
+#include <QtWidgets/QMessageBox>
+
 #include <algorithm>  // for unique
 #include <cctype>
-#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
+
 #include "base/file_stream.h"
+#include "base/logging.h"
 #include "base/util.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 
 namespace mozc {
 namespace gui {
@@ -50,11 +54,9 @@ const size_t kMaxEntrySize = 10000;
 int GetTableHeight(QTableWidget *widget) {
   // Dragon Hack:
   // Here we use "龍" to calc font size, as it looks almsot square
-  // const char kHexBaseChar[]= "龍";
-  const char kHexBaseChar[]= "\xE9\xBE\x8D";
+  const char kHexBaseChar[] = "龍";
   const QRect rect =
-      QFontMetrics(widget->font()).boundingRect(
-          QObject::trUtf8(kHexBaseChar));
+      QFontMetrics(widget->font()).boundingRect(QObject::trUtf8(kHexBaseChar));
 #ifdef OS_WIN
   return static_cast<int>(rect.height() * 1.3);
 #else
@@ -70,7 +72,8 @@ GenericTableEditorDialog::GenericTableEditorDialog(QWidget *parent,
       column_size_(column_size) {
   setupUi(this);
   editorTableWidget->setAlternatingRowColors(true);
-  setWindowFlags(Qt::WindowSystemMenuHint | Qt::Tool);
+  setWindowFlags(Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint |
+                 Qt::Tool);
   editorTableWidget->setColumnCount(column_size_);
 
   CHECK_GT(column_size_, 0);
@@ -110,7 +113,7 @@ GenericTableEditorDialog::GenericTableEditorDialog(QWidget *parent,
                                      QAbstractItemView::SelectedClicked);
   editorTableWidget->setSortingEnabled(true);
 
-  editorTableWidget->verticalHeader()->setResizeMode(QHeaderView::Fixed);
+  editorTableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
   editorTableWidget->verticalHeader()->setDefaultSectionSize(
       GetTableHeight(editorTableWidget));
 
@@ -136,12 +139,12 @@ QMenu *GenericTableEditorDialog::mutable_edit_menu() {
 }
 
 bool GenericTableEditorDialog::LoadFromString(const string &str) {
-  istringstream istr(str);
+  std::istringstream istr(str);
   return LoadFromStream(&istr);
 }
 
 void GenericTableEditorDialog::DeleteSelectedItems() {
-  vector<int> rows;
+  std::vector<int> rows;
   QList<QTableWidgetItem *> selected =
       editorTableWidget->selectedItems();
 
@@ -154,7 +157,7 @@ void GenericTableEditorDialog::DeleteSelectedItems() {
     rows.push_back(selected[i]->row());
   }
 
-  vector<int>::iterator last = unique(rows.begin(), rows.end());
+  std::vector<int>::iterator last = unique(rows.begin(), rows.end());
   rows.erase(last, rows.end());
 
   if (rows.empty()) {
@@ -357,7 +360,7 @@ size_t GenericTableEditorDialog::max_entry_size() const {
   return kMaxEntrySize;
 }
 
-bool GenericTableEditorDialog::LoadFromStream(istream *is) {
+bool GenericTableEditorDialog::LoadFromStream(std::istream *is) {
   return true;
 }
 

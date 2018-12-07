@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,9 +31,11 @@
 #define MOZC_GUI_CHARACTER_PAD_CHARACTER_PALETTE_H_
 
 #include <QtCore/QMap>
-#include <QtGui/QMainWindow>
+#include <QtWidgets/QMainWindow>
+
+#include <memory>
+
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "gui/character_pad/ui_character_palette.h"
 
 class QTextCodec;
@@ -82,11 +84,7 @@ class CharacterPalette :  public QMainWindow,
   void itemSelected(const QTableWidgetItem *item);
 
  protected:
-#ifdef OS_WIN
-  bool winEvent(MSG *message, long *result);
-#endif  // OS_WIN
-
-  scoped_ptr<client::ClientInterface> client_;
+  std::unique_ptr<client::ClientInterface> client_;
   bool usage_stats_enabled_;
 
  private:

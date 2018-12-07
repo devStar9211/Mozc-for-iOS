@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,16 +27,16 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef IME_MOZC_BASE_ANDROID_JNI_MOCK_H_
-#define IME_MOZC_BASE_ANDROID_JNI_MOCK_H_
+#ifndef MOZC_BASE_ANDROID_JNI_MOCK_H_
+#define MOZC_BASE_ANDROID_JNI_MOCK_H_
 
 // An utility to mock JNI releated stuff for testing purpose.
 #include <jni.h>
 #include <map>
+#include <memory>
 #include <utility>
 
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 
 namespace mozc {
 namespace jni {
@@ -105,10 +105,10 @@ class MockJNIEnv {
 
  private:
   JNIEnv env_;
-  map<jbyteArray, pair<jsize, jbyte*> > byte_array_map_;
+  std::map<jbyteArray, std::pair<jsize, jbyte*> > byte_array_map_;
 
   // Http client's mock injecting point.
-  scoped_ptr<MockJavaHttpClient> mock_http_client_;
+  std::unique_ptr<MockJavaHttpClient> mock_http_client_;
   _jclass mock_http_client_class_;
   MockJMethodId mock_request_;
 
@@ -166,4 +166,4 @@ class MockJavaVM {
 }  // namespace jni
 }  // namespace mozc
 
-#endif  // IME_MOZC_BASE_ANDROID_JNI_MOCK_H_
+#endif  // MOZC_BASE_ANDROID_JNI_MOCK_H_

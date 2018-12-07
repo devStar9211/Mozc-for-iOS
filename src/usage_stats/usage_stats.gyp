@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -46,20 +46,15 @@
         '../base/base.gyp:config_file_stream',
         '../base/base.gyp:encryptor',
         '../config/config.gyp:config_handler',
-        '../config/config.gyp:config_protocol',
         '../config/config.gyp:stats_config_util',
         '../net/net.gyp:http_client',
+        '../protocol/protocol.gyp:config_proto',
         '../session/session_base.gyp:keymap',
         '../storage/storage.gyp:storage',
         'usage_stats_base.gyp:gen_usage_stats_list#host',
         'usage_stats_base.gyp:usage_stats',
         'usage_stats_base.gyp:usage_stats_protocol',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
   ],
 }

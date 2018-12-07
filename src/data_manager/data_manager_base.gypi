@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -30,60 +30,87 @@
 {
   'targets': [
     {
-      'target_name': '<(dataset_tag)_user_pos_manager',
-      'type': 'static_library',
-      'toolsets': [ 'target', 'host' ],
-      'sources': [
-        '<(current_dir)/<(dataset_tag)_user_pos_manager.cc',
-      ],
-      'dependencies': [
-        '<(mozc_dir)/base/base.gyp:base',
-        '<(mozc_dir)/dictionary/dictionary_base.gyp:pos_matcher',
-        '<(mozc_dir)/dictionary/dictionary_base.gyp:user_pos',
-        'gen_embedded_pos_matcher_data_for_<(dataset_tag)#host',
-        'gen_embedded_user_pos_data_for_<(dataset_tag)#host',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {
-      'target_name': 'gen_<(dataset_tag)_embedded_data_light',
+      'target_name': 'gen_<(dataset_tag)_embedded_pos_list',
       'type': 'none',
       'toolsets': ['host'],
       'dependencies': [
-        'gen_embedded_pos_matcher_data_for_<(dataset_tag)#host',
-        'gen_embedded_user_pos_data_for_<(dataset_tag)#host',
+        'gen_separate_user_pos_data_for_<(dataset_tag)#host',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
+      'actions': [
+        {
+          'action_name': 'gen_<(dataset_tag)_embedded_pos_list',
+          'variables': {
+            'pos_list': '<(gen_out_dir)/pos_list.data',
+          },
+          'inputs': [
+            '<(pos_list)',
+          ],
+          'outputs': [
+            '<(gen_out_dir)/pos_list.h',
+          ],
+          'action': [
+            'python', '<(mozc_dir)/build_tools/embed_file.py',
+            '--input=<(pos_list)',
+            '--name=kPosArray',
+            '--output=<(gen_out_dir)/pos_list.h',
+          ],
+        },
+      ],
     },
     {
-      'target_name': 'gen_embedded_user_pos_data_for_<(dataset_tag)',
+      'target_name': 'gen_user_pos_manager_data_for_<(dataset_tag)',
+      'type': 'none',
+      'toolsets': ['host'],
+      'dependencies': [
+        '../data_manager_base.gyp:dataset_writer_main',
+        'gen_separate_user_pos_data_for_<(dataset_tag)#host',
+        'gen_separate_pos_matcher_data_for_<(dataset_tag)#host',
+      ],
+      'actions': [
+        {
+          'action_name': 'gen_user_pos_manager_data_for_<(dataset_tag)',
+          'variables': {
+            'generator': '<(PRODUCT_DIR)/dataset_writer_main<(EXECUTABLE_SUFFIX)',
+            'pos_matcher': '<(gen_out_dir)/pos_matcher.data',
+            'user_pos_token': '<(gen_out_dir)/user_pos_token_array.data',
+            'user_pos_string': '<(gen_out_dir)/user_pos_string_array.data',
+          },
+          'inputs': [
+            '<(pos_matcher)',
+            '<(user_pos_token)',
+            '<(user_pos_string)',
+          ],
+          'outputs': [
+            '<(gen_out_dir)/user_pos_manager.data',
+          ],
+          'action': [
+            '<(generator)',
+            '--output=<(gen_out_dir)/user_pos_manager.data',
+            'pos_matcher:32:<(pos_matcher)',
+            'user_pos_token:32:<(user_pos_token)',
+            'user_pos_string:32:<(user_pos_string)',
+          ],
+        },
+      ],
+    },
+    {
+      'target_name': 'gen_separate_user_pos_data_for_<(dataset_tag)',
       'type': 'none',
       'toolsets': ['host'],
       'dependencies': [
         '<(mozc_dir)/dictionary/dictionary_base.gyp:pos_util',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'actions': [
         {
-          'action_name': 'gen_embedded_user_pos_data_for_<(dataset_tag)',
+          'action_name': 'gen_separate_user_pos_data_for_<(dataset_tag)',
           'variables': {
             'id_def': '<(platform_data_dir)/id.def',
             'special_pos': '<(common_data_dir)/rules/special_pos.def',
             'user_pos': '<(common_data_dir)/rules/user_pos.def',
             'cforms': '<(common_data_dir)/rules/cforms.def',
-            'user_pos_data': '<(gen_out_dir)/user_pos_data.h',
+            'token_array_data': '<(gen_out_dir)/user_pos_token_array.data',
+            'string_array_data': '<(gen_out_dir)/user_pos_string_array.data',
+            'pos_list': '<(gen_out_dir)/pos_list.data',
           },
           'inputs': [
             '<(mozc_dir)/dictionary/gen_user_pos_data.py',
@@ -93,7 +120,9 @@
             '<(cforms)',
           ],
           'outputs': [
-            '<(user_pos_data)',
+            '<(token_array_data)',
+            '<(string_array_data)',
+            '<(pos_list)',
           ],
           'action': [
             'python', '<(mozc_dir)/dictionary/gen_user_pos_data.py',
@@ -101,32 +130,29 @@
             '--special_pos_file=<(special_pos)',
             '--user_pos_file=<(user_pos)',
             '--cforms_file=<(cforms)',
-            '--output=<(user_pos_data)',
+            '--output_token_array=<(token_array_data)',
+            '--output_string_array=<(string_array_data)',
+            '--output_pos_list=<(pos_list)',
           ],
-          'message': '[<(dataset_tag)] Generating <(user_pos_data).',
+          'message': '[<(dataset_tag)] Generating user pos data.',
         },
       ],
     },
     {
-      'target_name': 'gen_embedded_pos_matcher_data_for_<(dataset_tag)',
+      'target_name': 'gen_separate_pos_matcher_data_for_<(dataset_tag)',
       'type': 'none',
       'toolsets': ['host'],
       'dependencies': [
         '<(mozc_dir)/dictionary/dictionary_base.gyp:pos_util',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'actions': [
         {
-          'action_name': 'gen_embedded_pos_matcher_data_for_<(dataset_tag)',
+          'action_name': 'gen_separate_pos_matcher_data_for_<(dataset_tag)',
           'variables': {
             'id_def': '<(platform_data_dir)/id.def',
             'special_pos': '<(common_data_dir)/rules/special_pos.def',
             'pos_matcher_rule': '<(common_data_dir)/rules/pos_matcher_rule.def',
-            'pos_matcher_data': '<(gen_out_dir)/pos_matcher_data.h',
+            'pos_matcher_data': '<(gen_out_dir)/pos_matcher.data',
           },
           'inputs': [
             '<(mozc_dir)/dictionary/gen_pos_matcher_code.py',

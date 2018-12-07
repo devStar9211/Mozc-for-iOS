@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,8 +31,11 @@
 #include <windows.h>
 #endif
 
-#include <QtGui/QApplication>
+#include <QtGui/QGuiApplication>
 #include <QtCore/QFile>
+
+#include <memory>
+
 #include "base/logging.h"
 #include "base/system_util.h"
 #include "base/util.h"
@@ -47,18 +50,11 @@
 
 namespace {
 
-#ifdef OS_WIN
-void InstallStyleSheet(const string &style_sheet) {
-  QFile file(style_sheet.c_str());
-  file.open(QFile::ReadOnly);
-  qApp->setStyleSheet(QLatin1String(file.readAll()));
-}
-#endif  // OS_WIN
-
 enum {
   CHARACTER_PALETTE,
   HAND_WRITING
 };
+
 }  // namespace
 
 int RunCharacterPad(int argc, char *argv[],
@@ -70,7 +66,7 @@ int RunCharacterPad(int argc, char *argv[],
 
   mozc::gui::LocaleUtil::InstallTranslationMessageAndFont("character_pad");
 
-  scoped_ptr<QMainWindow> window;
+  std::unique_ptr<QMainWindow> window;
 
   if (mode == HAND_WRITING) {
     window.reset(new mozc::gui::HandWriting);
@@ -83,33 +79,20 @@ int RunCharacterPad(int argc, char *argv[],
   mozc::gui::WindowsSelectionHandler callback;
   mozc::gui::SelectionHandler::SetSelectionCallback(&callback);
 
-  window->setWindowFlags(Qt::WindowSystemMenuHint);
+  window->setWindowFlags(Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint);
 
   // Set Top-Most bit:
   //   Use SWP_NOACTIVATE so that the GUI window will not get focus from the
   //   application which is currently active. b/5516521
-  ::SetWindowPos(window->winId(), HWND_TOPMOST, 0, 0, 0, 0,
+  HWND window_handle = reinterpret_cast<HWND>(window->winId());
+  ::SetWindowPos(window_handle, HWND_TOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
   // Set WS_EX_NOACTIVATE so that the GUI window will not be activated by mouse
   // click.
-  const LONG style = ::GetWindowLong(window->winId(), GWL_EXSTYLE)
+  const LONG style = ::GetWindowLong(window_handle, GWL_EXSTYLE)
                      | WS_EX_NOACTIVATE | WS_EX_APPWINDOW;
-  ::SetWindowLong(window->winId(), GWL_EXSTYLE, style);
-
-  // Aero
-  if (mozc::SystemUtil::IsVistaOrLater()) {
-    window->setContentsMargins(0, 0, 0, 0);
-    mozc::gui::WinUtil::InstallStyleSheetsFiles(
-        ":character_pad_win_aero_style.qss",
-        ":character_pad_win_style.qss");
-    if (mozc::gui::WinUtil::IsCompositionEnabled()) {
-      mozc::gui::WinUtil::ExtendFrameIntoClientArea(window.get());
-      InstallStyleSheet(":character_pad_win_aero_style.qss");
-    } else {
-      InstallStyleSheet(":character_pad_win_style.qss");
-    }
-  }
+  ::SetWindowLong(window_handle, GWL_EXSTYLE, style);
 #endif
 
   window->show();

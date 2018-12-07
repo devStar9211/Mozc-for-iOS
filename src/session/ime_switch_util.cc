@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,8 +36,8 @@
 
 #include "base/port.h"
 #include "base/singleton.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
+#include "protocol/config.pb.h"
 #include "session/key_info_util.h"
 
 namespace mozc {
@@ -47,21 +47,21 @@ namespace {
 class ImeSwitchUtilImpl {
  public:
   ImeSwitchUtilImpl() {
-    Reload();
+    config::Config config;
+    config::ConfigHandler::GetConfig(&config);
+    ReloadConfig(config);
   }
 
   bool IsDirectModeCommand(const commands::KeyEvent &key) const {
     return KeyInfoUtil::ContainsKey(direct_mode_keys_, key);
   }
 
-  void Reload() {
-    config::Config config;
-    config::ConfigHandler::GetConfig(&config);
+  void ReloadConfig(const config::Config &config) {
     direct_mode_keys_ = KeyInfoUtil::ExtractSortedDirectModeKeys(config);
   }
 
  private:
-  vector<KeyInformation> direct_mode_keys_;
+  std::vector<KeyInformation> direct_mode_keys_;
 
   DISALLOW_COPY_AND_ASSIGN(ImeSwitchUtilImpl);
 };
@@ -72,8 +72,8 @@ bool ImeSwitchUtil::IsDirectModeCommand(const commands::KeyEvent &key) {
   return Singleton<ImeSwitchUtilImpl>::get()->IsDirectModeCommand(key);
 }
 
-void ImeSwitchUtil::Reload() {
-  Singleton<ImeSwitchUtilImpl>::get()->Reload();
+void ImeSwitchUtil::ReloadConfig(const config::Config &config) {
+  Singleton<ImeSwitchUtilImpl>::get()->ReloadConfig(config);
 }
 
 }  // namespace config

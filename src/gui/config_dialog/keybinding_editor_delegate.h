@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,8 +32,7 @@
 
 #include <QtCore/QModelIndex>
 #include <QtCore/QObject>
-#include <QtGui/QItemDelegate>
-
+#include <QtWidgets/QItemDelegate>
 
 namespace mozc {
 namespace gui {
@@ -63,9 +62,6 @@ class KeyBindingEditorDelegate : public QItemDelegate {
  private slots:
   void CommitAndCloseEditor();
   void CloseEditor();
-
- private:
-  QWidget *modal_parent_;
 };
 }  // gui
 }  // mozc

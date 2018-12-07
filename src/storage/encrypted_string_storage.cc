@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -137,7 +137,8 @@ bool EncryptedStringStorage::Save(const string &input) const {
   // make the file empty
   const string tmp_filename = filename_ + ".tmp";
   {
-    OutputFileStream ofs(tmp_filename.c_str(), ios::out | ios::binary);
+    OutputFileStream ofs(tmp_filename.c_str(),
+                         std::ios::out | std::ios::binary);
     if (!ofs) {
       LOG(ERROR) << "failed to write: " << tmp_filename;
       return false;

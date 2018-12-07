@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,14 +31,13 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlcom.h>
 
 #include <string>
 
 #include "base/logging.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "win32/base/conversion_mode_util.h"
 #include "win32/tip/tip_compartment_util.h"
 

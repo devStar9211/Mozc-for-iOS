@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,88 +34,82 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "config/config.pb.h"
+#include "base/util.h"
 #include "config/config_handler.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
 #include "data_manager/data_manager_interface.h"
+#include "protocol/config.pb.h"
+#include "request/conversion_request.h"
 
 namespace mozc {
-namespace {
 
-void SetCandidate(const ReadingCorrectionItem *item,
-                  Segment::Candidate *candidate) {
-  DCHECK(item);
-  candidate->prefix = "\xE2\x86\x92 ";  // "→ "
+void CorrectionRewriter::SetCandidate(const ReadingCorrectionItem &item,
+                                      Segment::Candidate *candidate) {
+  candidate->prefix = "→ ";
   candidate->attributes |= Segment::Candidate::SPELLING_CORRECTION;
-  candidate->description =
-      // "もしかして"
-      "<\xE3\x82\x82\xE3\x81\x97\xE3\x81\x8B\xE3\x81\x97\xE3\x81\xA6: " +
-      string(item->correction) + ">";
+
+  candidate->description = "<もしかして: ";
+  candidate->description.append(item.correction.data(), item.correction.size());
+  candidate->description.append(1, '>');
+
   DCHECK(candidate->IsValid());
 }
-
-struct ReadingCorrectionItemCompare {
-  bool operator()(const ReadingCorrectionItem &s1,
-                  const ReadingCorrectionItem &s2) const {
-    return (strcmp(s1.error, s2.error) < 0);
-  }
-};
-}  // namespace
 
 bool CorrectionRewriter::LookupCorrection(
     const string &key,
     const string &value,
-    vector<const ReadingCorrectionItem *> *results) const {
+    std::vector<ReadingCorrectionItem> *results) const {
   CHECK(results);
   results->clear();
-  ReadingCorrectionItem key_item;
-  key_item.error = key.c_str();
-  const ReadingCorrectionItem *result =
-      lower_bound(reading_corrections_,
-                  reading_corrections_ + size_,
-                  key_item,
-                  ReadingCorrectionItemCompare());
-  if (result == (reading_corrections_ + size_) ||
-      key != result->error) {
-    return false;
-  }
 
-  for (; result != (reading_corrections_ + size_); ++result) {
-    if (key != result->error) {
-      break;
-    }
-    if (value.empty() || value == result->value) {
-      results->push_back(result);
+  using Iter = SerializedStringArray::const_iterator;
+  std::pair<Iter, Iter> range = std::equal_range(error_array_.begin(),
+                                            error_array_.end(),
+                                            key);
+  for (; range.first != range.second; ++range.first) {
+    const StringPiece v = value_array_[range.first.index()];
+    if (value.empty() || value == v) {
+      results->emplace_back(v, *range.first,
+                            correction_array_[range.first.index()]);
     }
   }
-
   return !results->empty();
 }
 
-CorrectionRewriter::CorrectionRewriter(
-    const ReadingCorrectionItem *reading_corrections, const size_t array_size) :
-    reading_corrections_(reading_corrections), size_(array_size) {}
+CorrectionRewriter::CorrectionRewriter(StringPiece value_array_data,
+                                       StringPiece error_array_data,
+                                       StringPiece correction_array_data) {
+  DCHECK(SerializedStringArray::VerifyData(value_array_data));
+  DCHECK(SerializedStringArray::VerifyData(error_array_data));
+  DCHECK(SerializedStringArray::VerifyData(correction_array_data));
+  value_array_.Set(value_array_data);
+  error_array_.Set(error_array_data);
+  correction_array_.Set(correction_array_data);
+  DCHECK_EQ(value_array_.size(), error_array_.size());
+  DCHECK_EQ(value_array_.size(), correction_array_.size());
+}
 
 // static
 CorrectionRewriter *CorrectionRewriter::CreateCorrectionRewriter(
     const DataManagerInterface *data_manager) {
-  const ReadingCorrectionItem *array = NULL;
-  size_t array_size = 0;
-  data_manager->GetReadingCorrectionData(&array, &array_size);
-  return new CorrectionRewriter(array, array_size);
+  StringPiece value_array_data, error_array_data, correction_array_data;
+  data_manager->GetReadingCorrectionData(&value_array_data,
+                                         &error_array_data,
+                                         &correction_array_data);
+  return new CorrectionRewriter(value_array_data, error_array_data,
+                                correction_array_data);
 }
 
-CorrectionRewriter::~CorrectionRewriter() {}
+CorrectionRewriter::~CorrectionRewriter() = default;
 
 bool CorrectionRewriter::Rewrite(const ConversionRequest &request,
                                  Segments *segments) const {
-  if (!GET_CONFIG(use_spelling_correction)) {
+  if (!request.config().use_spelling_correction()) {
     return false;
   }
 
   bool modified = false;
-  vector<const ReadingCorrectionItem *> results;
+  std::vector<ReadingCorrectionItem> results;
 
   for (size_t i = 0; i < segments->conversion_segments_size(); ++i) {
     Segment *segment = segments->mutable_conversion_segment(i);
@@ -146,21 +140,23 @@ bool CorrectionRewriter::Rewrite(const ConversionRequest &request,
     // TODO(taku): In order to provide all miss reading corrections
     // defined in the tsv file, we want to add miss-read entries to
     // the system dictionary.
-    const size_t kInsertPostion = min(static_cast<size_t>(3),
-                                      segment->candidates_size());
+    const size_t kInsertPosition =
+        std::min(static_cast<size_t>(3), segment->candidates_size());
     const Segment::Candidate &top_candidate = segment->candidate(0);
     if (!LookupCorrection(top_candidate.content_key, "", &results)) {
       continue;
     }
     for (size_t k = 0; k < results.size(); ++k) {
       Segment::Candidate *mutable_candidate =
-          segment->insert_candidate(kInsertPostion);
+          segment->insert_candidate(kInsertPosition);
       DCHECK(mutable_candidate);
       mutable_candidate->CopyFrom(top_candidate);
-      mutable_candidate->key = results[k]->error +
-          top_candidate.functional_key();
-      mutable_candidate->value = results[k]->value +
-          top_candidate.functional_value();
+      Util::ConcatStrings(results[k].error,
+                          top_candidate.functional_key(),
+                          &mutable_candidate->key);
+      Util::ConcatStrings(results[k].value,
+                          top_candidate.functional_value(),
+                          &mutable_candidate->value);
       mutable_candidate->inner_segment_boundary.clear();
       SetCandidate(results[k], mutable_candidate);
       modified = true;

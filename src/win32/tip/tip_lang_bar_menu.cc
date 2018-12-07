@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,8 +31,7 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlapp.h>
 #include <atlmisc.h>
 #include <atlgdi.h>
@@ -43,7 +42,6 @@
 
 #include <limits>
 
-#include "base/system_util.h"
 #include "base/win_util.h"
 #include "win32/base/text_icon.h"
 #include "win32/base/tsf_profile.h"
@@ -71,10 +69,7 @@ const int kTipLangBarMenuCookie = (('M' << 24) |
                                    ('z' << 8) |
                                    ('c' << 0));
 
-// "ＭＳ ゴシック"
-const char kTextIconFont[] =
-    "\xEF\xBC\xAD\xEF\xBC\xB3"
-    "\x20\xE3\x82\xB4\xE3\x82\xB7\xE3\x83\x83\xE3\x82\xAF";
+const char kTextIconFont[] = "ＭＳ ゴシック";
 
 // TODO(yukawa): Refactor LangBar code so that we can configure following
 // settings as a part of initialization.
@@ -83,19 +78,15 @@ string GetIconStringIfNecessary(UINT icon_id) {
     case IDI_DIRECT_NT:
       return "A";
     case IDI_HIRAGANA_NT:
-      // "あ"
-      return "\xE3\x81\x82";
+      return "あ";
     case IDI_FULL_KATAKANA_NT:
-      // "ア"
-      return "\xE3\x82\xA2";
+      return "ア";
     case IDI_HALF_ALPHANUMERIC_NT:
       return "_A";
     case IDI_FULL_ALPHANUMERIC_NT:
-      // "Ａ"
-      return "\xEF\xBC\xA1";
+      return "Ａ";
     case IDI_HALF_KATAKANA_NT:
-      // "_ｱ"
-      return "_" "\xEF\xBD\xB1";
+      return "_ｱ";
   }
   return string();
 }
@@ -481,12 +472,6 @@ HRESULT TipLangBarButton::SetEnabled(bool enabled) {
 }
 
 bool TipLangBarButton::CanContextMenuDisplay32bppIcon() {
-  // Windows XP does not support a 32-bpp icon for a context menu icon on the
-  // LangBar.  See http://b/2260057 for details.
-  if (!SystemUtil::IsVistaOrLater()) {
-    return false;
-  }
-
   // We always use a non-theme icon for a context menu icon on the LangBar
   // unless the current display mode is 32-bpp.  We cannot assume we can
   // display a 32-bpp icon for a context menu icon on the LangBar unless the
@@ -567,7 +552,7 @@ STDMETHODIMP TipLangBarButton::QueryInterfaceBase(
   return E_NOINTERFACE;
 }
 
-void TipLangBarButton::SetDescription(const wstring &description) {
+void TipLangBarButton::SetDescription(const std::wstring &description) {
   ::StringCchCopy(item_info_.szDescription,
                   arraysize(item_info_.szDescription),
                   description.c_str());

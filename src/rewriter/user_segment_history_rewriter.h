@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,17 +30,16 @@
 #ifndef MOZC_REWRITER_USER_SEGMENT_HISTORY_REWRITER_H_
 #define MOZC_REWRITER_USER_SEGMENT_HISTORY_REWRITER_H_
 
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "rewriter/rewriter_interface.h"
 #include "converter/segments.h"
+#include "dictionary/pos_group.h"
+#include "dictionary/pos_matcher.h"
+#include "rewriter/rewriter_interface.h"
 
 namespace mozc {
-class ConversionRequest;
-class POSMatcher;
-class PosGroup;
-
 namespace storage {
 class LRUStorage;
 }  // namespace storage
@@ -53,8 +52,8 @@ class UserSegmentHistoryRewriter : public RewriterInterface {
     const Segment::Candidate *candidate;
   };
 
-  UserSegmentHistoryRewriter(const POSMatcher *pos_matcher,
-                             const PosGroup *pos_group);
+  UserSegmentHistoryRewriter(const dictionary::POSMatcher *pos_matcher,
+                             const dictionary::PosGroup *pos_group);
   virtual ~UserSegmentHistoryRewriter();
 
   virtual bool Rewrite(const ConversionRequest &request,
@@ -67,7 +66,8 @@ class UserSegmentHistoryRewriter : public RewriterInterface {
   virtual void Clear();
 
  private:
-  bool IsAvailable(const Segments &segments) const;
+  bool IsAvailable(const ConversionRequest &request,
+                   const Segments &segments) const;
   bool GetScore(const Segments &segments,
                 size_t segment_index,
                 int candidate_index,
@@ -94,13 +94,13 @@ class UserSegmentHistoryRewriter : public RewriterInterface {
                     const string &base_key,
                     const string &base_value,
                     string *value) const;
-  bool SortCandidates(const vector<ScoreType> &sorted_scores,
+  bool SortCandidates(const std::vector<ScoreType> &sorted_scores,
                       Segment *segment) const;
 
 
-  scoped_ptr<mozc::storage::LRUStorage> storage_;
-  const POSMatcher *pos_matcher_;
-  const PosGroup *pos_group_;
+  std::unique_ptr<storage::LRUStorage> storage_;
+  const dictionary::POSMatcher *pos_matcher_;
+  const dictionary::PosGroup *pos_group_;
 };
 
 }  // namespace mozc

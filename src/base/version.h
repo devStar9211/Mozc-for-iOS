@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,32 +37,25 @@ namespace mozc {
 
 class Version {
  public:
-  enum BuildType {
-    CONTINUOUS = 1,
-    RELEASE = 2,
-  };
-
   // Get current mozc version (former called MOZC_VERSION)
   static string GetMozcVersion();
 
 #ifdef OS_WIN
-  // Get current mozc version (former called MOZC_VERSION) by wstring
-  static wstring GetMozcVersionW();
+  // Get current mozc version (former called MOZC_VERSION) by std::wstring
+  static std::wstring GetMozcVersionW();
 #endif
 
   static int GetMozcVersionMajor();
   static int GetMozcVersionMinor();
   static int GetMozcVersionBuildNumber();
   static int GetMozcVersionRevision();
+  static const char *GetMozcEngineVersion();
 
   // Returns true if lhs is less than rhs in the lexical order.
   // CompareVersion("1.2.3.4", "1.2.3.4") => false
   // CompareVersion("1.2.3.4", "5.2.3.4") => true
   // CompareVersion("1.25.3.4", "1.2.3.4") => false
   static bool CompareVersion(const string &lhs, const string &rhs);
-
-  // Get the current build type.
-  static BuildType GetMozcBuildType();
 
 
  private:

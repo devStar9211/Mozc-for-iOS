@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,10 +27,10 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "base/string_piece.h"
+
 #include <string>
 
-#include "base/string_piece.h"
-#include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
 
 namespace mozc {
@@ -164,14 +164,11 @@ TEST(StringPieceTest, CheckSTL) {
   ASSERT_TRUE(e.empty());
   ASSERT_TRUE(e.begin() == e.end());
 
-  d.clear();
+  d = StringPiece();
   ASSERT_SIZE_EQ(d.size(), 0);
   ASSERT_TRUE(d.empty());
   ASSERT_TRUE(d.data() == NULL);
   ASSERT_TRUE(d.begin() == d.end());
-
-  ASSERT_GE(a.max_size(), a.capacity());
-  ASSERT_GE(a.capacity(), a.size());
 
   char buf[4] = { '%', '%', '%', '%' };
   ASSERT_SIZE_EQ(a.copy(buf, 4), 4);
@@ -420,9 +417,9 @@ TEST(StringPieceTest, CheckSTL) {
   ASSERT_EQ(a.substr(0), a);
   ASSERT_EQ(a.substr(3, 2), "de");
   // empty string nonsense
+  ASSERT_EQ(d.substr(0, 99), e);
   ASSERT_EQ(a.substr(99, 2), e);
   ASSERT_EQ(d.substr(99), e);
-  ASSERT_EQ(d.substr(0, 99), e);
   ASSERT_EQ(d.substr(99, 99), e);
 }
 
@@ -434,25 +431,6 @@ TEST(StringPieceTest, CheckCustom) {
   StringPiece b(s1);
   StringPiece e;
   string s2;
-
-  // CopyToString
-  a.CopyToString(&s2);
-  ASSERT_SIZE_EQ(s2.size(), 6);
-  ASSERT_EQ(s2, "foobar");
-  b.CopyToString(&s2);
-  ASSERT_SIZE_EQ(s2.size(), 7);
-  ASSERT_EQ(s1, s2);
-  e.CopyToString(&s2);
-  ASSERT_TRUE(s2.empty());
-
-  // AppendToString
-  s2.erase();
-  a.AppendToString(&s2);
-  ASSERT_SIZE_EQ(s2.size(), 6);
-  ASSERT_EQ(s2, "foobar");
-  a.AppendToString(&s2);
-  ASSERT_SIZE_EQ(s2.size(), 12);
-  ASSERT_EQ(s2, "foobarfoobar");
 
   // starts_with
   ASSERT_TRUE(a.starts_with(a));
@@ -499,37 +477,41 @@ TEST(StringPieceTest, CheckCustom) {
   ASSERT_EQ(c, e);
 
   // set
-  c.set("foobar", 6);
+  c = StringPiece("foobar", 6);
   ASSERT_EQ(c, a);
-  c.set("foobar", 0);
+  c = StringPiece("foobar", 0);
   ASSERT_EQ(c, e);
-  c.set("foobar", 7);
+  c = StringPiece("foobar", 7);
   ASSERT_NE(c, a);
 
-  c.set("foobar");
+  c = StringPiece("foobar");
   ASSERT_EQ(c, a);
-
-  c.set(static_cast<const void *>("foobar"), 6);
-  ASSERT_EQ(c, a);
-  c.set(static_cast<const void *>("foobar"), 0);
-  ASSERT_EQ(c, e);
-  c.set(static_cast<const void *>("foobar"), 7);
-  ASSERT_NE(c, a);
 
   // as_string
+  c = StringPiece("foobar", 7);
   string s3(a.as_string().c_str(), 7);
   ASSERT_EQ(c, s3);
   string s4(e.as_string());
   ASSERT_TRUE(s4.empty());
+
+  // cast to string
+  c = StringPiece("foobar");
+  ASSERT_EQ(string("foobar"), string(c));
+  c = StringPiece("foobar", 6);
+  ASSERT_EQ(string("foobar"), string(c));
+  c = StringPiece("foobarfoobar", 6);
+  ASSERT_EQ(string("foobar"), string(c));
+  string s5 = string(e);
+  ASSERT_TRUE(s5.empty());
 }
 
 TEST(StringPieceTest, CheckNULL) {
   // we used to crash here, but now we don't.
-  StringPiece s(NULL);
+  StringPiece s;
   ASSERT_EQ(static_cast<const char *>(NULL), s.data());
   ASSERT_SIZE_EQ(s.size(), 0);
 
-  s.set(NULL);
+  s = StringPiece(NULL);
   ASSERT_EQ(static_cast<const char *>(NULL), s.data());
   ASSERT_SIZE_EQ(s.size(), 0);
 }
@@ -570,14 +552,14 @@ TEST(StringPieceTest, Constructors) {
   ASSERT_EQ("12345", StringPiece("12345", 5));
 
   // Tests for StringPiece(const StringPiece, size_type)
-  ASSERT_EQ("45", StringPiece(StringPiece("12345"), 3));
-  ASSERT_EQ("12345", StringPiece(StringPiece("12345"), 0));
-  ASSERT_EQ("", StringPiece(StringPiece("12345"), 5));
+  ASSERT_EQ("45", StringPiece("12345").substr(3));
+  ASSERT_EQ("12345", StringPiece("12345").substr(0));
+  ASSERT_EQ("", StringPiece("12345").substr(5));
 
   // Tests for StringPiece(const StringPiece, size_type, size_type)
-  ASSERT_EQ("234", StringPiece("12345", 1, 3));
-  ASSERT_EQ("2345", StringPiece("12345", 1, 300));
-  ASSERT_EQ("", StringPiece("12345", 1, 0));
+  ASSERT_EQ("234", StringPiece("12345").substr(1, 3));
+  ASSERT_EQ("2345", StringPiece("12345").substr(1, 300));
+  ASSERT_EQ("", StringPiece("12345").substr(1, 0));
 }
 
 }  // namespace mozc

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,17 +31,17 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlcom.h>
 #include <atlstr.h>
 #include <msctf.h>
 
 #include <string>
 
+#include "base/logging.h"
 #include "base/util.h"
-#include "renderer/renderer_command.pb.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
+#include "protocol/renderer_command.pb.h"
 #include "win32/base/conversion_mode_util.h"
 #include "win32/base/input_state.h"
 #include "win32/tip/tip_dll_module.h"
@@ -339,7 +339,7 @@ class TipUiElementDelegateImpl : public TipUiElementDelegate {
     if (visible_index >= list.candidates_size()) {
       return E_FAIL;
     }
-    wstring wide_text;
+    std::wstring wide_text;
     Util::UTF8ToWide(list.candidates(visible_index).value(), &wide_text);
     *text = CComBSTR(wide_text.size(), wide_text.data()).Detach();
     return S_OK;

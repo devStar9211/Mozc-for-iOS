@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -28,45 +28,55 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-__author__ = "manabe"
+"""Generate zero query data file for number suffixes."""
 
-import sys
+from collections import defaultdict
+import optparse
+
+from prediction import gen_zero_query_util as util
 
 
-def EscapeString(result):
-  return '"' + result.encode('string_escape') + '"'
+def ReadZeroQueryNumberData(input_stream):
+  """Reads zero query number data from stream and returns zero query data."""
+  zero_query_dict = defaultdict(list)
+
+  for line in input_stream:
+    if line.startswith('#'):
+      continue
+    line = line.rstrip('\r\n')
+    if not line:
+      continue
+
+    tokens = line.split('\t')
+    key = tokens[0]
+    values = tokens[1].split(',')
+
+    for value in values:
+      zero_query_dict[key].append(
+          util.ZeroQueryEntry(util.ZERO_QUERY_TYPE_NUMBER_SUFFIX,
+                              value, util.EMOJI_TYPE_NONE, 0))
+  return zero_query_dict
+
+
+def ParseOption():
+  """Parses command line options."""
+  parser = optparse.OptionParser()
+  parser.add_option('--input', dest='input', help='Input file path')
+  parser.add_option('--output_token_array', dest='output_token_array',
+                    help='Output token array file path')
+  parser.add_option('--output_string_array', dest='output_string_array',
+                    help='Output string array file path')
+  return parser.parse_args()[0]
 
 
 def main():
-  print "#ifndef MOZC_PREDICTION_ZERO_QUERY_NUM_DATA_H_"
-  print "#define MOZC_PREDICTION_ZERO_QUERY_NUM_DATA_H_"
-  print "namespace mozc {"
-  print "namespace {"
-
-  count = 0
-  for line in open(sys.argv[1], "r"):
-    if line.startswith("#"):
-      continue
-
-    line = line.rstrip("\r\n")
-    if line == "":
-      continue
-
-    fields = line.split("\t")
-    key = fields[0]
-    values = [key] + fields[1].split(",")
-    print "const char *ZeroQueryNum%d[] = {" % count
-    print "  " + ", ".join([EscapeString(s) for s in values] + ["0"])
-    print "};"
-    count += 1
-
-  print "}  // namespace"
-  print "const char **ZeroQueryNum[] = {"
-  print "  " + ", ".join(["ZeroQueryNum%d" % c for c in range(count)] + ["0"])
-  print "};"
-  print "}  // namespace mozc"
-  print "#endif  // MOZC_PREDICTION_ZERO_QUERY_NUM_DATA_H_"
+  options = ParseOption()
+  with open(options.input, 'r') as input_stream:
+    zero_query_dict = ReadZeroQueryNumberData(input_stream)
+  util.WriteZeroQueryData(zero_query_dict,
+                          options.output_token_array,
+                          options.output_string_array)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   main()

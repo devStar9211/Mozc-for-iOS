@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -39,8 +39,8 @@
 #include "base/port.h"
 #include "base/protobuf/descriptor.h"
 #include "base/util.h"
-#include "session/commands.pb.h"
-#include "session/key_parser.h"
+#include "composer/key_parser.h"
+#include "protocol/commands.pb.h"
 
 namespace mozc {
 namespace emacs {
@@ -51,13 +51,13 @@ void PrintField(
     const protobuf::Message &message,
     const protobuf::Reflection &reflection,
     const protobuf::FieldDescriptor &field,
-    vector<string>* output);
+    std::vector<string>* output);
 void PrintFieldValue(
     const protobuf::Message &message,
     const protobuf::Reflection &reflection,
     const protobuf::FieldDescriptor &field,
     int index,
-    vector<string>* output);
+    std::vector<string>* output);
 }  // namespace
 
 
@@ -77,7 +77,7 @@ void ParseInputLine(
   CHECK(session_id);
   CHECK(input);
 
-  vector<string> tokens;
+  std::vector<string> tokens;
   if (!TokenizeSExpr(line, &tokens) ||
       tokens.size() < 4 ||  // Must be at least '(' EVENT_ID COMMAND ')'.
       tokens.front() != "(" || tokens.back() != ")") {
@@ -132,7 +132,7 @@ void ParseInputLine(
         ErrorExit(kErrWrongTypeArgument, "Session ID is not an integer");
       }
       // Parse keys.
-      vector<string> keys;
+      std::vector<string> keys;
       string key_string;
       for (int i = 4; i < tokens.size() - 1; ++i) {
         if (isdigit(tokens[i][0])) {  // Numeric key code
@@ -181,11 +181,11 @@ void ParseInputLine(
 // This function never outputs newlines except for ones in strings.
 void PrintMessage(
     const protobuf::Message &message,
-    vector<string>* output) {
+    std::vector<string>* output) {
   DCHECK(output);
 
   const protobuf::Reflection *reflection = message.GetReflection();
-  vector<const protobuf::FieldDescriptor*> fields;
+  std::vector<const protobuf::FieldDescriptor*> fields;
   reflection->ListFields(message, &fields);
 
   output->push_back("(");
@@ -204,7 +204,7 @@ void PrintMessage(
 string NormalizeSymbol(const string &symbol) {
   string s = symbol;
   mozc::Util::LowerString(&s);
-  replace(s.begin(), s.end(), '_', '-');
+  std::replace(s.begin(), s.end(), '_', '-');
   return s;
 }
 
@@ -276,10 +276,10 @@ bool UnquoteString(const string &input, string *output) {
 // This function implements very simple tokenization and is NOT conforming to
 // the definition of S expression.  For example, this function does not return
 // an error for the input "\'".
-bool TokenizeSExpr(const string &input, vector<string> *output) {
+bool TokenizeSExpr(const string &input, std::vector<string> *output) {
   DCHECK(output);
 
-  vector<string> results;
+  std::vector<string> results;
 
   for (string::const_iterator i = input.begin(); i != input.end(); ++i) {
     if (isspace(*i)) { continue; }  // Skip white space.
@@ -381,7 +381,7 @@ void PrintField(
     const protobuf::Message &message,
     const protobuf::Reflection &reflection,
     const protobuf::FieldDescriptor &field,
-    vector<string>* output) {
+    std::vector<string>* output) {
   output->push_back("(");
   output->push_back(NormalizeSymbol(field.name()));
 
@@ -422,7 +422,7 @@ void PrintFieldValue(
     const protobuf::Reflection &reflection,
     const protobuf::FieldDescriptor &field,
     int index,
-    vector<string>* output) {
+    std::vector<string>* output) {
 #define GET_FIELD_VALUE(METHOD_TYPE)                                \
     (field.is_repeated() ?                                          \
      reflection.GetRepeated##METHOD_TYPE(message, &field, index) :  \
@@ -443,10 +443,10 @@ void PrintFieldValue(
     // integer values have never got over 28-bit yet.
     PRINT_FIELD_VALUE(INT32, Int32, int32, "%d");
     PRINT_FIELD_VALUE(INT64, Int64, int64,
-                      "\"%" GG_LL_FORMAT "d\"");  // as a string
+                      "\"%" MOZC_PRId64 "\"");  // as a string
     PRINT_FIELD_VALUE(UINT32, UInt32, uint32, "%u");
     PRINT_FIELD_VALUE(UINT64, UInt64, uint64,
-                      "\"%" GG_LL_FORMAT "u\"");  // as a string
+                      "\"%" MOZC_PRIu64 "\"");  // as a string
     PRINT_FIELD_VALUE(DOUBLE, Double, double, "%f");
     PRINT_FIELD_VALUE(FLOAT, Float, float, "%f");
 #undef PRINT_FIELD_VALUE

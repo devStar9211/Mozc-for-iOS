@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
 #include "renderer/unix/font_spec.h"
 
 #include "base/logging.h"
-#include "renderer/renderer_style.pb.h"
+#include "protocol/renderer_style.pb.h"
 #include "renderer/renderer_style_handler.h"
 #include "renderer/unix/const.h"
 

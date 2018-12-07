@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,81 +30,41 @@
 #include "dictionary/system/value_dictionary.h"
 
 #include <limits>
+#include <memory>
+#include <queue>
 #include <string>
 
 #include "base/logging.h"
+#include "base/mmap.h"
 #include "base/port.h"
 #include "base/string_piece.h"
-#include "base/system_util.h"
 #include "dictionary/dictionary_token.h"
+#include "dictionary/file/codec_factory.h"
 #include "dictionary/file/dictionary_file.h"
 #include "dictionary/pos_matcher.h"
 #include "dictionary/system/codec_interface.h"
 #include "storage/louds/louds_trie.h"
 
+using mozc::storage::louds::LoudsTrie;
+
 namespace mozc {
 namespace dictionary {
 
-using mozc::storage::louds::LoudsTrie;
-
-ValueDictionary::ValueDictionary(const POSMatcher& pos_matcher)
-    : value_trie_(new LoudsTrie),
-      dictionary_file_(new DictionaryFile),
+ValueDictionary::ValueDictionary(const POSMatcher &pos_matcher,
+                                 const LoudsTrie *value_trie)
+    : value_trie_(value_trie),
       codec_(SystemDictionaryCodecFactory::GetCodec()),
       suggestion_only_word_id_(pos_matcher.GetSuggestOnlyWordId()) {
 }
 
 ValueDictionary::~ValueDictionary() {}
 
-// static
-ValueDictionary *ValueDictionary::CreateValueDictionaryFromFile(
-    const POSMatcher& pos_matcher, const string &filename) {
-  scoped_ptr<ValueDictionary> instance(new ValueDictionary(pos_matcher));
-  DCHECK(instance.get());
-  if (!instance->dictionary_file_->OpenFromFile(filename)) {
-    LOG(ERROR) << "Failed to open system dictionary file";
-    return NULL;
-  }
-  if (!instance->OpenDictionaryFile()) {
-    LOG(ERROR) << "Failed to create value dictionary";
-    return NULL;
-  }
-  return instance.release();
-}
-
-// static
-ValueDictionary *ValueDictionary::CreateValueDictionaryFromImage(
-    const POSMatcher& pos_matcher, const char *ptr, int len) {
-  // Make the dictionary not to be paged out.
-  // We don't check the return value because the process doesn't necessarily
-  // has the priviledge to mlock.
-  // Note that we don't munlock the space because it's always better to keep
-  // the singleton system dictionary paged in as long as the process runs.
-  SystemUtil::MaybeMLock(ptr, len);
-  scoped_ptr<ValueDictionary> instance(new ValueDictionary(pos_matcher));
-  DCHECK(instance.get());
-  if (!instance->dictionary_file_->OpenFromImage(ptr, len)) {
-    LOG(ERROR) << "Failed to open system dictionary file";
-    return NULL;
-  }
-  if (!instance->OpenDictionaryFile()) {
-    LOG(ERROR) << "Failed to create value dictionary";
-    return NULL;
-  }
-  return instance.release();
-}
-
-bool ValueDictionary::OpenDictionaryFile() {
-  int image_len = 0;
-  const unsigned char *value_image =
-      reinterpret_cast<const uint8 *>(dictionary_file_->GetSection(
-          codec_->GetSectionNameForValue(), &image_len));
-  CHECK(value_image) << "can not find value section";
-  if (!(value_trie_->Open(value_image))) {
-    DLOG(ERROR) << "Cannot open value trie";
-    return false;
-  }
-  return true;
+// ValueDictionary is supposed to use the same data with SystemDictionary
+// and SystemDictionary::HasKey should return the same result with
+// ValueDictionary::HasKey.  So we can skip the actual logic of HasKey
+// and return just false.
+bool ValueDictionary::HasKey(StringPiece key) const {
+  return false;
 }
 
 // ValueDictionary is supposed to use the same data with SystemDictionary
@@ -120,92 +80,104 @@ namespace {
 // A version of the above function for Token.
 inline void FillToken(const uint16 suggestion_only_word_id,
                       StringPiece key, Token *token) {
-  key.CopyToString(&token->key);
+  token->key.assign(key.data(), key.size());
   token->value = token->key;
   token->cost = 10000;
   token->lid = token->rid = suggestion_only_word_id;
   token->attributes = Token::NONE;
 }
 
-// Converts a value of SystemDictionary::Callback::ResultType to the
-// corresponding value of LoudsTrie::Callback::ResultType.
-inline LoudsTrie::Callback::ResultType ConvertResultType(
-    const DictionaryInterface::Callback::ResultType result) {
-  switch (result) {
-    case DictionaryInterface::Callback::TRAVERSE_DONE:
-      return LoudsTrie::Callback::SEARCH_DONE;
-    case DictionaryInterface::Callback::TRAVERSE_NEXT_KEY:
-    case DictionaryInterface::Callback::TRAVERSE_CONTINUE:
-      return LoudsTrie::Callback::SEARCH_CONTINUE;
-    case DictionaryInterface::Callback::TRAVERSE_CULL:
-      return LoudsTrie::Callback::SEARCH_CULL;
-    default:
-      LOG(DFATAL) << "Enum value " << result << " cannot be converted";
-      return LoudsTrie::Callback::SEARCH_DONE;  // dummy
+inline DictionaryInterface::Callback::ResultType HandleTerminalNode(
+    const LoudsTrie &value_trie,
+    const SystemDictionaryCodecInterface &codec,
+    const uint16 suggestion_only_word_id,
+    const LoudsTrie::Node &node,
+    DictionaryInterface::Callback *callback,
+    char *encoded_value_buffer,
+    string *value,
+    Token *token) {
+  const StringPiece encoded_value =
+      value_trie.RestoreKeyString(node, encoded_value_buffer);
+
+  value->clear();
+  codec.DecodeValue(encoded_value, value);
+  const DictionaryInterface::Callback::ResultType result =
+      callback->OnKey(*value);
+  if (result != DictionaryInterface::Callback::TRAVERSE_CONTINUE) {
+    return result;
   }
+
+  FillToken(suggestion_only_word_id, *value, token);
+  return callback->OnToken(*value, *value, *token);
 }
-
-class PredictiveTraverser : public LoudsTrie::Callback {
- public:
-  PredictiveTraverser(const SystemDictionaryCodecInterface *codec,
-                      const uint16 suggestion_only_word_id,
-                      DictionaryInterface::Callback *callback)
-      : codec_(codec),
-        suggestion_only_word_id_(suggestion_only_word_id),
-        callback_(callback) {}
-  virtual ~PredictiveTraverser() {}
-
-  virtual ResultType Run(const char *key_begin, size_t len, int key_id) {
-    // The decoded key of value trie corresponds to value (surface form).
-    string value;
-    codec_->DecodeValue(StringPiece(key_begin, len), &value);
-    DictionaryInterface::Callback::ResultType result = callback_->OnKey(value);
-    if (result != DictionaryInterface::Callback::TRAVERSE_CONTINUE) {
-      return ConvertResultType(result);
-    }
-    FillToken(suggestion_only_word_id_, value, &token_);
-    result = callback_->OnToken(value, value, token_);
-    return ConvertResultType(result);
-  }
-
- private:
-  const SystemDictionaryCodecInterface *codec_;
-  const uint16 suggestion_only_word_id_;
-  DictionaryInterface::Callback *callback_;
-  Token token_;
-
-  DISALLOW_COPY_AND_ASSIGN(PredictiveTraverser);
-};
 
 }  // namespace
 
 void ValueDictionary::LookupPredictive(
     StringPiece key,
-    bool,  // use_kana_modifier_insensitive_lookup
+    const ConversionRequest &conversion_request,
     Callback *callback) const {
   // Do nothing for empty key, although looking up all the entries with empty
   // string seems natural.
   if (key.empty()) {
     return;
   }
-  string lookup_key_str;
-  codec_->EncodeValue(key, &lookup_key_str);
-  DCHECK(value_trie_.get() != NULL);
-  PredictiveTraverser traverser(codec_, suggestion_only_word_id_, callback);
-  value_trie_->PredictiveSearch(lookup_key_str.c_str(), &traverser);
+  string encoded_key;
+  codec_->EncodeValue(key, &encoded_key);
+
+  LoudsTrie::Node node;
+  if (!value_trie_->Traverse(encoded_key, &node)) {
+    return;
+  }
+
+  char encoded_value_buffer[LoudsTrie::kMaxDepth + 1];
+  string value;
+  value.reserve(key.size() * 2);
+  Token token;
+
+  // Traverse subtree rooted at |node|.
+  std::queue<LoudsTrie::Node> queue;
+  queue.push(node);
+  do {
+    node = queue.front();
+    queue.pop();
+
+    if (value_trie_->IsTerminalNode(node)) {
+      switch (HandleTerminalNode(*value_trie_, *codec_,
+                                 suggestion_only_word_id_,
+                                 node, callback, encoded_value_buffer,
+                                 &value, &token)) {
+        case Callback::TRAVERSE_DONE:
+          return;
+        case Callback::TRAVERSE_CULL:
+          continue;
+        default:
+          break;
+      }
+    }
+
+    for (value_trie_->MoveToFirstChild(&node);
+         value_trie_->IsValidNode(node);
+         value_trie_->MoveToNextSibling(&node)) {
+      queue.push(node);
+    }
+  } while (!queue.empty());
 }
 
 void ValueDictionary::LookupPrefix(
-    StringPiece key, bool use_kana_modifier_insensitive_lookup,
+    StringPiece key,
+    const ConversionRequest &conversion_request,
     Callback *callback) const {}
 
-void ValueDictionary::LookupExact(StringPiece key, Callback *callback) const {
+void ValueDictionary::LookupExact(
+    StringPiece key,
+    const ConversionRequest &conversion_request,
+    Callback *callback) const {
   if (key.empty()) {
-    // For empty string, return NULL for compatibility reason; see the comment
-    // above.
+    // For empty string, return nothing for compatibility reason; see the
+    // comment above.
     return;
   }
-  DCHECK(value_trie_.get() != NULL);
 
   string lookup_key_str;
   codec_->EncodeValue(key, &lookup_key_str);
@@ -220,9 +192,10 @@ void ValueDictionary::LookupExact(StringPiece key, Callback *callback) const {
   callback->OnToken(key, key, token);
 }
 
-void ValueDictionary::LookupReverse(StringPiece str,
-                                    NodeAllocatorInterface *allocator,
-                                    Callback *callback) const {
+void ValueDictionary::LookupReverse(
+    StringPiece str,
+    const ConversionRequest &conversion_request,
+    Callback *callback) const {
 }
 
 }  // namespace dictionary

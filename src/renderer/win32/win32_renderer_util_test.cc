@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,12 +27,11 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <Shlwapi.h>
+#include "renderer/win32/win32_renderer_util.h"
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlapp.h>
 #include <atlgdi.h>
 #include <atlmisc.h>
@@ -41,9 +40,8 @@
 #include "base/mmap.h"
 #include "base/util.h"
 #include "base/win_font_test_helper.h"
-#include "renderer/renderer_command.pb.h"
+#include "protocol/renderer_command.pb.h"
 #include "renderer/win32/win32_font_util.h"
-#include "renderer/win32/win32_renderer_util.h"
 #include "testing/base/public/gunit.h"
 
 // Following functions should be placed in global namespace for Koenig look-up
@@ -146,7 +144,7 @@ const wchar_t kWindowClassName[] = L"Mozc: Default Window Class Name";
   } while (false)
 
 WindowPositionEmulator *CreateWindowEmulator(
-    const wstring &class_name, const RECT &window_rect,
+    const std::wstring &class_name, const RECT &window_rect,
     const POINT &client_area_offset, const SIZE &client_area_size,
     double scale_factor, HWND *hwnd) {
   WindowPositionEmulator *emulator = WindowPositionEmulator::Create();
@@ -167,7 +165,7 @@ WindowPositionEmulator *CreateWindowEmulatorWithDPIScaling(
 }
 
 WindowPositionEmulator *CreateWindowEmulatorWithClassName(
-    const wstring &class_name, HWND *hwnd) {
+    const std::wstring &class_name, HWND *hwnd) {
   const CPoint kClientOffset(8, 42);
   const CSize kClientSize(2000, 1000);
   const CRect kWindowRect(500, 500, 2516, 1550);
@@ -287,7 +285,7 @@ class Win32RendererUtilTest : public testing::Test {
   }
 
   static CLogFont GetFont(bool is_proportional, bool is_vertical) {
-    wstring font_face;
+    std::wstring font_face;
     Util::UTF8ToWide((is_proportional ? GetPropotionalFontFaceForTest()
                                       : GetMonospacedFontFaceForTest()),
                      &font_face);
@@ -323,8 +321,8 @@ class Win32RendererUtilTest : public testing::Test {
     return SystemPreferenceFactory::CreateMock(font);
   }
 
-  static wstring GetTestMessageWithCompositeGlyph(int num_repeat) {
-    wstring message;
+  static std::wstring GetTestMessageWithCompositeGlyph(int num_repeat) {
+    std::wstring message;
     for (size_t i = 0; i < num_repeat; ++i) {
       // "ぱ"
       message += L'\u3071';
@@ -333,28 +331,19 @@ class Win32RendererUtilTest : public testing::Test {
     return message;
   }
 
-  static wstring GetTestMessageForMonospaced() {
-    wstring w_path;
-    // "熊本県阿蘇郡南阿蘇村大字中松南阿蘇水の生まれる里白水高原駅"
-    const char kMessage[] =
-        "\xe7\x86\x8a\xe6\x9c\xac\xe7\x9c\x8c\xe9\x98\xbf\xe8\x98\x87\xe9\x83"
-        "\xa1\xe5\x8d\x97\xe9\x98\xbf\xe8\x98\x87\xe6\x9d\x91\xe5\xa4\xa7\xe5"
-        "\xad\x97\xe4\xb8\xad\xe6\x9d\xbe\xe5\x8d\x97\xe9\x98\xbf\xe8\x98\x87"
-        "\xe6\xb0\xb4\xe3\x81\xae\xe7\x94\x9f\xe3\x81\xbe\xe3\x82\x8c\xe3\x82"
-        "\x8b\xe9\x87\x8c\xe7\x99\xbd\xe6\xb0\xb4\xe9\xab\x98\xe5\x8e\x9f\xe9"
-        "\xa7\x85";
-    wstring w_message;
+  static std::wstring GetTestMessageForMonospaced() {
+    std::wstring w_path;
+    const char kMessage[] = "熊本県阿蘇郡南阿蘇村大字中松南阿蘇水の生まれる里白水高原駅";
+    std::wstring w_message;
     Util::UTF8ToWide(kMessage, &w_message);
     return w_message;
   }
 
-  static wstring GetTestMessageForProportional() {
-    wstring w_path;
-    // "This open-source project originates from Google 日本語入力."
+  static std::wstring GetTestMessageForProportional() {
+    std::wstring w_path;
     const char kMessage[] =
-        "This open-source project originates from Google "
-        "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e\xe5\x85\xa5\xe5\x8a\x9b.";
-    wstring w_message;
+        "This open-source project originates from Google 日本語入力.";
+    std::wstring w_message;
     Util::UTF8ToWide(kMessage, &w_message);
     return w_message;
   }
@@ -378,52 +367,37 @@ class Win32RendererUtilTest : public testing::Test {
       {
         Segment *segment = preedit->add_segment();
         segment->set_annotation(Segment::UNDERLINE);
-        // "これは"
-        segment->set_value("\343\201\223\343\202\214\343\201\257");
+        segment->set_value("これは");
         segment->set_value_length(3);
-        // "これは"
-        segment->set_key(
-            "\343\201\223\343\202\214\343\201\257");
+        segment->set_key("これは");
       }
       {
         Segment *segment = preedit->add_segment();
         segment->set_annotation(Segment::UNDERLINE);
-        // "、"
-        segment->set_value("\343\200\201");
+        segment->set_value("、");
         segment->set_value_length(1);
-        // "、"
-        segment->set_key("\343\200\201");
+        segment->set_key("、");
       }
       {
         Segment *segment = preedit->add_segment();
         segment->set_annotation(Segment::HIGHLIGHT);
-        // "Google"
         segment->set_value("Google");
         segment->set_value_length(6);
-        // "Google"
         segment->set_key("Google");
       }
       {
         Segment *segment = preedit->add_segment();
         segment->set_annotation(Segment::UNDERLINE);
-        // "日本語入力の"
-        segment->set_value("\346\227\245\346\234\254\350\252\236"
-                           "\345\205\245\345\212\233\343\201\256");
+        segment->set_value("日本語入力の");
         segment->set_value_length(6);
-        // "にほんごにゅうりょくの"
-        segment->set_key(
-            "\343\201\253\343\201\273\343\202\223\343\201\224\343\201\253\343"
-            "\202\205\343\201\206\343\202\212\343\202\207\343\201\217\343\201"
-            "\256");
+        segment->set_key("にほんごにゅうりょくの");
       }
       {
         Segment *segment = preedit->add_segment();
         segment->set_annotation(Segment::UNDERLINE);
-        // "Testです"
-        segment->set_value("Test\343\201\247\343\201\231");
+        segment->set_value("Testです");
         segment->set_value_length(6);
-        // "Testです"
-        segment->set_key("Test\343\201\247\343\201\231");
+        segment->set_key("Testです");
       }
       preedit->set_highlighted_position(3);
 
@@ -434,25 +408,16 @@ class Win32RendererUtilTest : public testing::Test {
         {
           Candidate *candidate = candidates->add_candidate();
           candidate->set_index(0);
-          // "Google"
-          candidate->set_value(
-              "Google");
+          candidate->set_value("Google");
           Annotation *annotation = candidate->mutable_annotation();
-          // "[半] アルファベット"
-          annotation->set_description(
-              "[\345\215\212] \343\202\242\343\203\253\343\203\225\343\202\241"
-              "\343\203\231\343\203\203\343\203\210\202\277\343\202\253\343"
-              "\203\212");
+          annotation->set_description("[半] アルファベット");
           annotation->set_shortcut("1");
           candidate->set_id(0);
         }
         {
           Candidate *candidate = candidates->add_candidate();
           candidate->set_index(1);
-          // "そのほかの文字種"
-          candidate->set_value(
-              "\343\201\235\343\201\256\343\201\273\343\201\213"
-              "\343\201\256\346\226\207\345\255\227\347\250\256");
+          candidate->set_value("そのほかの文字種");
           Annotation *annotation = candidate->mutable_annotation();
           annotation->set_shortcut("2");
           candidate->set_id(-11);
@@ -490,17 +455,9 @@ class Win32RendererUtilTest : public testing::Test {
         {
           Segment *segment = preedit->add_segment();
           segment->set_annotation(Segment::UNDERLINE);
-          // "ねこを"
-          // "かいたい"
-          segment->set_value(
-              "\343\201\255\343\201\223\343\202\222"
-              "\343\201\213\343\201\204\343\201\237\343\201\204");
+          segment->set_value("ねこをかいたい");
           segment->set_value_length(7);
-          // "ねこを"
-          // "かいたい"
-          segment->set_key(
-              "\343\201\255\343\201\223\343\202\222"
-              "\343\201\213\343\201\204\343\201\237\343\201\204");
+          segment->set_key("ねこをかいたい");
         }
       }
       {
@@ -509,11 +466,7 @@ class Win32RendererUtilTest : public testing::Test {
         {
           Candidate *candidate = candidates->add_candidate();
           candidate->set_index(0);
-          // "猫を"
-          // "飼いたい"
-          candidate->set_value(
-              "\347\214\253\343\202\222"
-              "\351\243\274\343\201\204\343\201\237\343\201\204");
+          candidate->set_value("猫を飼いたい");
           {
             Annotation *annotation = candidate->mutable_annotation();
             annotation->set_description("Real-time Conversion");
@@ -556,8 +509,7 @@ class Win32RendererUtilTest : public testing::Test {
         segment->set_annotation(Segment::UNDERLINE);
         string value;
         for (size_t i = 0; i < num_characters; ++i) {
-          // "あ"
-          value.append("\343\201\202");
+          value.append("あ");
         }
         segment->set_value(value);
         segment->set_value_length(num_characters);
@@ -572,9 +524,10 @@ class Win32RendererUtilTest : public testing::Test {
   // Initializes |command| for unit tests of caret.  Parameters to be set are
   // based on an actual application which supports both horizontal and vertical
   // writing.
-  static void SetRenderereCommandForSurrogatePair(
-      bool use_proportional_font, bool is_vertical, int cursor_offset,
-      HWND hwnd, RendererCommand *command) {
+  static void SetRenderereCommandForSurrogatePair(bool use_proportional_font,
+                                                  bool is_vertical,
+                                                  int cursor_offset, HWND hwnd,
+                                                  RendererCommand *command) {
     command->Clear();
     command->set_type(RendererCommand::UPDATE);
     command->set_visible(true);
@@ -589,38 +542,30 @@ class Win32RendererUtilTest : public testing::Test {
         {
           Segment *segment = preedit->add_segment();
           segment->set_annotation(Segment::UNDERLINE);
-          // "𠮟咤"
-          segment->set_value("\360\240\256\237\345\222\244");
+          segment->set_value("𠮟咤");
           segment->set_value_length(2);
-          // "しった"
-          segment->set_key("\343\201\227\343\201\243\343\201\237");
+          segment->set_key("しった");
         }
         {
           Segment *segment = preedit->add_segment();
           segment->set_annotation(Segment::UNDERLINE);
-          // "𠮟咤"
-          segment->set_value("\360\240\256\237\345\222\244");
+          segment->set_value("𠮟咤");
           segment->set_value_length(2);
-          // "しった"
-          segment->set_key("\343\201\227\343\201\243\343\201\237");
+          segment->set_key("しった");
         }
         {
           Segment *segment = preedit->add_segment();
           segment->set_annotation(Segment::HIGHLIGHT);
-          // "𠮟咤"
-          segment->set_value("\360\240\256\237\345\222\244");
+          segment->set_value("𠮟咤");
           segment->set_value_length(2);
-          // "しった"
-          segment->set_key("\343\201\227\343\201\243\343\201\237");
+          segment->set_key("しった");
         }
         {
           Segment *segment = preedit->add_segment();
           segment->set_annotation(Segment::UNDERLINE);
-          // "𠮟咤"
-          segment->set_value("\360\240\256\237\345\222\244");
+          segment->set_value("𠮟咤");
           segment->set_value_length(2);
-          // "しった"
-          segment->set_key("\343\201\227\343\201\243\343\201\237");
+          segment->set_key("しった");
         }
         preedit->set_highlighted_position(4);
       }
@@ -631,8 +576,7 @@ class Win32RendererUtilTest : public testing::Test {
         {
           Candidate *candidate = candidates->add_candidate();
           candidate->set_index(0);
-          // "𠮟咤"
-          candidate->set_value("\360\240\256\237\345\222\244");
+          candidate->set_value("𠮟咤");
           {
             Annotation *annotation = candidate->mutable_annotation();
             annotation->set_shortcut("1");
@@ -642,8 +586,7 @@ class Win32RendererUtilTest : public testing::Test {
         {
           Candidate *candidate = candidates->add_candidate();
           candidate->set_index(1);
-          // "知った"
-          candidate->set_value("\347\237\245\343\201\243\343\201\237");
+          candidate->set_value("知った");
           {
             Annotation *annotation = candidate->mutable_annotation();
             annotation->set_shortcut("2");
@@ -653,13 +596,10 @@ class Win32RendererUtilTest : public testing::Test {
         {
           Candidate *candidate = candidates->add_candidate();
           candidate->set_index(2);
-          // "しった"
-          candidate->set_value("\347\237\245\343\201\243\343\201\237");
+          candidate->set_value("知った");
           {
             Annotation *annotation = candidate->mutable_annotation();
-            // "ひらがな"
-            annotation->set_description(
-                "\343\201\262\343\202\211\343\201\214\343\201\252");
+            annotation->set_description("ひらがな");
             annotation->set_shortcut("3");
           }
           candidate->set_id(2);
@@ -667,14 +607,10 @@ class Win32RendererUtilTest : public testing::Test {
         {
           Candidate *candidate = candidates->add_candidate();
           candidate->set_index(3);
-          // "しった"
-          candidate->set_value("\347\237\245\343\201\243\343\201\237");
+          candidate->set_value("知った");
           {
             Annotation *annotation = candidate->mutable_annotation();
-            // "[全] カタカナ"
-            annotation->set_description(
-                "[\345\205\250] "
-                "\343\202\253\343\202\277\343\202\253\343\203\212");
+            annotation->set_description("[全] カタカナ");
             annotation->set_shortcut("4");
           }
           candidate->set_id(4);
@@ -682,10 +618,7 @@ class Win32RendererUtilTest : public testing::Test {
         {
           Candidate *candidate = candidates->add_candidate();
           candidate->set_index(4);
-          // "そのほかの文字種"
-          candidate->set_value(
-              "\343\201\235\343\201\256\343\201\273\343\201\213"
-              "\343\201\256\346\226\207\345\255\227\347\250\256");
+          candidate->set_value("そのほかの文字種");
           {
             Annotation *annotation = candidate->mutable_annotation();
             annotation->set_shortcut("5");
@@ -712,110 +645,83 @@ class Win32RendererUtilTest : public testing::Test {
             output->mutable_all_candidate_words();
         all_candidate_words->set_focused_index(0);
         {
-          CandidateWord *candidate_word =
-              all_candidate_words->add_candidates();
+          CandidateWord *candidate_word = all_candidate_words->add_candidates();
           candidate_word->set_id(0);
           candidate_word->set_index(0);
-          // "𠮟咤"
-          candidate_word->set_value("\360\240\256\237\345\222\244");
+          candidate_word->set_value("𠮟咤");
         }
         {
-          CandidateWord *candidate_word =
-              all_candidate_words->add_candidates();
+          CandidateWord *candidate_word = all_candidate_words->add_candidates();
           candidate_word->set_id(1);
           candidate_word->set_index(1);
-          // "知った"
-          candidate_word->set_value("\347\237\245\343\201\243\343\201\237");
+          candidate_word->set_value("知った");
         }
         {
-          CandidateWord *candidate_word =
-              all_candidate_words->add_candidates();
+          CandidateWord *candidate_word = all_candidate_words->add_candidates();
           candidate_word->set_id(2);
           candidate_word->set_index(2);
-          // "しっ"
-          candidate_word->set_key("\343\201\227\343\201\243");
-          // "しった"
-          candidate_word->set_value("\343\201\227\343\201\243\343\201\237");
+          candidate_word->set_key("しっ");
+          candidate_word->set_value("しった");
         }
         {
-          CandidateWord *candidate_word =
-              all_candidate_words->add_candidates();
+          CandidateWord *candidate_word = all_candidate_words->add_candidates();
           candidate_word->set_id(4);
           candidate_word->set_index(3);
-          // "シッタ"
-          candidate_word->set_value("\343\202\267\343\203\203\343\202\277");
+          candidate_word->set_value("シッタ");
         }
         {
-          CandidateWord *candidate_word =
-              all_candidate_words->add_candidates();
+          CandidateWord *candidate_word = all_candidate_words->add_candidates();
           candidate_word->set_id(-1);
           candidate_word->set_index(4);
-          // "しった"
-          candidate_word->set_value("\343\201\227\343\201\243\343\201\237");
+          candidate_word->set_value("しった");
         }
         {
-          CandidateWord *candidate_word =
-              all_candidate_words->add_candidates();
+          CandidateWord *candidate_word = all_candidate_words->add_candidates();
           candidate_word->set_id(-2);
           candidate_word->set_index(5);
-          // "シッタ"
-          candidate_word->set_value("\343\202\267\343\203\203\343\202\277");
+          candidate_word->set_value("シッタ");
         }
         {
-          CandidateWord *candidate_word =
-              all_candidate_words->add_candidates();
+          CandidateWord *candidate_word = all_candidate_words->add_candidates();
           candidate_word->set_id(-3);
           candidate_word->set_index(6);
           candidate_word->set_value("shitta");
         }
         {
-          CandidateWord *candidate_word =
-              all_candidate_words->add_candidates();
+          CandidateWord *candidate_word = all_candidate_words->add_candidates();
           candidate_word->set_id(-4);
           candidate_word->set_index(7);
           candidate_word->set_value("SHITTA");
         }
         {
-          CandidateWord *candidate_word =
-              all_candidate_words->add_candidates();
+          CandidateWord *candidate_word = all_candidate_words->add_candidates();
           candidate_word->set_id(-6);
           candidate_word->set_index(8);
           candidate_word->set_value("Shitta");
         }
         {
-          CandidateWord *candidate_word =
-              all_candidate_words->add_candidates();
+          CandidateWord *candidate_word = all_candidate_words->add_candidates();
           candidate_word->set_id(-7);
           candidate_word->set_index(9);
-          // "ｓｈｉｔｔａ"
-          candidate_word->set_value("\357\275\223\357\275\210\357\275\211"
-                                    "\357\275\224\357\275\224\357\275\201");
+          candidate_word->set_value("ｓｈｉｔｔａ");
         }
         {
-          CandidateWord *candidate_word =
-              all_candidate_words->add_candidates();
+          CandidateWord *candidate_word = all_candidate_words->add_candidates();
           candidate_word->set_id(-8);
           candidate_word->set_index(10);
-          // "ＳＨＩＴＴＡ"
-          candidate_word->set_value("\357\274\263\357\274\250\357\274\251"
-                                    "\357\274\264\357\274\264\357\274\241");
+          candidate_word->set_value("ＳＨＩＴＴＡ");
         }
         {
-          CandidateWord *candidate_word =
-              all_candidate_words->add_candidates();
+          CandidateWord *candidate_word = all_candidate_words->add_candidates();
           candidate_word->set_id(-10);
           candidate_word->set_index(11);
-          // "Ｓｈｉｔｔａ"
-          candidate_word->set_value("\357\274\263\357\275\210\357\275\211"
-                                    "\357\275\224\357\275\224\357\275\201");
+          candidate_word->set_value("Ｓｈｉｔｔａ");
         }
         {
-          CandidateWord *candidate_word =
-              all_candidate_words->add_candidates();
+          CandidateWord *candidate_word = all_candidate_words->add_candidates();
           candidate_word->set_id(-11);
           candidate_word->set_index(12);
-          // "ｼｯﾀ"
-          candidate_word->set_value("\357\275\274\357\275\257\357\276\200");
+          candidate_word->set_value("ｼｯﾀ");
         }
         all_candidate_words->set_category(commands::CONVERSION);
       }
@@ -823,149 +729,6 @@ class Win32RendererUtilTest : public testing::Test {
 
     SetApplicationInfoForTest(
         use_proportional_font, is_vertical, cursor_offset, hwnd, command);
-  }
-
-  // Verification of changes for b/3200425.
-  static void VerifyCompositionStyleBitsCompatibilityForIssue3200425(
-      bool use_deprecated_style, CompositionForm::Style style,
-      bool use_new_style, uint32 style_bits) {
-    const int kCursorOffsetX = 0;
-
-    RendererCommand command;
-
-    HWND hwnd = nullptr;
-    LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
-                             CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-    vector<CompositionWindowLayout> layouts;
-    CandidateWindowLayout candidate_layout;
-
-    CLogFont logfont;
-
-    bool result = false;
-
-    // w/ candidates, monospaced, horizontal
-    SetRenderereCommandForTest(
-        false, true, false, kCursorOffsetX, hwnd, &command);
-
-    if (use_deprecated_style) {
-      command.mutable_application_info()->mutable_composition_form()
-          ->set_deprecated_style(style);
-    } else {
-      command.mutable_application_info()->mutable_composition_form()
-          ->clear_deprecated_style();
-    }
-    if (use_new_style) {
-      command.mutable_application_info()->mutable_composition_form()
-          ->set_style_bits(style_bits);
-    } else {
-      command.mutable_application_info()->mutable_composition_form()
-          ->clear_style_bits();
-    }
-
-    EXPECT_TRUE(mozc::win32::FontUtil::ToLOGFONT(
-        command.application_info().composition_font(), &logfont));
-    layouts.clear();
-    candidate_layout.Clear();
-    result = layout_mgr.LayoutCompositionWindow(
-        command, &layouts, &candidate_layout);
-    EXPECT_TRUE(result);
-
-    ASSERT_EQ(2, layouts.size());
-
-    // The first line
-    {
-      const CompositionWindowLayout &layout = layouts.at(0);
-      EXPECT_COMPOSITION_WINDOW_LAYOUT(1868, 599, 2003, 648, 0, 0, 135, 49,
-                                       0, 0, 0, 0, 0, 0, logfont, layout);
-      {
-        // "これは"
-        const char kMsg[] = "\343\201\223\343\202\214\343\201\257";
-        wstring msg;
-        mozc::Util::UTF8ToWide(kMsg, &msg);
-        EXPECT_EQ(msg, layout.text);
-      }
-      ASSERT_EQ(1, layout.marker_layouts.size());
-
-      EXPECT_EQ(CPoint(0, 48), layout.marker_layouts[0].from);
-      EXPECT_EQ(CPoint(126, 48), layout.marker_layouts[0].to);
-      EXPECT_FALSE(layout.marker_layouts[0].highlighted);
-    }
-
-    // The second line
-    {
-      const CompositionWindowLayout &layout = layouts.at(1);
-      EXPECT_COMPOSITION_WINDOW_LAYOUT(1193, 648, 1840, 697, 0, 0, 646, 49,
-                                       0, 0, 646, 0, 647, 49, logfont, layout);
-      {
-        // "、Google日本語入力のTestです"
-        const char kMsg[] =
-            "\343\200\201Google\346\227\245\346\234\254\350\252\236\345\205\245"
-            "\345\212\233\343\201\256Test\343\201\247\343\201\231";
-        wstring msg;
-        mozc::Util::UTF8ToWide(kMsg, &msg);
-        EXPECT_EQ(msg, layout.text);
-      }
-      ASSERT_EQ(4, layout.marker_layouts.size());
-
-      EXPECT_EQ(CPoint(0, 48), layout.marker_layouts[0].from);
-      EXPECT_EQ(CPoint(36, 48), layout.marker_layouts[0].to);
-      EXPECT_FALSE(layout.marker_layouts[0].highlighted);
-      EXPECT_EQ(CPoint(45, 48), layout.marker_layouts[1].from);
-      EXPECT_EQ(CPoint(190, 48), layout.marker_layouts[1].to);
-      EXPECT_TRUE(layout.marker_layouts[1].highlighted);
-      EXPECT_EQ(CPoint(196, 48), layout.marker_layouts[2].from);
-      EXPECT_EQ(CPoint(457, 48), layout.marker_layouts[2].to);
-      EXPECT_FALSE(layout.marker_layouts[2].highlighted);
-      EXPECT_EQ(CPoint(466, 48), layout.marker_layouts[3].from);
-      EXPECT_EQ(CPoint(646, 48), layout.marker_layouts[3].to);
-      EXPECT_FALSE(layout.marker_layouts[3].highlighted);
-    }
-    EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
-        1238, 697, 1238, 648, 1839, 697, candidate_layout);
-
-    // Check other candidate positions.
-    command.mutable_output()->mutable_candidates()->set_position(0);
-    layouts.clear();
-    candidate_layout.Clear();
-    result = layout_mgr.LayoutCompositionWindow(
-        command, &layouts, &candidate_layout);
-    EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
-        1868, 648, 1868, 599, 2003, 648, candidate_layout);
-
-    command.mutable_output()->mutable_candidates()->set_position(3);
-    layouts.clear();
-    candidate_layout.Clear();
-    result = layout_mgr.LayoutCompositionWindow(
-        command, &layouts, &candidate_layout);
-    EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
-        1193, 697, 1193, 648, 1839, 697, candidate_layout);
-
-    command.mutable_output()->mutable_candidates()->set_position(10);
-    layouts.clear();
-    candidate_layout.Clear();
-    result = layout_mgr.LayoutCompositionWindow(
-        command, &layouts, &candidate_layout);
-    EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
-        1389, 697, 1389, 648, 1839, 697, candidate_layout);
-
-    command.mutable_output()->mutable_candidates()->set_position(16);
-    layouts.clear();
-    candidate_layout.Clear();
-    result = layout_mgr.LayoutCompositionWindow(
-        command, &layouts, &candidate_layout);
-    EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
-        1659, 697, 1659, 648, 1839, 697, candidate_layout);
-
-    // w/o candidates, monospaced, horizontal
-    SetRenderereCommandForTest(false, false, false, 0, hwnd, &command);
-    EXPECT_TRUE(mozc::win32::FontUtil::ToLOGFONT(
-        command.application_info().composition_font(), &logfont));
-    layouts.clear();
-    candidate_layout.Clear();
-    result = layout_mgr.LayoutCompositionWindow(
-        command, &layouts, &candidate_layout);
-    EXPECT_TRUE(result);
-    EXPECT_FALSE(candidate_layout.initialized());
   }
 
  protected:
@@ -1236,7 +999,7 @@ TEST_F(Win32RendererUtilTest, WindowPositionEmulatorTest) {
 
   // Check DPI scale: 100%
   {
-    scoped_ptr<WindowPositionEmulator> emulator(
+    std::unique_ptr<WindowPositionEmulator> emulator(
         WindowPositionEmulator::Create());
     const HWND hwnd = emulator->RegisterWindow(
         kWindowClassName, kWindowRect, kClientOffset, kClientSize, 1.0);
@@ -1260,14 +1023,14 @@ TEST_F(Win32RendererUtilTest, WindowPositionEmulatorTest) {
     EXPECT_TRUE(emulator->ClientToScreen(hwnd, &point));
     EXPECT_EQ(kWindowRect.TopLeft() + kClientOffset, point);
 
-    wstring class_name;
+    std::wstring class_name;
     EXPECT_TRUE(emulator->GetWindowClassName(hwnd, &class_name));
     EXPECT_EQ(kWindowClassName, class_name);
   }
 
   // Interestingly, the following results are independent of DPI scaling.
   {
-    scoped_ptr<WindowPositionEmulator> emulator(
+    std::unique_ptr<WindowPositionEmulator> emulator(
         WindowPositionEmulator::Create());
     const HWND hwnd = emulator->RegisterWindow(
         kWindowClassName, kWindowRect, kClientOffset, kClientSize, 10.0);
@@ -1291,7 +1054,7 @@ TEST_F(Win32RendererUtilTest, WindowPositionEmulatorTest) {
     EXPECT_TRUE(emulator->ClientToScreen(hwnd, &point));
     EXPECT_EQ(kWindowRect.TopLeft() + kClientOffset, point);
 
-    wstring class_name;
+    std::wstring class_name;
     EXPECT_TRUE(emulator->GetWindowClassName(hwnd, &class_name));
     EXPECT_EQ(kWindowClassName, class_name);
   }
@@ -1300,10 +1063,10 @@ TEST_F(Win32RendererUtilTest, WindowPositionEmulatorTest) {
 TEST_F(Win32RendererUtilTest, HorizontalProportional) {
   const CLogFont &logfont = GetFont(true, false);
 
-  vector<mozc::renderer::win32::LineLayout> line_layouts;
+  std::vector<mozc::renderer::win32::LineLayout> line_layouts;
   bool result = true;
 
-  const wstring &message = GetTestMessageForProportional();
+  const std::wstring &message = GetTestMessageForProportional();
 
   // Check if the |initial_offset| works as expected.
   result = LayoutManager::CalcLayoutWithTextWrapping(
@@ -1358,10 +1121,10 @@ TEST_F(Win32RendererUtilTest, HorizontalProportional) {
 TEST_F(Win32RendererUtilTest, VerticalProportional) {
   const CLogFont &logfont = GetFont(true, true);
 
-  vector<mozc::renderer::win32::LineLayout> line_layouts;
+  std::vector<mozc::renderer::win32::LineLayout> line_layouts;
   bool result = true;
 
-  const wstring &message = GetTestMessageForProportional();
+  const std::wstring &message = GetTestMessageForProportional();
 
   // Check if the |initial_offset| works as expected.
   result = LayoutManager::CalcLayoutWithTextWrapping(
@@ -1416,10 +1179,10 @@ TEST_F(Win32RendererUtilTest, VerticalProportional) {
 TEST_F(Win32RendererUtilTest, HorizontalMonospaced) {
   const CLogFont &logfont = GetFont(false, false);
 
-  vector<mozc::renderer::win32::LineLayout> line_layouts;
+  std::vector<mozc::renderer::win32::LineLayout> line_layouts;
   bool result = true;
 
-  const wstring &message = GetTestMessageForMonospaced();
+  const std::wstring &message = GetTestMessageForMonospaced();
 
   // Check if the |initial_offset| works as expected.
   result = LayoutManager::CalcLayoutWithTextWrapping(
@@ -1474,10 +1237,10 @@ TEST_F(Win32RendererUtilTest, HorizontalMonospaced) {
 TEST_F(Win32RendererUtilTest, VerticalMonospaced) {
   const CLogFont &logfont = GetFont(false, true);
 
-  vector<mozc::renderer::win32::LineLayout> line_layouts;
+  std::vector<mozc::renderer::win32::LineLayout> line_layouts;
   bool result = true;
 
-  const wstring &message = GetTestMessageForMonospaced();
+  const std::wstring &message = GetTestMessageForMonospaced();
 
   // Check if the |initial_offset| works as expected.
   result = LayoutManager::CalcLayoutWithTextWrapping(
@@ -1532,10 +1295,10 @@ TEST_F(Win32RendererUtilTest, VerticalMonospaced) {
 TEST_F(Win32RendererUtilTest, HorizontalProportionalCompositeGlyph) {
   const CLogFont &logfont = GetFont(true, false);
 
-  vector<mozc::renderer::win32::LineLayout> line_layouts;
+  std::vector<mozc::renderer::win32::LineLayout> line_layouts;
   bool result = true;
 
-  const wstring &message = GetTestMessageWithCompositeGlyph(1);
+  const std::wstring &message = GetTestMessageWithCompositeGlyph(1);
 
   result = LayoutManager::CalcLayoutWithTextWrapping(
       logfont, message, 200, 100, &line_layouts);
@@ -1552,10 +1315,10 @@ TEST_F(Win32RendererUtilTest, HorizontalProportionalCompositeGlyph) {
 TEST_F(Win32RendererUtilTest, VerticalProportionalCompositeGlyph) {
   const CLogFont &logfont = GetFont(true, true);
 
-  vector<mozc::renderer::win32::LineLayout> line_layouts;
+  std::vector<mozc::renderer::win32::LineLayout> line_layouts;
   bool result = true;
 
-  const wstring &message = GetTestMessageWithCompositeGlyph(1);
+  const std::wstring &message = GetTestMessageWithCompositeGlyph(1);
   result = LayoutManager::CalcLayoutWithTextWrapping(
       logfont, message, 200, 100, &line_layouts);
   EXPECT_TRUE(result);
@@ -1571,10 +1334,10 @@ TEST_F(Win32RendererUtilTest, VerticalProportionalCompositeGlyph) {
 TEST_F(Win32RendererUtilTest, HorizontalMonospacedCompositeGlyph) {
   const CLogFont &logfont = GetFont(false, false);
 
-  vector<mozc::renderer::win32::LineLayout> line_layouts;
+  std::vector<mozc::renderer::win32::LineLayout> line_layouts;
   bool result = true;
 
-  const wstring &message = GetTestMessageWithCompositeGlyph(1);
+  const std::wstring &message = GetTestMessageWithCompositeGlyph(1);
 
   result = LayoutManager::CalcLayoutWithTextWrapping(
       logfont, message, 200, 100, &line_layouts);
@@ -1591,10 +1354,10 @@ TEST_F(Win32RendererUtilTest, HorizontalMonospacedCompositeGlyph) {
 TEST_F(Win32RendererUtilTest, VerticalMonospacedCompositeGlyph) {
   const CLogFont &logfont = GetFont(false, true);
 
-  vector<mozc::renderer::win32::LineLayout> line_layouts;
+  std::vector<mozc::renderer::win32::LineLayout> line_layouts;
   bool result = true;
 
-  const wstring &message = GetTestMessageWithCompositeGlyph(1);
+  const std::wstring &message = GetTestMessageWithCompositeGlyph(1);
 
   result = LayoutManager::CalcLayoutWithTextWrapping(
       logfont, message, 200, 100, &line_layouts);
@@ -1617,7 +1380,7 @@ TEST_F(Win32RendererUtilTest,
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
 
   CLogFont logfont;
@@ -1643,9 +1406,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1868, 599, 2003, 648, 0, 0, 135, 49,
                                      0, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "これは"
-      const char kMsg[] = "\343\201\223\343\202\214\343\201\257";
-      wstring msg;
+      const char kMsg[] = "これは";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -1662,11 +1424,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1193, 648, 1840, 697, 0, 0, 646, 49,
                                      0, 0, 646, 0, 647, 49, logfont, layout);
     {
-      // "、Google日本語入力のTestです"
-      const char kMsg[] =
-          "\343\200\201Google\346\227\245\346\234\254\350\252\236\345\205\245"
-          "\345\212\233\343\201\256Test\343\201\247\343\201\231";
-      wstring msg;
+      const char kMsg[] = "、Google日本語入力のTestです";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -1742,7 +1501,7 @@ TEST_F(Win32RendererUtilTest,
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   CLogFont logfont;
 
@@ -1767,10 +1526,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1778, 599, 2019, 648, 0, 0, 241, 49,
                                      0, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "これは、Go"
-      const char kMsg[] =
-          "\343\201\223\343\202\214\343\201\257\343\200\201Go";
-      wstring msg;
+      const char kMsg[] = "これは、Go";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -1793,11 +1550,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1193, 648, 1734, 697, 0, 0, 540, 49,
                                      0, 0, 540, 0, 541, 49, logfont, layout);
     {
-      // "ogle日本語入力のTestです"
-      const char kMsg[] =
-          "ogle\346\227\245\346\234\254\350\252\236\345\205\245"
-          "\345\212\233\343\201\256Test\343\201\247\343\201\231";
-      wstring msg;
+      const char kMsg[] = "ogle日本語入力のTestです";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -1871,7 +1625,7 @@ TEST_F(Win32RendererUtilTest,
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   CLogFont logfont;
 
@@ -1898,9 +1652,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1983, 927, 2034, 1062, 0, 0, 51, 135,
                                      51, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "これは"
-      const char kMsg[] = "\343\201\223\343\202\214\343\201\257";
-      wstring msg;
+      const char kMsg[] = "これは";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -1917,10 +1670,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1932, 712, 1983, 1088, 0, 0, 51, 376,
                                      51, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "、Google日本語入"
-      const char kMsg[] = "\343\200\201Google\346\227\245\346"
-                          "\234\254\350\252\236\345\205\245";
-      wstring msg;
+      const char kMsg[] = "、Google日本語入";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -1943,10 +1694,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1881, 712, 1932, 983, 0, 0, 51, 270,
                                      51, 0, 0, 270, 51, 271, logfont, layout);
     {
-      // "力のTestです"
-      const char kMsg[] =
-          "\345\212\233\343\201\256Test\343\201\247\343\201\231";
-      wstring msg;
+      const char kMsg[] = "力のTestです";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2017,7 +1766,7 @@ TEST_F(Win32RendererUtilTest,
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   CLogFont logfont;
 
@@ -2044,10 +1793,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1983, 837, 2034, 1105, 0, 0, 51, 268,
                                      51, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "これは、Goo"
-      const char kMsg[] =
-          "\343\201\223\343\202\214\343\201\257\343\200\201Goo";
-      wstring msg;
+      const char kMsg[] = "これは、Goo";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2070,10 +1817,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1932, 712, 1983, 1098, 0, 0, 51, 386,
                                      51, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "gle日本語入力のTe"
-      const char kMsg[] = "gle\346\227\245\346\234\254\350\252\236"
-                          "\345\205\245\345\212\233\343\201\256Te";
-      wstring msg;
+      const char kMsg[] = "gle日本語入力のTe";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2096,9 +1841,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1881, 712, 1932, 840, 0, 0, 51, 127,
                                      51, 0, 0, 127, 51, 128, logfont, layout);
     {
-      // "stです"
-      const char kMsg[] = "st\343\201\247\343\201\231";
-      wstring msg;
+      const char kMsg[] = "stです";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2166,7 +1910,7 @@ TEST_F(Win32RendererUtilTest,
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   CLogFont logfont;
 
@@ -2191,9 +1935,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1868, 599, 2003, 653, 0, 0, 135, 54,
                                      0, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "これは"
-      const char kMsg[] = "\343\201\223\343\202\214\343\201\257";
-      wstring msg;
+      const char kMsg[] = "これは";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2210,11 +1953,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1193, 653, 1840, 707, 0, 0, 646, 54,
                                      0, 0, 646, 0, 647, 54, logfont, layout);
     {
-      // "、Google日本語入力のTestです"
-      const char kMsg[] =
-          "\343\200\201Google\346\227\245\346\234\254\350\252\236\345\205\245"
-          "\345\212\233\343\201\256Test\343\201\247\343\201\231";
-      wstring msg;
+      const char kMsg[] = "、Google日本語入力のTestです";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2291,7 +2031,7 @@ TEST_F(Win32RendererUtilTest,
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   CLogFont logfont;
 
@@ -2316,10 +2056,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1778, 599, 2020, 653, 0, 0, 242, 54,
                                      0, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "これは、Go"
-      const char kMsg[] =
-          "\343\201\223\343\202\214\343\201\257\343\200\201Go";
-      wstring msg;
+      const char kMsg[] = "これは、Go";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2342,11 +2080,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1193, 653, 1733, 707, 0, 0, 539, 54,
                                      0, 0, 539, 0, 540, 54, logfont, layout);
     {
-      // "ogle日本語入力のTestです"
-      const char kMsg[] =
-          "ogle\346\227\245\346\234\254\350\252\236\345\205\245"
-          "\345\212\233\343\201\256Test\343\201\247\343\201\231";
-      wstring msg;
+      const char kMsg[] = "ogle日本語入力のTestです";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2420,7 +2155,7 @@ TEST_F(Win32RendererUtilTest,
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   CLogFont logfont;
 
@@ -2447,9 +2182,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1978, 927, 2034, 1062, 0, 0, 56, 135,
                                      56, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "これは"
-      const char kMsg[] = "\343\201\223\343\202\214\343\201\257";
-      wstring msg;
+      const char kMsg[] = "これは";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2466,10 +2200,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1922, 712, 1978, 1089, 0, 0, 56, 377,
                                      56, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "、Google日本語入"
-      const char kMsg[] = "\343\200\201Google\346\227\245\346"
-                          "\234\254\350\252\236\345\205\245";
-      wstring msg;
+      const char kMsg[] = "、Google日本語入";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2492,10 +2224,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1866, 712, 1922, 982, 0, 0, 56, 269,
                                      56, 0, 0, 269, 56, 270, logfont, layout);
     {
-      // "力のTestです"
-      const char kMsg[] =
-          "\345\212\233\343\201\256Test\343\201\247\343\201\231";
-      wstring msg;
+      const char kMsg[] = "力のTestです";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2566,7 +2296,7 @@ TEST_F(Win32RendererUtilTest,
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   CLogFont logfont;
 
@@ -2593,10 +2323,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1978, 837, 2034, 1079, 0, 0, 56, 242,
                                      56, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "これは、Go"
-      const char kMsg[] =
-          "\343\201\223\343\202\214\343\201\257\343\200\201Go";
-      wstring msg;
+      const char kMsg[] = "これは、Go";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2619,10 +2347,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1922, 712, 1978, 1100, 0, 0, 56, 388,
                                      56, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "ogle日本語入力のT"
-      const char kMsg[] = "ogle\346\227\245\346\234\254\350\252\236"
-                          "\345\205\245\345\212\233\343\201\256T";
-      wstring msg;
+      const char kMsg[] = "ogle日本語入力のT";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2645,9 +2371,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1866, 712, 1922, 864, 0, 0, 56, 151,
                                      56, 0, 0, 151, 56, 152, logfont, layout);
     {
-      // "estです"
-      const char kMsg[] = "est\343\201\247\343\201\231";
-      wstring msg;
+      const char kMsg[] = "estです";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2715,7 +2440,7 @@ TEST_F(Win32RendererUtilTest,
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   CLogFont logfont;
 
@@ -2740,12 +2465,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1193, 648, 1975, 697, 0, 0, 781, 49,
                                      0, 0, 781, 0, 782, 49, logfont, layout);
     {
-      // "これは、Google日本語入力のTestです"
-      const char kMsg[] =
-          "\343\201\223\343\202\214\343\201\257\343\200\201Google\346\227\245"
-          "\346\234\254\350\252\236\345\205\245\345\212\233\343\201\256Test"
-          "\343\201\247\343\201\231";
-      wstring msg;
+      const char kMsg[] = "これは、Google日本語入力のTestです";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2778,7 +2499,7 @@ TEST_F(Win32RendererUtilTest,
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   CLogFont logfont;
 
@@ -2803,12 +2524,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1193, 653, 1975, 707, 0, 0, 781, 54,
                                      0, 0, 781, 0, 782, 54, logfont, layout);
     {
-      // "これは、Google日本語入力のTestです"
-      const char kMsg[] =
-          "\343\201\223\343\202\214\343\201\257\343\200\201Google\346\227\245"
-          "\346\234\254\350\252\236\345\205\245\345\212\233\343\201\256Test"
-          "\343\201\247\343\201\231";
-      wstring msg;
+      const char kMsg[] = "これは、Google日本語入力のTestです";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2841,7 +2558,7 @@ TEST_F(Win32RendererUtilTest,
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   CLogFont logfont;
 
@@ -2868,10 +2585,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1932, 712, 1983, 1088, 0, 0, 51, 376,
                                      51, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "これは、Google日"
-      const char kMsg[] =
-          "\343\201\223\343\202\214\343\201\257\343\200\201Google\346\227\245";
-      wstring msg;
+      const char kMsg[] = "これは、Google日";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2897,11 +2612,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1881, 712, 1932, 1072, 0, 0, 51, 360,
                                      51, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "本語入力のTestで"
-      const char kMsg[] =
-          "\346\234\254\350\252\236\345\205\245\345\212\233\343\201\256Test"
-          "\343\201\247";
-      wstring msg;
+      const char kMsg[] = "本語入力のTestで";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2921,9 +2633,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1830, 712, 1881, 758, 0, 0, 51, 45,
                                      51, 0, 0, 45, 51, 46, logfont, layout);
     {
-      // "す"
-      const char kMsg[] = "\343\201\231";
-      wstring msg;
+      const char kMsg[] = "す";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -2944,7 +2655,7 @@ TEST_F(Win32RendererUtilTest,
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   CLogFont logfont;
 
@@ -2971,10 +2682,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1922, 712, 1978, 1089, 0, 0, 56, 377,
                                      56, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "これは、Google日"
-      const char kMsg[] =
-          "\343\201\223\343\202\214\343\201\257\343\200\201Google\346\227\245";
-      wstring msg;
+      const char kMsg[] = "これは、Google日";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -3000,11 +2709,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1866, 712, 1922, 1071, 0, 0, 56, 359,
                                      56, 0, 0, 0, 0, 0, logfont, layout);
     {
-      // "本語入力のTestで"
-      const char kMsg[] =
-          "\346\234\254\350\252\236\345\205\245\345\212\233\343\201\256Test"
-          "\343\201\247";
-      wstring msg;
+      const char kMsg[] = "本語入力のTestで";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -3024,9 +2730,8 @@ TEST_F(Win32RendererUtilTest,
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1810, 712, 1866, 758, 0, 0, 56, 45,
                                      56, 0, 0, 45, 56, 46, logfont, layout);
     {
-      // "す"
-      const char kMsg[] = "\343\201\231";
-      wstring msg;
+      const char kMsg[] = "す";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -3045,7 +2750,7 @@ TEST_F(Win32RendererUtilTest, CheckCaretPosInHorizontalComposition) {
     HWND hwnd = nullptr;
     LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                              CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-    vector<CompositionWindowLayout> layouts;
+    std::vector<CompositionWindowLayout> layouts;
 
     RendererCommand command;
     CandidateWindowLayout candidate_layout;
@@ -3076,7 +2781,7 @@ TEST_F(Win32RendererUtilTest, CheckCaretPosInHorizontalComposition) {
     HWND hwnd = nullptr;
     LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                              CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-    vector<CompositionWindowLayout> layouts;
+    std::vector<CompositionWindowLayout> layouts;
 
     RendererCommand command;
     CandidateWindowLayout candidate_layout;
@@ -3109,7 +2814,7 @@ TEST_F(Win32RendererUtilTest, CheckCaretPosInHorizontalComposition) {
     HWND hwnd = nullptr;
     LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                              CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-    vector<CompositionWindowLayout> layouts;
+    std::vector<CompositionWindowLayout> layouts;
 
     RendererCommand command;
     CandidateWindowLayout candidate_layout;
@@ -3141,7 +2846,7 @@ TEST_F(Win32RendererUtilTest, CheckCaretPosInHorizontalComposition) {
     HWND hwnd = nullptr;
     LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                              CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-    vector<CompositionWindowLayout> layouts;
+    std::vector<CompositionWindowLayout> layouts;
 
     RendererCommand command;
     CandidateWindowLayout candidate_layout;
@@ -3173,7 +2878,7 @@ TEST_F(Win32RendererUtilTest, CheckCaretPosInHorizontalComposition) {
     HWND hwnd = nullptr;
     LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                              CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-    vector<CompositionWindowLayout> layouts;
+    std::vector<CompositionWindowLayout> layouts;
 
     RendererCommand command;
     CandidateWindowLayout candidate_layout;
@@ -3212,7 +2917,7 @@ TEST_F(Win32RendererUtilTest, CheckCaretPosInVerticalComposition) {
     HWND hwnd = nullptr;
     LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                              CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-    vector<CompositionWindowLayout> layouts;
+    std::vector<CompositionWindowLayout> layouts;
 
     RendererCommand command;
     CandidateWindowLayout candidate_layout;
@@ -3245,7 +2950,7 @@ TEST_F(Win32RendererUtilTest, CheckCaretPosInVerticalComposition) {
     HWND hwnd = nullptr;
     LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                              CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-    vector<CompositionWindowLayout> layouts;
+    std::vector<CompositionWindowLayout> layouts;
 
     RendererCommand command;
     CandidateWindowLayout candidate_layout;
@@ -3280,7 +2985,7 @@ TEST_F(Win32RendererUtilTest, CheckCaretPosInVerticalComposition) {
     HWND hwnd = nullptr;
     LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                              CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-    vector<CompositionWindowLayout> layouts;
+    std::vector<CompositionWindowLayout> layouts;
 
     RendererCommand command;
     CandidateWindowLayout candidate_layout;
@@ -3314,7 +3019,7 @@ TEST_F(Win32RendererUtilTest, CheckCaretPosInVerticalComposition) {
     HWND hwnd = nullptr;
     LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                              CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-    vector<CompositionWindowLayout> layouts;
+    std::vector<CompositionWindowLayout> layouts;
 
     RendererCommand command;
     CandidateWindowLayout candidate_layout;
@@ -3348,7 +3053,7 @@ TEST_F(Win32RendererUtilTest, CheckCaretPosInVerticalComposition) {
     HWND hwnd = nullptr;
     LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                              CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-    vector<CompositionWindowLayout> layouts;
+    std::vector<CompositionWindowLayout> layouts;
 
     RendererCommand command;
     CandidateWindowLayout candidate_layout;
@@ -3392,7 +3097,7 @@ TEST_F(Win32RendererUtilTest, SuggestWindowNeverHidesHorizontalPreedit) {
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   CLogFont logfont;
 
@@ -3427,7 +3132,7 @@ TEST_F(Win32RendererUtilTest, SuggestWindowNeverHidesVerticalPreedit) {
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   CLogFont logfont;
 
@@ -3459,7 +3164,7 @@ TEST_F(Win32RendererUtilTest, RemoveUnderlineFromFont_Issue2935480) {
   HWND hwnd = nullptr;
   LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
                            CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
 
   RendererCommand command;
   CandidateWindowLayout candidate_layout;
@@ -3489,20 +3194,128 @@ TEST_F(Win32RendererUtilTest, RemoveUnderlineFromFont_Issue2935480) {
 // We should consider the case where two or more style bits are specified
 // at the same time.
 TEST_F(Win32RendererUtilTest, CompositionFormRECTAsBitFlag_Issue3200425) {
-  // Check the backward compatibility.
-  VerifyCompositionStyleBitsCompatibilityForIssue3200425(
-      true, CompositionForm::RECT,
-      false, CompositionForm::DEFAULT);
+  const uint32 kStyleBit = CompositionForm::RECT | CompositionForm::POINT;
 
-  // Set CompositionForm::RECT and CompositionForm::POINT at the same time.
-  VerifyCompositionStyleBitsCompatibilityForIssue3200425(
-      false, CompositionForm::DEFAULT,
-      true, CompositionForm::RECT | CompositionForm::POINT);
+  const int kCursorOffsetX = 0;
 
-  // If both of them are specified, the legacy one is used.
-  VerifyCompositionStyleBitsCompatibilityForIssue3200425(
-      true, CompositionForm::RECT,
-      true, CompositionForm::POINT);
+  RendererCommand command;
+
+  HWND hwnd = nullptr;
+  LayoutManager layout_mgr(CreateDefaultGUIFontEmulator(),
+                           CreateWindowEmulatorWithDPIScaling(1.0, &hwnd));
+  std::vector<CompositionWindowLayout> layouts;
+  CandidateWindowLayout candidate_layout;
+
+  CLogFont logfont;
+
+  bool result = false;
+
+  // w/ candidates, monospaced, horizontal
+  SetRenderereCommandForTest(
+      false, true, false, kCursorOffsetX, hwnd, &command);
+  command.mutable_application_info()->mutable_composition_form()
+      ->set_style_bits(kStyleBit);
+
+  EXPECT_TRUE(mozc::win32::FontUtil::ToLOGFONT(
+      command.application_info().composition_font(), &logfont));
+  layouts.clear();
+  candidate_layout.Clear();
+  result = layout_mgr.LayoutCompositionWindow(
+      command, &layouts, &candidate_layout);
+  EXPECT_TRUE(result);
+
+  ASSERT_EQ(2, layouts.size());
+
+  // The first line
+  {
+    const CompositionWindowLayout &layout = layouts.at(0);
+    EXPECT_COMPOSITION_WINDOW_LAYOUT(1868, 599, 2003, 648, 0, 0, 135, 49,
+                                     0, 0, 0, 0, 0, 0, logfont, layout);
+    {
+      const char kMsg[] = "これは";
+      std::wstring msg;
+      mozc::Util::UTF8ToWide(kMsg, &msg);
+      EXPECT_EQ(msg, layout.text);
+    }
+    ASSERT_EQ(1, layout.marker_layouts.size());
+
+    EXPECT_EQ(CPoint(0, 48), layout.marker_layouts[0].from);
+    EXPECT_EQ(CPoint(126, 48), layout.marker_layouts[0].to);
+    EXPECT_FALSE(layout.marker_layouts[0].highlighted);
+  }
+
+  // The second line
+  {
+    const CompositionWindowLayout &layout = layouts.at(1);
+    EXPECT_COMPOSITION_WINDOW_LAYOUT(1193, 648, 1840, 697, 0, 0, 646, 49,
+                                     0, 0, 646, 0, 647, 49, logfont, layout);
+    {
+      const char kMsg[] = "、Google日本語入力のTestです";
+      std::wstring msg;
+      mozc::Util::UTF8ToWide(kMsg, &msg);
+      EXPECT_EQ(msg, layout.text);
+    }
+    ASSERT_EQ(4, layout.marker_layouts.size());
+
+    EXPECT_EQ(CPoint(0, 48), layout.marker_layouts[0].from);
+    EXPECT_EQ(CPoint(36, 48), layout.marker_layouts[0].to);
+    EXPECT_FALSE(layout.marker_layouts[0].highlighted);
+    EXPECT_EQ(CPoint(45, 48), layout.marker_layouts[1].from);
+    EXPECT_EQ(CPoint(190, 48), layout.marker_layouts[1].to);
+    EXPECT_TRUE(layout.marker_layouts[1].highlighted);
+    EXPECT_EQ(CPoint(196, 48), layout.marker_layouts[2].from);
+    EXPECT_EQ(CPoint(457, 48), layout.marker_layouts[2].to);
+    EXPECT_FALSE(layout.marker_layouts[2].highlighted);
+    EXPECT_EQ(CPoint(466, 48), layout.marker_layouts[3].from);
+    EXPECT_EQ(CPoint(646, 48), layout.marker_layouts[3].to);
+    EXPECT_FALSE(layout.marker_layouts[3].highlighted);
+  }
+  EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
+      1238, 697, 1238, 648, 1839, 697, candidate_layout);
+
+  // Check other candidate positions.
+  command.mutable_output()->mutable_candidates()->set_position(0);
+  layouts.clear();
+  candidate_layout.Clear();
+  result = layout_mgr.LayoutCompositionWindow(
+      command, &layouts, &candidate_layout);
+  EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
+      1868, 648, 1868, 599, 2003, 648, candidate_layout);
+
+  command.mutable_output()->mutable_candidates()->set_position(3);
+  layouts.clear();
+  candidate_layout.Clear();
+  result = layout_mgr.LayoutCompositionWindow(
+      command, &layouts, &candidate_layout);
+  EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
+      1193, 697, 1193, 648, 1839, 697, candidate_layout);
+
+  command.mutable_output()->mutable_candidates()->set_position(10);
+  layouts.clear();
+  candidate_layout.Clear();
+  result = layout_mgr.LayoutCompositionWindow(
+      command, &layouts, &candidate_layout);
+  EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
+      1389, 697, 1389, 648, 1839, 697, candidate_layout);
+
+  command.mutable_output()->mutable_candidates()->set_position(16);
+  layouts.clear();
+  candidate_layout.Clear();
+  result = layout_mgr.LayoutCompositionWindow(
+      command, &layouts, &candidate_layout);
+  EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
+      1659, 697, 1659, 648, 1839, 697, candidate_layout);
+
+  // w/o candidates, monospaced, horizontal
+  SetRenderereCommandForTest(false, false, false, 0, hwnd, &command);
+  EXPECT_TRUE(mozc::win32::FontUtil::ToLOGFONT(
+      command.application_info().composition_font(), &logfont));
+  layouts.clear();
+  candidate_layout.Clear();
+  result = layout_mgr.LayoutCompositionWindow(
+      command, &layouts, &candidate_layout);
+  EXPECT_TRUE(result);
+  EXPECT_FALSE(candidate_layout.initialized());
 }
 
 // Evernote Windows Client 4.0.0.2880 (107102) / Editor component
@@ -3543,7 +3356,7 @@ TEST_F(Win32RendererUtilTest, EvernoteEditorComposition) {
       command.mutable_application_info(), false, 0, 0, 0, 0, hwnd);
 
   CandidateWindowLayout candidate_layout;
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   bool result = false;
 
   layouts.clear();
@@ -3565,11 +3378,8 @@ TEST_F(Win32RendererUtilTest, EvernoteEditorComposition) {
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1548, 1416, 1777, 1434, 0, 0, 229, 18,
                                      0, 0, 0, 0, 0, 0, default_font, layout);
     {
-      // "これは、Google日本語入力のTest"
-      const char kMsg[] =
-          "\343\201\223\343\202\214\343\201\257\343\200\201Google\346\227\245"
-          "\346\234\254\350\252\236\345\205\245\345\212\233\343\201\256Test";
-      wstring msg;
+      const char kMsg[] = "これは、Google日本語入力のTest";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -3598,9 +3408,8 @@ TEST_F(Win32RendererUtilTest, EvernoteEditorComposition) {
     EXPECT_COMPOSITION_WINDOW_LAYOUT(1548, 1434, 1579, 1452, 0, 0, 30, 18,
                                      0, 0, 30, 0, 31, 18, default_font, layout);
     {
-      // "です"
-      const char kMsg[] = "\343\201\247\343\201\231";
-      wstring msg;
+      const char kMsg[] = "です";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -3662,7 +3471,7 @@ TEST_F(Win32RendererUtilTest, CrescentEveComposition_Issue3239031) {
       false, 34, 0, 36, 14, hwnd);
 
   CandidateWindowLayout candidate_layout;
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   bool result = false;
 
   layouts.clear();
@@ -3684,12 +3493,8 @@ TEST_F(Win32RendererUtilTest, CrescentEveComposition_Issue3239031) {
     EXPECT_COMPOSITION_WINDOW_LAYOUT(221, 194, 481, 212, 0, 0, 259, 18, 0, 0,
                                      259, 0, 260, 18, default_font, layout);
     {
-      // "これは、Google日本語入力のTestです"
-      const char kMsg[] =
-          "\343\201\223\343\202\214\343\201\257\343\200\201Google\346\227\245"
-          "\346\234\254\350\252\236\345\205\245\345\212\233\343\201\256"
-          "Test\343\201\247\343\201\231";
-      wstring msg;
+      const char kMsg[] = "これは、Google日本語入力のTestです";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -3781,7 +3586,7 @@ TEST_F(Win32RendererUtilTest, MSInfo32Composition_Issue3433099) {
       true, 2, 1, 3, 19, child_window);
 
   CandidateWindowLayout candidate_layout;
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   bool result = false;
 
   layouts.clear();
@@ -3803,10 +3608,8 @@ TEST_F(Win32RendererUtilTest, MSInfo32Composition_Issue3433099) {
     EXPECT_COMPOSITION_WINDOW_LAYOUT(955, 1074, 1065, 1092, 0, 0, 110, 18, 0, 0,
                                      0, 0, 0, 0, default_font, layout);
     {
-      // "これは、Google"
-      const char kMsg[] =
-          "\343\201\223\343\202\214\343\201\257\343\200\201Google";
-      wstring msg;
+      const char kMsg[] = "これは、Google";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -3829,11 +3632,8 @@ TEST_F(Win32RendererUtilTest, MSInfo32Composition_Issue3433099) {
     EXPECT_COMPOSITION_WINDOW_LAYOUT(953, 1092, 1067, 1110, 0, 0, 114, 18, 0, 0,
                                      0, 0, 0, 0, default_font, layout);
     {
-      // "日本語入力のTes"
-      const char kMsg[] =
-          "\346\227\245\346\234\254\350\252\236\345\205\245\345\212\233"
-          "\343\201\256Tes";
-      wstring msg;
+      const char kMsg[] = "日本語入力のTes";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -3853,9 +3653,8 @@ TEST_F(Win32RendererUtilTest, MSInfo32Composition_Issue3433099) {
     EXPECT_COMPOSITION_WINDOW_LAYOUT(953, 1110, 989, 1128, 0, 0, 35, 18, 0, 0,
                                      35, 0, 36, 18, default_font, layout);
     {
-      // "tです"
-      const char kMsg[] = "t\343\201\247\343\201\231";
-      wstring msg;
+      const char kMsg[] = "tです";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -3872,11 +3671,8 @@ TEST_F(Win32RendererUtilTest, MSInfo32Composition_Issue3433099) {
 
 // Check if LayoutManager can handle preedits which contains surrogate pair.
 // See b/4159275 for details.
-// Temporarily disabled to support Windows XP En, where surrogate pair is
-// disabled by default.
-// TODO(yukawa): Enable this test.
 TEST_F(Win32RendererUtilTest,
-       DISABLED_CheckSurrogatePairInHorizontalComposition_Issue4159275) {
+       CheckSurrogatePairInHorizontalComposition_Issue4159275) {
   const int kCursorOffsetX = 150;
 
   HWND hwnd = nullptr;
@@ -3891,7 +3687,7 @@ TEST_F(Win32RendererUtilTest,
   EXPECT_TRUE(mozc::win32::FontUtil::ToLOGFONT(
       command.application_info().composition_font(), &logfont));
 
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   EXPECT_TRUE(layout_mgr.LayoutCompositionWindow(
       command, &layouts, &candidate_layout));
@@ -3905,11 +3701,8 @@ TEST_F(Win32RendererUtilTest,
                                      0, 0, 360, 0, 361, 49, logfont,
                                      layout);
     {
-      // "𠮟咤𠮟咤𠮟咤𠮟咤"
-      const char kMsg[] =
-          "\360\240\256\237\345\222\244\360\240\256\237\345\222\244"
-          "\360\240\256\237\345\222\244\360\240\256\237\345\222\244";
-      wstring msg;
+      const char kMsg[] = "𠮟咤𠮟咤𠮟咤𠮟咤";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -3935,11 +3728,8 @@ TEST_F(Win32RendererUtilTest,
 
 // Check if LayoutManager can handle preedits which contains surrogate pair.
 // See b/4159275 for details.
-// Temporarily disabled to support Windows XP En, where surrogate pair is
-// disabled by default.
-// TODO(yukawa): Enable this test.
 TEST_F(Win32RendererUtilTest,
-       DISABLED_CheckSurrogatePairInVerticalComposition_Issue4159275) {
+       CheckSurrogatePairInVerticalComposition_Issue4159275) {
   const int kCursorOffsetY = 175;
 
   HWND hwnd = nullptr;
@@ -3955,7 +3745,7 @@ TEST_F(Win32RendererUtilTest,
       command.application_info().composition_font(), &logfont));
   logfont.lfOrientation = 2700;
 
-  vector<CompositionWindowLayout> layouts;
+  std::vector<CompositionWindowLayout> layouts;
   CandidateWindowLayout candidate_layout;
   EXPECT_TRUE(layout_mgr.LayoutCompositionWindow(
       command, &layouts, &candidate_layout));
@@ -3969,11 +3759,8 @@ TEST_F(Win32RendererUtilTest,
         1932, 712, 1983, 1073, 0, 0, 51, 360, 51, 0,
         0, 360, 51, 361, logfont, layout);
     {
-      // "𠮟咤𠮟咤𠮟咤𠮟咤"
-      const char kMsg[] =
-          "\360\240\256\237\345\222\244\360\240\256\237\345\222\244"
-          "\360\240\256\237\345\222\244\360\240\256\237\345\222\244";
-      wstring msg;
+      const char kMsg[] = "𠮟咤𠮟咤𠮟咤𠮟咤";
+      std::wstring msg;
       mozc::Util::UTF8ToWide(kMsg, &msg);
       EXPECT_EQ(msg, layout.text);
     }
@@ -4046,9 +3833,7 @@ TEST_F(Win32RendererUtilTest, Hidemaru_Horizontal_Suggest) {
       &app_info, -15, 0, 0, 0, FW_NORMAL, SHIFTJIS_CHARSET,
       OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, FF_MODERN | FIXED_PITCH,
-      // "ＭＳゴシック"
-      "\357\274\255\357\274\263 "
-      "\343\202\264\343\202\267\343\203\203\343\202\257");
+      "ＭＳ ゴシック");
 
   AppInfoUtil::SetCompositionForm(
       &app_info, CompositionForm::RECT, 112, 25, 48, 0, 1408, 552);
@@ -4087,9 +3872,7 @@ TEST_F(Win32RendererUtilTest, Hidemaru_Horizontal_Convert) {
       &app_info, -15, 0, 0, 0, FW_NORMAL, SHIFTJIS_CHARSET,
       OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, FF_MODERN | FIXED_PITCH,
-      // "ＭＳゴシック"
-      "\357\274\255\357\274\263 "
-      "\343\202\264\343\202\267\343\203\203\343\202\257");
+      "ＭＳ ゴシック");
 
   AppInfoUtil::SetCompositionForm(
       &app_info, CompositionForm::RECT, 112, 25, 48, 0, 1408, 552);
@@ -4129,9 +3912,7 @@ TEST_F(Win32RendererUtilTest, Hidemaru_Vertical_Suggest) {
       &app_info, -15, 0, 2700, 0, FW_NORMAL, SHIFTJIS_CHARSET,
       OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, FF_MODERN | FIXED_PITCH,
-      // "@ＭＳゴシック"
-      "@\357\274\255\357\274\263 "
-      "\343\202\264\343\202\267\343\203\203\343\202\257");
+      "@ＭＳ ゴシック");
 
   AppInfoUtil::SetCompositionForm(
       &app_info, CompositionForm::RECT, 660, 48, 0, 48, 688, 397);
@@ -4172,9 +3953,7 @@ TEST_F(Win32RendererUtilTest, Hidemaru_Vertical_Convert) {
       &app_info, -15, 0, 2700, 0, FW_NORMAL, SHIFTJIS_CHARSET,
       OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, FF_MODERN | FIXED_PITCH,
-      // "@ＭＳゴシック"
-      "@\357\274\255\357\274\263 "
-      "\343\202\264\343\202\267\343\203\203\343\202\257");
+      "@ＭＳ ゴシック");
 
   AppInfoUtil::SetCompositionForm(
       &app_info, CompositionForm::RECT, 660, 48, 0, 48, 668, 397);
@@ -4295,8 +4074,7 @@ TEST_F(Win32RendererUtilTest, Pidgin_Indicator) {
       &app_info, -16, 0, 0, 0, FW_NORMAL, SHIFTJIS_CHARSET,
       OUT_STROKE_PRECIS, CLIP_STROKE_PRECIS,
       DRAFT_QUALITY, 50,
-      // "メイリオ"
-      "\343\203\241\343\202\244\343\203\252\343\202\252");
+      "メイリオ");
 
   AppInfoUtil::SetCompositionForm(
       &app_info, CompositionForm::POINT, 48, 589,
@@ -4338,8 +4116,7 @@ TEST_F(Win32RendererUtilTest, Pidgin_Suggest) {
       &app_info, -16, 0, 0, 0, FW_NORMAL, SHIFTJIS_CHARSET,
       OUT_STROKE_PRECIS, CLIP_STROKE_PRECIS,
       DRAFT_QUALITY, 50,
-      // "メイリオ"
-      "\343\203\241\343\202\244\343\203\252\343\202\252");
+      "メイリオ");
 
   AppInfoUtil::SetCompositionForm(
       &app_info, CompositionForm::POINT, 48, 589,
@@ -4382,8 +4159,7 @@ TEST_F(Win32RendererUtilTest, Pidgin_Convert) {
       &app_info, -16, 0, 0, 0, FW_NORMAL, SHIFTJIS_CHARSET,
       OUT_STROKE_PRECIS, CLIP_STROKE_PRECIS,
       DRAFT_QUALITY, 50,
-      // "メイリオ"
-      "\343\203\241\343\202\244\343\203\252\343\202\252");
+      "メイリオ");
 
   AppInfoUtil::SetCompositionForm(
       &app_info, CompositionForm::POINT, 48, 589,
@@ -4530,8 +4306,7 @@ TEST_F(Win32RendererUtilTest, Qt_Suggest) {
       &app_info, -12, 0, 0, 0, FW_DONTCARE, DEFAULT_CHARSET,
       OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, 0,
-      // "メイリオ"
-      "\343\203\241\343\202\244\343\203\252\343\202\252");
+      "メイリオ");
 
   AppInfoUtil::SetCompositionForm(
       &app_info, CompositionForm::FORCE_POSITION, 211, 68,
@@ -4575,8 +4350,7 @@ TEST_F(Win32RendererUtilTest, Qt_Convert) {
       &app_info, -12, 0, 0, 0, FW_DONTCARE, DEFAULT_CHARSET,
       OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, 0,
-      // "メイリオ"
-      "\343\203\241\343\202\244\343\203\252\343\202\252");
+      "メイリオ");
 
   AppInfoUtil::SetCompositionForm(
       &app_info, CompositionForm::FORCE_POSITION, 187, 68,
@@ -4620,9 +4394,7 @@ TEST_F(Win32RendererUtilTest, Wordpad_Vista_Indicator) {
       &app_info, 10, 0, 0, 0, FW_DONTCARE, SHIFTJIS_CHARSET,
       OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, 17,
-      // "ＭＳＰゴシック"
-      "\357\274\255\357\274\263 "
-      "\357\274\260\343\202\264\343\202\267\343\203\203\343\202\257");
+      "ＭＳ Ｐゴシック");
 
   AppInfoUtil::SetCandidateForm(
       &app_info, CandidateForm::EXCLUDE, 62, 42, 62, 21, 64, 42);
@@ -4662,9 +4434,7 @@ TEST_F(Win32RendererUtilTest, Wordpad_Vista_Suggest) {
       &app_info, 10, 0, 0, 0, FW_DONTCARE, SHIFTJIS_CHARSET,
       OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, 17,
-      // "ＭＳＰゴシック"
-      "\357\274\255\357\274\263 "
-      "\357\274\260\343\202\264\343\202\267\343\203\203\343\202\257");
+      "ＭＳ Ｐゴシック");
 
   AppInfoUtil::SetCompositionTarget(
       &app_info, 0, 681, 596, 17, 625, 579, 1317, 879);
@@ -4702,9 +4472,7 @@ TEST_F(Win32RendererUtilTest, Wordpad_Vista_Convert) {
       &app_info, 10, 0, 0, 0, FW_DONTCARE, SHIFTJIS_CHARSET,
       OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, 17,
-      // "ＭＳＰゴシック"
-      "\357\274\255\357\274\263 "
-      "\357\274\260\343\202\264\343\202\267\343\203\203\343\202\257");
+      "ＭＳ Ｐゴシック");
 
   AppInfoUtil::SetCandidateForm(
       &app_info, CandidateForm::EXCLUDE, 62, 42, 62, 21, 64, 42);
@@ -4718,7 +4486,7 @@ TEST_F(Win32RendererUtilTest, Wordpad_Vista_Convert) {
   EXPECT_TRUE(layout_mgr.LayoutCandidateWindowForConversion(
       app_info, &layout));
   EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
-      693, 613, 693, 596, 694, 613, layout);
+      693, 613, 681, 616, 683, 637, layout);
 }
 
 // MS Word 2010 x64, True Inline, Horizontal
@@ -4745,8 +4513,7 @@ TEST_F(Win32RendererUtilTest, MSWord2010_Horizontal_Suggest) {
       &app_info, -14, 0, 0, 0, FW_NORMAL, SHIFTJIS_CHARSET,
       OUT_SCREEN_OUTLINE_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, 17,
-      // "ＭＳ 明朝"
-      "\357\274\255\357\274\263 \346\230\216\346\234\235");
+      "ＭＳ 明朝");
 
   AppInfoUtil::SetCandidateForm(
       &app_info, CandidateForm::EXCLUDE, 234, 176,
@@ -4788,8 +4555,7 @@ TEST_F(Win32RendererUtilTest, MSWord2010_Horizontal_Convert) {
       &app_info, -14, 0, 0, 0, FW_NORMAL, SHIFTJIS_CHARSET,
       OUT_SCREEN_OUTLINE_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, 17,
-      // "ＭＳ 明朝"
-      "\357\274\255\357\274\263 \346\230\216\346\234\235");
+      "ＭＳ 明朝");
 
   AppInfoUtil::SetCandidateForm(
       &app_info, CandidateForm::EXCLUDE, 206, 178,
@@ -4804,7 +4570,7 @@ TEST_F(Win32RendererUtilTest, MSWord2010_Horizontal_Convert) {
   EXPECT_TRUE(layout_mgr.LayoutCandidateWindowForConversion(
       app_info, &layout));
   EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
-      640, 482, 640, 466, 641, 482, layout);
+      640, 482, 570, 466, 1137, 482, layout);
 }
 
 // MS Word 2010 x64, True Inline, Vertical
@@ -4831,8 +4597,7 @@ TEST_F(Win32RendererUtilTest, MSWord2010_Vertical_Suggest) {
       &app_info, -14, 0, 2700, 2700, FW_NORMAL, SHIFTJIS_CHARSET,
       OUT_SCREEN_OUTLINE_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, 17,
-      // "@ＭＳ 明朝"
-      "@\357\274\255\357\274\263 \346\230\216\346\234\235");
+      "@ＭＳ 明朝");
 
   AppInfoUtil::SetCandidateForm(
       &app_info, CandidateForm::EXCLUDE, 662, 228,
@@ -4874,8 +4639,7 @@ TEST_F(Win32RendererUtilTest, MSWord2010_Vertical_Convert) {
       &app_info, -14, 0, 2700, 2700, FW_NORMAL, SHIFTJIS_CHARSET,
       OUT_SCREEN_OUTLINE_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, 17,
-      // "@ＭＳ 明朝"
-      "@\357\274\255\357\274\263 \346\230\216\346\234\235");
+      "@ＭＳ 明朝");
 
   AppInfoUtil::SetCandidateForm(
       &app_info, CandidateForm::EXCLUDE, 661, 200,
@@ -4890,7 +4654,7 @@ TEST_F(Win32RendererUtilTest, MSWord2010_Vertical_Convert) {
   EXPECT_TRUE(layout_mgr.LayoutCandidateWindowForConversion(
       app_info, &layout));
   EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
-      1077, 488, 1077, 488, 1095, 489, layout);
+      1077, 488, 1077, 418, 1095, 985, layout);
 }
 
 // Firefox 3.6.10 on Vista SP1 / textarea
@@ -4924,7 +4688,7 @@ TEST_F(Win32RendererUtilTest, Firefox_textarea_Suggest) {
   CandidateWindowLayout layout;
   EXPECT_TRUE(layout_mgr.LayoutCandidateWindowForSuggestion(app_info, &layout));
   EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
-      242, 727, 242, 707, 243, 727, layout);
+      242, 727, 242, 707, 242, 727, layout);
 }
 
 // Firefox 3.6.10 on Vista SP1 / textarea
@@ -4960,7 +4724,7 @@ TEST_F(Win32RendererUtilTest, Firefox_textarea_Convert) {
   EXPECT_TRUE(layout_mgr.LayoutCandidateWindowForConversion(
       app_info, &layout));
   EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
-      257, 727, 257, 707, 258, 727, layout);
+      257, 727, 257, 707, 257, 727, layout);
 }
 
 // Chrome 6.0.472.63 on Vista SP1 / textarea
@@ -4987,8 +4751,7 @@ TEST_F(Win32RendererUtilTest, Chrome_textarea_Suggest) {
       &app_info, 11, 0, 0, 0, FW_DONTCARE, SHIFTJIS_CHARSET,
       OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, 0,
-      // "メイリオ"
-      "\343\203\241\343\202\244\343\203\252\343\202\252");
+      "メイリオ");
 
   AppInfoUtil::SetCandidateForm(
       &app_info, CandidateForm::EXCLUDE, 84, 424, 84, 424, 85, 444);
@@ -5026,8 +4789,7 @@ TEST_F(Win32RendererUtilTest, Chrome_textarea_Convert) {
       &app_info, 11, 0, 0, 0, FW_DONTCARE, SHIFTJIS_CHARSET,
       OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
       DEFAULT_QUALITY, 0,
-      // "メイリオ"
-      "\343\203\241\343\202\244\343\203\252\343\202\252");
+      "メイリオ");
 
   AppInfoUtil::SetCandidateForm(
       &app_info, CandidateForm::EXCLUDE, 58, 424, 58, 424, 59, 444);
@@ -5362,6 +5124,93 @@ TEST_F(Win32RendererUtilTest, Meadow3) {
   // typing. So we need to show InfoList without delay.  b/5824433.
   const int mode = layout_mgr.GetCompatibilityMode(app_info);
   EXPECT_EQ(SHOW_INFOLIST_IMMEDIATELY, mode & SHOW_INFOLIST_IMMEDIATELY);
+}
+
+// Firefox 47.0a1 (2016-02-28)
+TEST_F(Win32RendererUtilTest, Firefox_ExcludeRect_Suggest) {
+  const wchar_t kClassName[] = L"MozillaWindowClass";
+  const UINT kClassStyle = CS_DBLCLKS;
+  const DWORD kWindowStyle =
+    WS_POPUP | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
+  static_assert(kWindowStyle == 0x96000000, "Check actual value");
+  const DWORD kWindowExStyle =
+    WS_EX_LEFT | WS_EX_LTRREADING | WS_EX_RIGHTSCROLLBAR;
+  static_assert(kWindowExStyle == 0x00000000, "Check actual value");
+
+  const CRect kWindowRect(58, 22, 1210, 622);
+  const CPoint kClientOffset(6, 0);
+  const CSize kClientSize(1140, 594);
+  const double kScaleFactor = 1.0;
+
+  HWND hwnd = nullptr;
+  LayoutManager layout_mgr(
+      CreateDefaultGUIFontEmulator(),
+      CreateWindowEmulator(kClassName, kWindowRect, kClientOffset, kClientSize,
+                           kScaleFactor, &hwnd));
+
+  ApplicationInfo app_info;
+
+  AppInfoUtil::SetBasicApplicationInfo(
+      &app_info, hwnd,
+      ApplicationInfo::ShowSuggestWindow);
+
+  AppInfoUtil::SetCandidateForm(
+      &app_info, CandidateForm::EXCLUDE, 22, 100, 22, 100, 37, 160);
+
+  AppInfoUtil::SetCompositionTarget(
+      &app_info, 0, 86, 122, 20, 83, 119, 109, 525);
+
+  AppInfoUtil::SetCaretInfo(&app_info, false, 35, 140, 36, 160, hwnd);
+
+  CandidateWindowLayout layout;
+  EXPECT_TRUE(layout_mgr.LayoutCandidateWindowForSuggestion(
+      app_info, &layout));
+  EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
+      86, 142, 86, 122, 101, 182, layout);
+}
+
+// Firefox 47.0a1 (2016-02-28)
+TEST_F(Win32RendererUtilTest, Firefox_ExcludeRect_Convert) {
+  const wchar_t kClassName[] = L"MozillaWindowClass";
+  const UINT kClassStyle = CS_DBLCLKS;
+  const DWORD kWindowStyle =
+      WS_POPUP | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
+  static_assert(kWindowStyle == 0x96000000, "Check actual value");
+  const DWORD kWindowExStyle =
+      WS_EX_LEFT | WS_EX_LTRREADING | WS_EX_RIGHTSCROLLBAR;
+  static_assert(kWindowExStyle == 0x00000000, "Check actual value");
+
+  const CRect kWindowRect(58, 22, 1210, 622);
+  const CPoint kClientOffset(6, 0);
+  const CSize kClientSize(1140, 594);
+  const double kScaleFactor = 1.0;
+
+  HWND hwnd = nullptr;
+  LayoutManager layout_mgr(
+      CreateDefaultGUIFontEmulator(),
+      CreateWindowEmulator(kClassName, kWindowRect, kClientOffset, kClientSize,
+                           kScaleFactor, &hwnd));
+
+  ApplicationInfo app_info;
+
+  AppInfoUtil::SetBasicApplicationInfo(
+      &app_info, hwnd,
+      ApplicationInfo::ShowCandidateWindow |
+      ApplicationInfo::ShowSuggestWindow);
+
+  AppInfoUtil::SetCandidateForm(
+      &app_info, CandidateForm::EXCLUDE, 22, 100, 22, 100, 37, 160);
+
+  AppInfoUtil::SetCompositionTarget(
+      &app_info, 0, 86, 122, 20, 83, 119, 109, 525);
+
+  AppInfoUtil::SetCaretInfo(&app_info, false, 35, 140, 36, 160, hwnd);
+
+  CandidateWindowLayout layout;
+  EXPECT_TRUE(layout_mgr.LayoutCandidateWindowForConversion(
+      app_info, &layout));
+  EXPECT_EXCLUDE_CANDIDATE_WINDOW_LAYOUT(
+      86, 142, 86, 122, 101, 182, layout);
 }
 
 }  // namespace win32

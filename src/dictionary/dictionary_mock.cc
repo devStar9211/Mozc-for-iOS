@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,24 +31,42 @@
 
 #include <climits>
 #include <map>
+#include <memory>
 #include <string>
 
 #include "base/logging.h"
-#include "base/scoped_ptr.h"
 #include "base/stl_util.h"
 #include "base/string_piece.h"
 #include "base/util.h"
 #include "dictionary/dictionary_token.h"
 
 namespace mozc {
+namespace dictionary {
 namespace {
 
 const int kDummyPosId = 1;
 
-bool HasValueInternal(const map<string, vector<Token *> > &dic,
+bool HasKeyInternal(const std::map<string, std::vector<Token *>> &dic,
+                    StringPiece key) {
+  typedef std::vector<Token *> TokenPtrVector;
+  for (std::map<string, std::vector<Token *>>::const_iterator map_it =
+           dic.begin();
+       map_it != dic.end(); ++map_it) {
+    const TokenPtrVector &v = map_it->second;
+    for (TokenPtrVector::const_iterator it = v.begin(); it != v.end(); ++it) {
+      if ((*it)->key == key) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool HasValueInternal(const std::map<string, std::vector<Token *>> &dic,
                       StringPiece value) {
-  typedef vector<Token *> TokenPtrVector;
-  for (map<string, vector<Token *> >::const_iterator map_it = dic.begin();
+  typedef std::vector<Token *> TokenPtrVector;
+  for (std::map<string, std::vector<Token *>>::const_iterator map_it =
+           dic.begin();
        map_it != dic.end(); ++map_it) {
     const TokenPtrVector &v = map_it->second;
     for (TokenPtrVector::const_iterator it = v.begin(); it != v.end(); ++it) {
@@ -62,7 +80,7 @@ bool HasValueInternal(const map<string, vector<Token *> > &dic,
 
 Token *CreateToken(const string &str, const string &key, const string &value,
                    Token::AttributesBitfield attributes) {
-  scoped_ptr<Token> token(new Token());
+  std::unique_ptr<Token> token(new Token());
   token->key = key;
   token->value = value;
   // TODO(noriyukit): Currently, we cannot set cost and POS IDs.
@@ -72,8 +90,8 @@ Token *CreateToken(const string &str, const string &key, const string &value,
   return token.release();
 }
 
-void DeletePtrs(map<string, vector<Token *> > *m) {
-  for (map<string, vector<Token *> >::iterator iter = m->begin();
+void DeletePtrs(std::map<string, std::vector<Token *>> *m) {
+  for (std::map<string, std::vector<Token *>>::iterator iter = m->begin();
        iter != m->end(); ++iter) {
     STLDeleteElements(&iter->second);
   }
@@ -92,6 +110,13 @@ DictionaryMock::~DictionaryMock() {
   DeletePtrs(&predictive_dictionary_);
 }
 
+bool DictionaryMock::HasKey(StringPiece key) const {
+  return HasKeyInternal(predictive_dictionary_, key) ||
+         HasKeyInternal(prefix_dictionary_, key) ||
+         HasKeyInternal(reverse_dictionary_, key) ||
+         HasKeyInternal(exact_dictionary_, key);
+}
+
 bool DictionaryMock::HasValue(StringPiece value) const {
   return HasValueInternal(predictive_dictionary_, value) ||
          HasValueInternal(prefix_dictionary_, value) ||
@@ -101,9 +126,9 @@ bool DictionaryMock::HasValue(StringPiece value) const {
 
 void DictionaryMock::LookupPredictive(
     StringPiece key,
-    bool,  // use_kana_modifier_insensitive_lookup
+    const ConversionRequest &conversion_request,
     Callback *callback) const {
-  map<string, vector<Token *> >::const_iterator vector_iter =
+  std::map<string, std::vector<Token *>>::const_iterator vector_iter =
       predictive_dictionary_.find(key.as_string());
   if (vector_iter == predictive_dictionary_.end()) {
     return;
@@ -112,7 +137,7 @@ void DictionaryMock::LookupPredictive(
       callback->OnActualKey(key, key, false) != Callback::TRAVERSE_CONTINUE) {
     return;
   }
-  for (vector<Token *>::const_iterator iter = vector_iter->second.begin();
+  for (std::vector<Token *>::const_iterator iter = vector_iter->second.begin();
        iter != vector_iter->second.end(); ++iter) {
     if (callback->OnToken(key, key, **iter) != Callback::TRAVERSE_CONTINUE) {
       return;
@@ -122,14 +147,14 @@ void DictionaryMock::LookupPredictive(
 
 void DictionaryMock::LookupPrefix(
     StringPiece key,
-    bool,  // use_kana_modifier_insensitive_lookup
+    const ConversionRequest &conversion_request,
     Callback *callback) const {
   CHECK(!key.empty());
 
   string prefix;
   for (size_t len = 1; len <= key.size(); ++len) {
-    key.substr(0, len).CopyToString(&prefix);
-    map<string, vector<Token *> >::const_iterator iter =
+    prefix.assign(key.data(), len);
+    std::map<string, std::vector<Token *>>::const_iterator iter =
         prefix_dictionary_.find(prefix);
     if (iter == prefix_dictionary_.end()) {
       continue;
@@ -152,7 +177,7 @@ void DictionaryMock::LookupPrefix(
       default:
         break;
     }
-    for (vector<Token *>::const_iterator token_iter = iter->second.begin();
+    for (std::vector<Token *>::const_iterator token_iter = iter->second.begin();
          token_iter != iter->second.end(); ++token_iter) {
       Callback::ResultType ret =
           callback->OnToken(prefix, prefix, **token_iter);
@@ -166,8 +191,11 @@ void DictionaryMock::LookupPrefix(
   }
 }
 
-void DictionaryMock::LookupExact(StringPiece key, Callback *callback) const {
-  map<string, vector<Token *> >::const_iterator iter =
+void DictionaryMock::LookupExact(
+    StringPiece key,
+    const ConversionRequest &conversion_request,
+    Callback *callback) const {
+  std::map<string, std::vector<Token *>>::const_iterator iter =
       exact_dictionary_.find(key.as_string());
   if (iter == exact_dictionary_.end()) {
     return;
@@ -175,7 +203,7 @@ void DictionaryMock::LookupExact(StringPiece key, Callback *callback) const {
   if (callback->OnKey(key) != Callback::TRAVERSE_CONTINUE) {
     return;
   }
-  for (vector<Token *>::const_iterator token_iter = iter->second.begin();
+  for (std::vector<Token *>::const_iterator token_iter = iter->second.begin();
        token_iter != iter->second.end(); ++token_iter) {
     if (callback->OnToken(key, key, **token_iter) !=
         Callback::TRAVERSE_CONTINUE) {
@@ -184,15 +212,16 @@ void DictionaryMock::LookupExact(StringPiece key, Callback *callback) const {
   }
 }
 
-void DictionaryMock::LookupReverse(StringPiece str,
-                                   NodeAllocatorInterface *allocator,
-                                   Callback *callback) const {
+void DictionaryMock::LookupReverse(
+    StringPiece str,
+    const ConversionRequest &conversion_request,
+    Callback *callback) const {
   CHECK(!str.empty());
 
   for (int i = 1; i <= str.size(); ++i) {
     StringPiece prefix = str.substr(0, i);
 
-    map<string, vector<Token *> >::const_iterator iter =
+    std::map<string, std::vector<Token *>>::const_iterator iter =
         reverse_dictionary_.find(prefix.as_string());
     if (iter == reverse_dictionary_.end()) {
       continue;
@@ -201,7 +230,7 @@ void DictionaryMock::LookupReverse(StringPiece str,
     if (callback->OnKey(prefix) != Callback::TRAVERSE_CONTINUE) {
       return;
     }
-    for (vector<Token *>::const_iterator token_iter = iter->second.begin();
+    for (std::vector<Token *>::const_iterator token_iter = iter->second.begin();
          token_iter != iter->second.end(); ++token_iter) {
       if (callback->OnToken(prefix, prefix, **token_iter) !=
           Callback::TRAVERSE_CONTINUE) {
@@ -239,4 +268,5 @@ void DictionaryMock::AddLookupExact(const string &str,
       CreateToken(str, key, value, attributes));
 }
 
+}  // namespace dictionary
 }  // namespace mozc

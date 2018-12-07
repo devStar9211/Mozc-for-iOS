@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,7 +32,7 @@
 
 #include <vector>
 #include "base/port.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 
 namespace mozc {
 namespace session {
@@ -49,14 +49,14 @@ class RandomKeyEventsGenerator {
   static const char **GetTestSentences(size_t *test_size);
 
   // Generate a random test keyevents sequence for desktop
-  static void GenerateSequence(vector<commands::KeyEvent> *keys);
+  static void GenerateSequence(std::vector<commands::KeyEvent> *keys);
 
   // Initialize random seed for this module.
   static void InitSeed(uint32 seed);
 
   // Generate a random test keyevents sequence for mobile
   static void GenerateMobileSequence(bool create_probable_key_events,
-                                     vector<commands::KeyEvent> *keys);
+                                     std::vector<commands::KeyEvent> *keys);
 };
 }  // namespace session
 }  // namespace mozc

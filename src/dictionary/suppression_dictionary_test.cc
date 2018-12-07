@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,8 +29,9 @@
 
 #include "dictionary/suppression_dictionary.h"
 
+#include <string>
+
 #include "base/logging.h"
-#include "base/number_util.h"
 #include "base/singleton.h"
 #include "base/thread.h"
 #include "base/util.h"
@@ -38,6 +39,7 @@
 #include "testing/base/public/gunit.h"
 
 namespace mozc {
+namespace dictionary {
 namespace {
 
 TEST(SupressionDictionary, BasicTest) {
@@ -108,8 +110,8 @@ class DictionaryLoaderThread : public Thread {
     dic->Lock();
     dic->Clear();
     for (int i = 0; i < 100; ++i) {
-      const string key = "key" + NumberUtil::SimpleItoa(i);
-      const string value = "value" + NumberUtil::SimpleItoa(i);
+      const string key = "key" + std::to_string(i);
+      const string value = "value" + std::to_string(i);
       EXPECT_TRUE(dic->AddEntry(key, value));
       Util::Sleep(5);
     }
@@ -127,11 +129,11 @@ TEST(SupressionDictionary, ThreadTest) {
     DictionaryLoaderThread thread;
 
     // Load dictionary in another thread.
-    thread.Start();
+    thread.Start("SuppressionDictionaryTest");
 
     for (int i = 0; i < 100; ++i) {
-      const string key = "key" + NumberUtil::SimpleItoa(i);
-      const string value = "value" + NumberUtil::SimpleItoa(i);
+      const string key = "key" + std::to_string(i);
+      const string value = "value" + std::to_string(i);
       if (!thread.IsRunning()) {
         EXPECT_TRUE(dic->SuppressEntry(key, value));
       }
@@ -144,4 +146,5 @@ TEST(SupressionDictionary, ThreadTest) {
 }
 
 }  // namespace
+}  // namespace dictionary
 }  // namespace mozc

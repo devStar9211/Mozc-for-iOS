@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -167,6 +167,8 @@ class KeyboardAccessibilityNodeProvider extends AccessibilityNodeProviderCompat 
       ViewCompat.onInitializeAccessibilityNodeInfo(view, info);
       // Add the virtual children of the root View.
       for (Key key : getKeys()) {
+        // NOTE: sourceID is always non-negative
+        // so it can be added to AccessibilityNodeInfoCompat safely.
         info.addChild(view, getSourceId(key));
       }
       return info;
@@ -223,7 +225,8 @@ class KeyboardAccessibilityNodeProvider extends AccessibilityNodeProviderCompat 
     if (key.isSpacer()) {
       return UNDEFINED;
     }
-    return getKeyState(key, metaState).getFlick(Direction.CENTER).getKeyEntity().getSourceId();
+    return getKeyState(key, metaState).getFlick(
+        Direction.CENTER).get().getKeyEntity().getSourceId();
   }
 
   private Optional<Integer> getKeyCode(Key key) {
@@ -232,7 +235,7 @@ class KeyboardAccessibilityNodeProvider extends AccessibilityNodeProviderCompat 
       return Optional.absent();
     }
     return Optional.of(getKeyState(key, metaState).getFlick(
-        Direction.CENTER).getKeyEntity().getKeyCode());
+        Direction.CENTER).get().getKeyEntity().getKeyCode());
   }
 
   /**

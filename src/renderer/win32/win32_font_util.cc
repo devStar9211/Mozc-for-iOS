@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
 #include "renderer/win32/win32_font_util.h"
 
 #include "base/util.h"
-#include "renderer/renderer_command.pb.h"
+#include "protocol/renderer_command.pb.h"
 
 namespace mozc {
 namespace win32 {
@@ -103,7 +103,7 @@ bool FontUtil::ToLOGFONT(
   log_font->lfQuality = win_log_font.quality();
   log_font->lfPitchAndFamily = win_log_font.pitch_and_family();
 
-  wstring face_name;
+  std::wstring face_name;
   mozc::Util::UTF8ToWide(win_log_font.face_name(), &face_name);
 
   // Although the result of mozc::Util::UTF8ToWide never contains any null

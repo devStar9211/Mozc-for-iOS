@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,8 +33,7 @@
 #include <windows.h>
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlapp.h>
 #include <atlmisc.h>
 
@@ -50,9 +49,9 @@ namespace win32 {
 
 // text-rect pair for batch text rendering.
 struct TextRenderingInfo {
-  wstring text;
+  std::wstring text;
   Rect rect;
-  TextRenderingInfo(const wstring &str, const Rect &r) :
+  TextRenderingInfo(const std::wstring &str, const Rect &r) :
     text(str), rect(r) {
   }
 };
@@ -84,18 +83,20 @@ class TextRenderer {
   virtual void OnThemeChanged() = 0;
 
   // Retrieves the bounding box for a given string.
-  virtual Size MeasureString(FONT_TYPE font_type, const wstring &str) const = 0;
+  virtual Size MeasureString(FONT_TYPE font_type,
+                             const std::wstring &str) const = 0;
   virtual Size MeasureStringMultiLine(FONT_TYPE font_type,
-                                      const wstring &str,
+                                      const std::wstring &str,
                                       const int width) const = 0;
   // Renders the given |text|.
   virtual void RenderText(WTL::CDCHandle dc,
-                          const wstring &text,
+                          const std::wstring &text,
                           const Rect &rect,
                           FONT_TYPE font_type) const = 0;
-  virtual void RenderTextList(WTL::CDCHandle dc,
-                              const vector<TextRenderingInfo> &display_list,
-                              FONT_TYPE font_type) const = 0;
+  virtual void RenderTextList(
+      WTL::CDCHandle dc,
+      const std::vector<TextRenderingInfo> &display_list,
+      FONT_TYPE font_type) const = 0;
 };
 
 }  // namespace win32

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -41,6 +41,5 @@
 #define MOZC_ENABLE_IBUS_INPUT_PURPOSE
 #endif  // !MOZC_ENABLE_IBUS_INPUT_PURPOSE
 #endif  // libibus (>=1.5.4)
-
 
 #endif  // MOZC_UNIX_IBUS_IBUS_HEADER_H_

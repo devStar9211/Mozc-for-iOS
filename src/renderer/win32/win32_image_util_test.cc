@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,13 +31,12 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlapp.h>
 #include <atlgdi.h>
 #include <atlmisc.h>
-#include <gdiplus.h>
 
+#include <algorithm>
 #include <fstream>
 #include <list>
 #include <memory>
@@ -50,13 +49,15 @@
 #include "base/win_font_test_helper.h"
 #include "net/jsoncpp.h"
 #include "testing/base/public/gunit.h"
+#include "testing/base/public/mozctest.h"
 
-DECLARE_string(test_srcdir);
+using ::std::min;
+using ::std::max;
 
-namespace mozc {
-namespace renderer {
-namespace win32 {
-namespace {
+// gdiplus.h must be placed here because it internally depends on
+// global min/max functions.
+// TODO(yukawa): Use WIC (Windows Imaging Component) instead of GDI+.
+#include <gdiplus.h>  // NOLINT
 
 using ::mozc::renderer::win32::internal::GaussianBlur;
 using ::mozc::renderer::win32::internal::SafeFrameBuffer;
@@ -70,11 +71,16 @@ using ::WTL::CLogFont;
 using ::WTL::CPoint;
 using ::WTL::CSize;
 
+namespace mozc {
+namespace renderer {
+namespace win32 {
+namespace {
+
 typedef SubdivisionalPixel::SubdivisionalPixelIterator
     SubdivisionalPixelIterator;
 
-class BalloonImageTest : public testing::Test,
-                         public testing::WithParamInterface<const char *> {
+class BalloonImageTest : public ::testing::Test,
+                         public ::testing::WithParamInterface<const char *> {
  public:
   static void SetUpTestCase() {
     InitGdiplus();
@@ -101,10 +107,10 @@ class BalloonImageTest : public testing::Test,
 
   static void BalloonImageTest::SaveTestImage(
       const TestableBalloonImage::BalloonImageInfo &info,
-      const wstring filename) {
+      const std::wstring filename) {
     CPoint tail_offset;
     CSize size;
-    vector<ARGBColor> buffer;
+    std::vector<ARGBColor> buffer;
     CBitmap dib = TestableBalloonImage::CreateInternal(
         info, &tail_offset, &size, &buffer);
 
@@ -185,7 +191,7 @@ class BalloonImageTest : public testing::Test,
   }
 
  private:
-  static bool GetEncoderClsid(const wstring format, CLSID *clsid) {
+  static bool GetEncoderClsid(const std::wstring format, CLSID *clsid) {
     UINT num_codecs = 0;
     UINT codecs_buffer_size = 0;
     Gdiplus::GetImageEncodersSize(&num_codecs, &codecs_buffer_size);
@@ -193,7 +199,7 @@ class BalloonImageTest : public testing::Test,
       return false;
     }
 
-    unique_ptr<uint8[]> codesc_buffer(new uint8[codecs_buffer_size]);
+    std::unique_ptr<uint8[]> codesc_buffer(new uint8[codecs_buffer_size]);
     Gdiplus::ImageCodecInfo *codecs =
         reinterpret_cast<Gdiplus::ImageCodecInfo *>(codesc_buffer.get());
 
@@ -282,11 +288,8 @@ INSTANTIATE_TEST_CASE_P(BalloonImageParameters,
                         ::testing::ValuesIn(kRenderingResultList));
 
 TEST_P(BalloonImageTest, TestImpl) {
-  string expected_image = GetParam();
   const string &expected_image_path =
-      FileUtil::JoinPath(FLAGS_test_srcdir, expected_image);
-  ASSERT_TRUE(FileUtil::FileExists(expected_image_path))
-      << "Reference file is not found: " << expected_image_path;
+      mozc::testing::GetSourceFileOrDie({GetParam()});
   const string json_path = expected_image_path + ".json";
   ASSERT_TRUE(FileUtil::FileExists(json_path))
       << "Manifest file is not found: " << json_path;
@@ -302,14 +305,14 @@ TEST_P(BalloonImageTest, TestImpl) {
 
   CPoint actual_tail_offset;
   CSize actual_size;
-  vector<ARGBColor> actual_buffer;
+  std::vector<ARGBColor> actual_buffer;
   CBitmap dib = TestableBalloonImage::CreateInternal(
       info, &actual_tail_offset, &actual_size, &actual_buffer);
 
   EXPECT_EQ(tail["output"]["tail_offset_x"].asInt(), actual_tail_offset.x);
   EXPECT_EQ(tail["output"]["tail_offset_y"].asInt(), actual_tail_offset.y);
 
-  wstring wide_path;
+  std::wstring wide_path;
   Util::UTF8ToWide(expected_image_path, &wide_path);
 
   Gdiplus::Bitmap bitmap(wide_path.c_str());

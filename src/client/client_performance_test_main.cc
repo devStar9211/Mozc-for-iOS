@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,11 +31,12 @@
 #include <cmath>
 #include <iostream>  // NOLINT
 #include <iterator>
-#include <vector>
 #include <string>
+#include <vector>
 
 #include "base/file_stream.h"
 #include "base/flags.h"
+#include "base/init_mozc.h"
 #include "base/logging.h"
 #include "base/port.h"
 #include "base/singleton.h"
@@ -43,7 +44,7 @@
 #include "base/util.h"
 #include "client/client.h"
 #include "config/config_handler.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "session/random_keyevents_generator.h"
 
 DEFINE_string(server_path, "", "specify server path");
@@ -54,12 +55,12 @@ namespace {
 
 struct Result {
   string test_name;
-  vector<uint32> operations_times;
+  std::vector<uint32> operations_times;
 };
 
 class TestSentenceGenerator {
  public:
-  const vector<vector<commands::KeyEvent> > &GetTestKeys() const {
+  const std::vector<std::vector<commands::KeyEvent> > &GetTestKeys() const {
     return keys_;
   }
 
@@ -68,12 +69,12 @@ class TestSentenceGenerator {
     const char **sentences =
         session::RandomKeyEventsGenerator::GetTestSentences(&size);
     CHECK_GT(size, 0);
-    size = min(static_cast<size_t>(200), size);
+    size = std::min(static_cast<size_t>(200), size);
 
     for (size_t i = 0; i < size; ++i) {
       string output;
       Util::HiraganaToRomanji(sentences[i], &output);
-      vector<commands::KeyEvent> tmp;
+      std::vector<commands::KeyEvent> tmp;
       for (ConstChar32Iterator iter(output); !iter.Done(); iter.Next()) {
         const char32 ucs4 = iter.Get();
         if (ucs4 >= static_cast<char32>('a') &&
@@ -90,7 +91,7 @@ class TestSentenceGenerator {
   }
 
  private:
-  vector<vector<commands::KeyEvent> > keys_;
+  std::vector<std::vector<commands::KeyEvent> > keys_;
 };
 
 class TestScenarioInterface {
@@ -147,7 +148,7 @@ class TestScenarioInterface {
   commands::Output output_;
 };
 
-string GetBasicStats(const vector<uint32> times) {
+string GetBasicStats(const std::vector<uint32> times) {
   uint32 total_time = 0;
   uint32 avg_time = 0;
   uint32 max_time = 0;
@@ -159,8 +160,8 @@ string GetBasicStats(const vector<uint32> times) {
   max_time = 0;
   for (size_t i = 0; i < times.size(); ++i) {
     total_time += times[i];
-    min_time = min(times[i], min_time);
-    max_time = max(times[i], max_time);
+    min_time = std::min(times[i], min_time);
+    max_time = std::max(times[i], max_time);
   }
 
   avg_time = static_cast<uint32>(1.0 * total_time / times.size());
@@ -175,8 +176,8 @@ string GetBasicStats(const vector<uint32> times) {
   }
 
   if (!times.empty()) {
-    vector<uint32> tmp(times);
-    sort(tmp.begin(), tmp.end());
+    std::vector<uint32> tmp(times);
+    std::sort(tmp.begin(), tmp.end());
     med_time = tmp[tmp.size() / 2];
   }
 
@@ -194,7 +195,7 @@ string GetBasicStats(const vector<uint32> times) {
 class PreeditCommon : public TestScenarioInterface {
  protected:
   virtual void RunTest(Result *result) {
-    const vector<vector<commands::KeyEvent> > &keys =
+    const std::vector<std::vector<commands::KeyEvent> > &keys =
         Singleton<TestSentenceGenerator>::get()->GetTestKeys();
     for (size_t i = 0; i < keys.size(); ++i) {
       for (int j = 0; j < keys[i].size(); ++j) {
@@ -243,14 +244,14 @@ enum PredictionRequestType {
 };
 
 void CreatePredictionKeys(PredictionRequestType type,
-                          vector <string> *request_keys) {
+                          std::vector <string> *request_keys) {
   CHECK(request_keys);
   request_keys->clear();
 
   const char *kVoels[] = { "a", "i", "u", "e", "o" };
   const char *kConsonant[] = { "k", "s", "t", "n", "h",
                                "m", "y", "r", "w" };
-  vector<string> one_chars;
+  std::vector<string> one_chars;
   for (size_t i = 0; i < arraysize(kVoels); ++i) {
     one_chars.push_back(kVoels[i]);
   }
@@ -261,7 +262,7 @@ void CreatePredictionKeys(PredictionRequestType type,
     }
   }
 
-  vector<string> two_chars;
+  std::vector<string> two_chars;
   for (size_t i = 0; i < one_chars.size(); ++i) {
     for (size_t j = 0; j < one_chars.size(); ++j) {
       two_chars.push_back(one_chars[i] + one_chars[j]);
@@ -269,12 +270,12 @@ void CreatePredictionKeys(PredictionRequestType type,
   }
   switch (type) {
     case ONE_CHAR:
-      copy(one_chars.begin(), one_chars.end(),
-           back_inserter(*request_keys));
+      std::copy(one_chars.begin(), one_chars.end(),
+                back_inserter(*request_keys));
       break;
     case TWO_CHARS:
-      copy(two_chars.begin(), two_chars.end(),
-           back_inserter(*request_keys));
+      std::copy(two_chars.begin(), two_chars.end(),
+                back_inserter(*request_keys));
       break;
     default:
       break;
@@ -289,7 +290,7 @@ class PredictionCommon: public TestScenarioInterface {
     IMEOn();
     ResetConfig();
     DisableSuggestion();
-    vector<string> request_keys;
+    std::vector<string> request_keys;
     CreatePredictionKeys(type, &request_keys);
     for (size_t i = 0; i < request_keys.size(); ++i) {
       const string &keys = request_keys[i];
@@ -338,7 +339,7 @@ class Conversion : public TestScenarioInterface {
     DisableSuggestion();
     IMEOn();
 
-    const vector<vector<commands::KeyEvent> > &keys =
+    const std::vector<std::vector<commands::KeyEvent> > &keys =
         Singleton<TestSentenceGenerator>::get()->GetTestKeys();
     for (size_t i = 0; i < keys.size(); ++i) {
       for (int j = 0; j < keys[i].size(); ++j) {
@@ -365,10 +366,10 @@ class Conversion : public TestScenarioInterface {
 }  // namespace mozc
 
 int main(int argc, char **argv) {
-  InitGoogle(argv[0], &argc, &argv, false);
+  mozc::InitMozc(argv[0], &argc, &argv, false);
 
-  vector<mozc::TestScenarioInterface *> tests;
-  vector<mozc::Result *> results;
+  std::vector<mozc::TestScenarioInterface *> tests;
+  std::vector<mozc::Result *> results;
 
   tests.push_back(new mozc::PreeditWithoutSuggestion);
   tests.push_back(new mozc::PreeditWithSuggestion);
@@ -384,19 +385,19 @@ int main(int argc, char **argv) {
 
   CHECK_EQ(results.size(), tests.size());
 
-  ostream *ofs = &cout;
+  std::ostream *ofs = &std::cout;
   if (!FLAGS_log_path.empty()) {
     ofs = new mozc::OutputFileStream(FLAGS_log_path.c_str());
   }
 
   // TODO(taku): generate histogram with ChartAPI
   for (size_t i = 0; i < tests.size(); ++i) {
-    (*ofs) << results[i]->test_name << ": " <<
-        mozc::GetBasicStats(results[i]->operations_times) << endl;
+    (*ofs) << results[i]->test_name << ": "
+           << mozc::GetBasicStats(results[i]->operations_times) << std::endl;
     delete tests[i];
     delete results[i];
   }
-  if (ofs != &cout) {
+  if (ofs != &std::cout) {
     delete ofs;
   }
 

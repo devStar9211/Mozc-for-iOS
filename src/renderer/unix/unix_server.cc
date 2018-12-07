@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,7 +35,7 @@
 #include <memory>
 
 #include "base/logging.h"
-#include "renderer/renderer_command.pb.h"
+#include "protocol/renderer_command.pb.h"
 #include "renderer/unix/window_manager.h"
 
 using std::unique_ptr;
@@ -158,7 +158,7 @@ void UnixServer::OpenPipe() {
     return;
   }
 
-  // TODO(nona): Close unsued fd.
+  // TODO(nona): Close unused fd.
   fcntl(pipefd_[0], F_SETFL, O_NONBLOCK);
   fcntl(pipefd_[1], F_SETFL, O_NONBLOCK);
 }

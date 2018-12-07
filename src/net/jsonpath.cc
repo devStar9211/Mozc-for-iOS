@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,12 +29,14 @@
 
 #include "net/jsonpath.h"
 
+#include <algorithm>
 #include <cctype>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "base/logging.h"
+#include "base/number_util.h"
 #include "base/port.h"
 #include "base/util.h"
 
@@ -63,7 +65,7 @@ struct JsonPathNode {
   }
 
   string DebugString() const {
-    ostringstream os;
+    std::ostringstream os;
     os << "{" << type << ":" << array_index << ":" << object_index
        << ":(" << slice_start << ":" << slice_end << ":" << slice_step << ")}";
     return os.str();
@@ -97,7 +99,7 @@ bool GetDigit(const string &str, int *output) {
     ++begin;
   }
 
-  *output = atoi32(str.c_str());
+  *output = NumberUtil::SimpleAtoi(str);
 
   return true;
 }
@@ -120,9 +122,9 @@ bool GetQuotedString(const string &str, const char c,
   return false;
 }
 
-typedef vector<JsonPathNode> JsonPathNodes;
+typedef std::vector<JsonPathNode> JsonPathNodes;
 
-class JsonPathExp : public vector<vector<JsonPathNode> > {
+class JsonPathExp : public std::vector<std::vector<JsonPathNode> > {
  public:
   bool Parse(const string &jsonpath) {
     clear();
@@ -196,7 +198,7 @@ class JsonPathExp : public vector<vector<JsonPathNode> > {
   }
 
   string DebugString() const {
-    ostringstream os;
+    std::ostringstream os;
     for (size_t i = 0; i < size(); ++i) {
       os << "[";
       for (size_t j = 0; j < (*this)[i].size(); ++j) {
@@ -228,7 +230,7 @@ class JsonPathExp : public vector<vector<JsonPathNode> > {
       node.object_index = nodes_exp;
       nodes->push_back(node);
     } else if (nodes_type == IN_BRACKET) {
-      vector<string> nodes_exps;
+      std::vector<string> nodes_exps;
       Util::SplitStringUsing(nodes_exp, ",", &nodes_exps);
       for (size_t i = 0; i < nodes_exps.size(); ++i) {
         JsonPathNode node;
@@ -242,7 +244,7 @@ class JsonPathExp : public vector<vector<JsonPathNode> > {
           node.type = JsonPathNode::OBJECT_INDEX;
           node.object_index = "*";
         } else {
-          vector<string> slice;
+          std::vector<string> slice;
           Util::SplitStringAllowEmpty(nodes_exps[i], ":", &slice);
           if (slice.size() == 1) {
             if (GetDigit(slice[0], &node.array_index)) {
@@ -283,7 +285,7 @@ class JsonPathExp : public vector<vector<JsonPathNode> > {
 //  which matches to |nodes|.
 void CollectValuesRecursively(const Json::Value &value,
                               const JsonPathNodes &nodes,
-                              vector<const Json::Value *> *output) {
+                              std::vector<const Json::Value *> *output) {
   DCHECK(output);
   for (size_t node_index = 0; node_index < nodes.size(); ++node_index) {
     if (nodes[node_index].type != JsonPathNode::OBJECT_INDEX) {
@@ -313,7 +315,7 @@ void CollectValuesRecursively(const Json::Value &value,
 void CollectNodesFromJson(const Json::Value &value,
                           const JsonPathExp &jsonpathexp,
                           size_t depth,
-                          vector<const Json::Value *> *output) {
+                          std::vector<const Json::Value *> *output) {
   if (depth >= jsonpathexp.size()) {
     output->push_back(&value);
     return;
@@ -339,7 +341,7 @@ void CollectNodesFromJson(const Json::Value &value,
           CollectNodesFromJson(value, jsonpathexp, depth + 1, output);
         }
       } else if (node.object_index == "." && depth + 1 < jsonpathexp.size()) {
-        vector<const Json::Value *> matched_values;
+        std::vector<const Json::Value *> matched_values;
         CollectValuesRecursively(value, jsonpathexp[depth + 1],
                                  &matched_values);
         for (size_t i = 0; i < matched_values.size(); ++i) {
@@ -365,8 +367,8 @@ void CollectNodesFromJson(const Json::Value &value,
             size : node.slice_end;
         const int step = JsonPathNode::IsUndef(node.slice_step) ?
             1 : node.slice_step;
-        start = (start < 0) ? max(0, start + size) : min(size, start);
-        end   = (end < 0) ?   max(0, end + size)   : min(size, end);
+        start = (start < 0) ? std::max(0, start + size) : std::min(size, start);
+        end = (end < 0) ? std::max(0, end + size) : std::min(size, end);
         if (step > 0 && end > start) {
           for (int i = start; i < end; i += step) {
             if (value.isValidIndex(i)) {
@@ -391,7 +393,7 @@ void CollectNodesFromJson(const Json::Value &value,
 // static
 bool JsonPath::Parse(const Json::Value &root,
                      const string &jsonpath,
-                     vector<const Json::Value *> *output) {
+                     std::vector<const Json::Value *> *output) {
   JsonPathExp jsonpathexp;
   if (!jsonpathexp.Parse(jsonpath)) {
     LOG(WARNING) << "Parsing JsonPath error: " << jsonpath;

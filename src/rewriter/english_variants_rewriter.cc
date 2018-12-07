@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,9 +34,9 @@
 
 #include "base/logging.h"
 #include "base/util.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
+#include "request/conversion_request.h"
 
 namespace mozc {
 
@@ -46,7 +46,7 @@ EnglishVariantsRewriter::~EnglishVariantsRewriter() {}
 
 bool EnglishVariantsRewriter::ExpandEnglishVariants(
     const string &input,
-    vector<string> *variants) const {
+    std::vector<string> *variants) const {
   DCHECK(variants);
 
   if (input.empty()) {
@@ -128,7 +128,7 @@ bool EnglishVariantsRewriter::ExpandEnglishVariantsWithSegment(
       modified = true;
       original_candidate->attributes |=
           Segment::Candidate::NO_VARIANTS_EXPANSION;
-      vector<string> variants;
+      std::vector<string> variants;
       if (ExpandEnglishVariants(original_candidate->content_value,
                                 &variants)) {
         CHECK(!variants.empty());
@@ -136,8 +136,9 @@ bool EnglishVariantsRewriter::ExpandEnglishVariantsWithSegment(
           Segment::Candidate *new_candidate = seg->insert_candidate(i + j + 1);
           DCHECK(new_candidate);
           new_candidate->Init();
-          new_candidate->value = variants[j] +
-              original_candidate->functional_value();
+          Util::ConcatStrings(variants[j],
+                              original_candidate->functional_value(),
+                              &new_candidate->value);
           new_candidate->key = original_candidate->key;
           new_candidate->content_value = variants[j];
           new_candidate->content_key = original_candidate->content_key;

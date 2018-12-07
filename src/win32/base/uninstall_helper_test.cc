@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,7 +31,6 @@
 #include <CGuid.h>
 
 #include "base/const.h"
-#include "base/system_util.h"
 #include "base/util.h"
 #include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
@@ -53,9 +52,9 @@ const LANGID kLANGJaJP = MAKELANGID(LANG_JAPANESE, SUBLANG_JAPANESE_JAPAN);
 
 const DWORD kJapaneseKLID = 0xE0200411;
 
-wstring ToWideString(const string &str) {
-  wstring wide;
-  if (mozc::Util::UTF8ToWide(str.c_str(), &wide) <= 0) {
+std::wstring ToWideString(const string &str) {
+  std::wstring wide;
+  if (mozc::Util::UTF8ToWide(str, &wide) <= 0) {
     return L"";
   }
   return wide;
@@ -63,53 +62,12 @@ wstring ToWideString(const string &str) {
 
 }  // namespace
 
-// Test case for b/2950946
-// 1. Install Google Japanese Input into Windows XP.
-// 2. Set Google Japanese Input as the default IME.
-// 3. Uninstall Google Japanese Input.
-//    -> MS-IME should be the default IME.
-TEST(UninstallHelperTest, Issue_2950946) {
-  // Full IMM32 version of Google Japanese Input.
-  KeyboardLayoutInfo gimeja;
-  {
-    gimeja.klid = kJapaneseKLID;
-    gimeja.ime_filename = ToWideString(kIMEFile);
-  }
-  // Built-in MS-IME.
-  KeyboardLayoutInfo msime;
-  {
-    msime.klid = 0xE0010411;
-    msime.ime_filename = L"imjp81.ime";
-  }
-
-  // First entry of |current_preloads| is the default IME.
-  vector<KeyboardLayoutInfo> current_preloads;
-  current_preloads.push_back(gimeja);
-  current_preloads.push_back(msime);
-
-  // |installed_preloads| is sorted by |klid|.
-  vector<KeyboardLayoutInfo> installed_preloads;
-  installed_preloads.push_back(msime);
-  installed_preloads.push_back(gimeja);
-
-  vector<KeyboardLayoutInfo> new_preloads;
-
-  EXPECT_TRUE(UninstallHelper::GetNewPreloadLayoutsForXP(
-      current_preloads,
-      installed_preloads,
-      &new_preloads));
-
-  EXPECT_EQ(1, new_preloads.size());
-  EXPECT_EQ(msime.klid, new_preloads.at(0).klid);
-  EXPECT_EQ(msime.ime_filename, new_preloads.at(0).ime_filename);
-}
-
 TEST(UninstallHelperTest, BasicCaseForVista) {
   // 1. Install Google Japanese Input into Windows Vista.
   // 2. Set Google Japanese Input as the default IME.
   // 3. Uninstall Google Japanese Input.
   //    -> MS-IME should be the default IME.
-  vector<LayoutProfileInfo> current_profiles;
+  std::vector<LayoutProfileInfo> current_profiles;
   {
     // Full IMM32 version of Google Japanese Input.
     LayoutProfileInfo info;
@@ -137,12 +95,12 @@ TEST(UninstallHelperTest, BasicCaseForVista) {
     current_profiles.push_back(info);
   }
 
-  vector<LayoutProfileInfo> installed_profiles;
+  std::vector<LayoutProfileInfo> installed_profiles;
   installed_profiles = current_profiles;
 
   LayoutProfileInfo current_default;
   LayoutProfileInfo new_default;
-  vector<LayoutProfileInfo> removed_profiles;
+  std::vector<LayoutProfileInfo> removed_profiles;
 
   EXPECT_TRUE(UninstallHelper::GetNewEnabledProfileForVista(
       current_profiles,
@@ -163,7 +121,7 @@ TEST(UninstallHelperTest, BasicCaseForWin8) {
   // 2. Set Google Japanese Input (IMM32) as the default IME.
   // 3. Uninstall Google Japanese Input.
   //    -> MS-IME should be the default IME.
-  vector<LayoutProfileInfo> current_profiles;
+  std::vector<LayoutProfileInfo> current_profiles;
   {
     // Full IMM32 version of Google Japanese Input.
     LayoutProfileInfo info;
@@ -204,12 +162,12 @@ TEST(UninstallHelperTest, BasicCaseForWin8) {
     current_profiles.push_back(info);
   }
 
-  vector<LayoutProfileInfo> installed_profiles;
+  std::vector<LayoutProfileInfo> installed_profiles;
   installed_profiles = current_profiles;
 
   LayoutProfileInfo current_default;
   LayoutProfileInfo new_default;
-  vector<LayoutProfileInfo> removed_profiles;
+  std::vector<LayoutProfileInfo> removed_profiles;
 
   EXPECT_TRUE(UninstallHelper::GetNewEnabledProfileForVista(
       current_profiles,
@@ -230,24 +188,17 @@ TEST(UninstallHelperTest, BasicCaseForWin8) {
 // only their availability is checked.
 // TODO(yukawa): Use API hook to inject mock result.
 TEST(UninstallHelperTest, LoadKeyboardProfilesTest) {
-  vector<LayoutProfileInfo> installed_profiles;
+  std::vector<LayoutProfileInfo> installed_profiles;
   EXPECT_TRUE(UninstallHelper::GetInstalledProfilesByLanguage(
       kLANGJaJP, &installed_profiles));
 
-  if (SystemUtil::IsVistaOrLater()) {
-    vector<LayoutProfileInfo> current_profiles;
-    EXPECT_TRUE(UninstallHelper::GetCurrentProfilesForVista(
-        &current_profiles));
-  }
-
-  vector<KeyboardLayoutInfo> preload_layouts;
-  vector<KeyboardLayoutInfo> installed_layouts;
-  EXPECT_TRUE(UninstallHelper::GetKeyboardLayoutsForXP(
-      &preload_layouts, &installed_layouts));
+  std::vector<LayoutProfileInfo> current_profiles;
+  EXPECT_TRUE(UninstallHelper::GetCurrentProfilesForVista(
+      &current_profiles));
 }
 
 TEST(UninstallHelperTest, ComposeProfileStringForVistaTest) {
-  vector<LayoutProfileInfo> profiles;
+  std::vector<LayoutProfileInfo> profiles;
   {
     LayoutProfileInfo info;
     info.langid = kLANGJaJP;
@@ -263,7 +214,7 @@ TEST(UninstallHelperTest, ComposeProfileStringForVistaTest) {
     info.is_tip = true;
     profiles.push_back(info);
   }
-  const wstring &profile_string =
+  const std::wstring &profile_string =
       UninstallHelper::ComposeProfileStringForVista(profiles);
   EXPECT_EQ(L"0411:E0220411;0411:{03B5835F-F03C-411B-9CE2-AA23E1171E36}"
             L"{A76C93D9-5523-4E90-AAFA-4DB112F9AC76}",

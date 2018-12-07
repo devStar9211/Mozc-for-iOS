@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -80,11 +80,11 @@ class SystemDictionaryCodecInterface {
 
   // Encode tokens(word info) for a certain key
   virtual void EncodeTokens(
-      const vector<TokenInfo> &tokens, string *output) const = 0;
+      const std::vector<TokenInfo> &tokens, string *output) const = 0;
 
   // Decode token(word info) for a certain key
   virtual void DecodeTokens(
-      const uint8 *ptr, vector<TokenInfo> *tokens) const = 0;
+      const uint8 *ptr, std::vector<TokenInfo> *tokens) const = 0;
 
   // Decode a token. If the token is the last one, returns false,
   // otherwise true.
@@ -118,6 +118,6 @@ class SystemDictionaryCodecFactory {
 };
 
 }  // namespace dictionary
-}  // namespace
+}  // namespace mozc
 
 #endif  // MOZC_DICTIONARY_SYSTEM_CODEC_INTERFACE_H_

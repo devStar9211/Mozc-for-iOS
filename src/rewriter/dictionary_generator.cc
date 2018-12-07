@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -38,9 +38,8 @@
 
 #include "base/file_stream.h"
 #include "base/freelist.h"
+#include "base/hash.h"
 #include "base/logging.h"
-#include "base/util.h"
-#include "data_manager/user_pos_manager.h"
 #include "dictionary/pos_matcher.h"
 #include "dictionary/user_pos.h"
 
@@ -74,31 +73,32 @@ void Token::MergeFrom(const Token &token) {
 }
 
 uint64 Token::GetID() const {
-  return Util::Fingerprint(key_ + "\t" + value_ + "\t" + pos_);
+  return Hash::Fingerprint(key_ + "\t" + value_ + "\t" + pos_);
 }
 
 static const size_t kTokenSize = 1000;
 
-DictionaryGenerator::DictionaryGenerator()
+DictionaryGenerator::DictionaryGenerator(
+    const DataManagerInterface &data_manager)
     : token_pool_(new ObjectPool<Token>(kTokenSize)),
-      token_map_(new map<uint64, Token *>),
-      user_pos_(
-          new UserPOS(UserPosManager::GetUserPosManager()->GetUserPOSData())),
-      open_bracket_id_(UserPosManager::GetUserPosManager()->GetPOSMatcher()
-                       ->GetOpenBracketId()),
-      close_bracket_id_(UserPosManager::GetUserPosManager()->GetPOSMatcher()
-                        ->GetCloseBracketId()) {}
+      token_map_(new std::map<uint64, Token *>) {
+  const dictionary::POSMatcher pos_matcher(data_manager.GetPOSMatcherData());
+  open_bracket_id_ = pos_matcher.GetOpenBracketId();
+  close_bracket_id_ = pos_matcher.GetCloseBracketId();
+  user_pos_.reset(dictionary::UserPOS::CreateFromDataManager(data_manager));
+}
 
 DictionaryGenerator::~DictionaryGenerator() {}
 
 void DictionaryGenerator::AddToken(const Token &token) {
   Token *new_token = NULL;
-  map<uint64, Token *>::const_iterator it = token_map_->find(token.GetID());
+  std::map<uint64, Token *>::const_iterator it =
+      token_map_->find(token.GetID());
   if (it != token_map_->end()) {
     new_token = it->second;
   } else {
     new_token = token_pool_->Alloc();
-    token_map_->insert(make_pair(token.GetID(), new_token));
+    token_map_->insert(std::make_pair(token.GetID(), new_token));
   }
   new_token->MergeFrom(token);
 }
@@ -119,15 +119,15 @@ struct CompareToken {
   }
 };
 
-void GetSortedTokens(const map<uint64, Token *> *token_map,
-                     vector<const Token *> *tokens) {
+void GetSortedTokens(const std::map<uint64, Token *> *token_map,
+                     std::vector<const Token *> *tokens) {
   tokens->clear();
-  for (map<uint64, Token *>::const_iterator it = token_map->begin();
+  for (std::map<uint64, Token *>::const_iterator it = token_map->begin();
        it != token_map->end();
        ++it) {
     tokens->push_back(it->second);
   }
-  sort(tokens->begin(), tokens->end(), CompareToken());
+  std::sort(tokens->begin(), tokens->end(), CompareToken());
 }
 }  // namespace
 
@@ -138,7 +138,7 @@ bool DictionaryGenerator::Output(const string &filename) const {
     return false;
   }
 
-  vector<const Token *> tokens;
+  std::vector<const Token *> tokens;
   GetSortedTokens(token_map_.get(), &tokens);
 
   uint32 num_same_keys = 0;
@@ -157,9 +157,9 @@ bool DictionaryGenerator::Output(const string &filename) const {
     const uint32 cost = 10 * num_same_keys;
 
     uint16 id;
-    if (pos == "\xE6\x8B\xAC\xE5\xBC\xA7\xE9\x96\x8B") {      // "括弧開"
+    if (pos == "括弧開") {
       id = open_bracket_id_;
-    } else if (pos == "\xE6\x8B\xAC\xE5\xBC\xA7\xE9\x96\x89") {  // "括弧閉"
+    } else if (pos == "括弧閉") {
       id = close_bracket_id_;
     } else {
       CHECK(user_pos_->GetPOSIDs(pos, &id)) << "Unknown POS type: " << pos;
@@ -174,7 +174,7 @@ bool DictionaryGenerator::Output(const string &filename) const {
         << (token.description().empty()? "": token.description()) << "\t"
         << (token.additional_description().empty()?
             "": token.additional_description());
-    ofs << endl;
+    ofs << std::endl;
   }
   return true;
 }

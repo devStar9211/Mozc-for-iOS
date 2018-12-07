@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,8 +27,8 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef MOZC_COMPOSER_INTERNAL_COMPOSITION_INTERFACE_H_
-#define MOZC_COMPOSER_INTERNAL_COMPOSITION_INTERFACE_H_
+#ifndef MOZC_COMPOSER_COMPOSITION_INTERFACE_H_
+#define MOZC_COMPOSER_COMPOSITION_INTERFACE_H_
 
 #include <set>
 #include <string>
@@ -93,11 +93,11 @@ class CompositionInterface {
 
   // Get string with consideration for ambiguity from pending input
   virtual void GetExpandedStrings(string *base,
-                                  set<string> *expanded) const = 0;
+                                  std::set<string> *expanded) const = 0;
 
   virtual void GetExpandedStringsWithTransliterator(
       Transliterators::Transliterator transliterator, string *base,
-      set<string> *expanded) const = 0;
+      std::set<string> *expanded) const = 0;
 
   // Return string with the specified trim mode and the current display mode.
   virtual void GetStringWithTrimMode(TrimMode trim_mode,
@@ -133,4 +133,4 @@ class CompositionInterface {
 }  // namespace composer
 }  // namespace mozc
 
-#endif  // MOZC_COMPOSER_INTERNAL_COMPOSITION_INTERFACE_H_
+#endif  // MOZC_COMPOSER_COMPOSITION_INTERFACE_H_

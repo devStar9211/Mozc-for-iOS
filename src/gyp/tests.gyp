@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -36,14 +36,14 @@
         '../base/base_test.gyp:base_all_test',
         '../client/client_test.gyp:client_all_test',
         '../config/config_test.gyp:config_all_test',
-        '../composer/composer.gyp:composer_all_test',
+        '../composer/composer_test.gyp:composer_all_test',
         '../converter/converter_test.gyp:converter_all_test',
         '../dictionary/dictionary_test.gyp:dictionary_all_test',
         '../dictionary/file/dictionary_file_test.gyp:dictionary_file_all_test',
         '../dictionary/system/system_dictionary_test.gyp:system_dictionary_all_test',
+        '../engine/engine_test.gyp:engine_all_test',
+        '../gui/gui.gyp:gui_all_test',
         '../handwriting/handwriting_test.gyp:handwriting_all_test',
-        # Currently 'gui_all_test' does not exist.
-        # '../gui/gui.gyp:gui_all_test',
         '../ipc/ipc.gyp:ipc_all_test',
         '../net/net_test.gyp:net_all_test',
         '../prediction/prediction_test.gyp:prediction_all_test',
@@ -58,14 +58,14 @@
         '../usage_stats/usage_stats_test.gyp:usage_stats_all_test',
       ],
       'conditions': [
-        ['OS=="win"', {
+        ['target_platform=="Windows"', {
           'dependencies': [
             '../win32/base/win32_base.gyp:win32_base_all_test',
             '../win32/ime/ime.gyp:ime_all_test',
             '../win32/tip/tip.gyp:tip_all_test',
           ],
         }],
-        ['OS=="mac"', {
+        ['target_platform=="Mac"', {
           'dependencies': [
             '../mac/mac.gyp:mac_all_test',
           ],
@@ -75,14 +75,17 @@
             '../unix/emacs/emacs.gyp:emacs_all_test',
           ],
         }],
-        ['OS=="linux" and use_libibus==1', {
+        ['target_platform=="Linux" and use_libibus==1', {
           'dependencies': [
             '../unix/ibus/ibus.gyp:ibus_all_test',
           ],
         }],
+        # Java tests are defined in android/android.gyp:build_java_test.
+        # However asset files (e.g., system.dictionary) are required to run
+        # native tests.
         ['target_platform=="Android"', {
           'dependencies': [
-            '../android/android.gyp:build_java_test',
+            '../android/android.gyp:assets',
           ],
         }],
       ],

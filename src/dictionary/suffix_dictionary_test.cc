@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,27 +29,31 @@
 
 #include "dictionary/suffix_dictionary.h"
 
-#include "base/scoped_ptr.h"
+#include <memory>
+
 #include "base/util.h"
 #include "data_manager/testing/mock_data_manager.h"
 #include "dictionary/dictionary_interface.h"
 #include "dictionary/dictionary_test_util.h"
-#include "dictionary/suffix_dictionary_token.h"
+#include "request/conversion_request.h"
 #include "testing/base/public/gunit.h"
 
-using ::mozc::dictionary::CollectTokenCallback;
-
 namespace mozc {
+namespace dictionary {
+namespace {
 
 TEST(SuffixDictionaryTest, LookupPredictive) {
   // Test SuffixDictionary with mock data.
-  scoped_ptr<const SuffixDictionary> dic;
+  std::unique_ptr<const SuffixDictionary> dic;
+  ConversionRequest convreq;
   {
     const testing::MockDataManager manager;
-    const SuffixToken *tokens = NULL;
-    size_t tokens_size = 0;
-    manager.GetSuffixDictionaryData(&tokens, &tokens_size);
-    dic.reset(new SuffixDictionary(tokens, tokens_size));
+    StringPiece key_array_data, value_arra_data;
+    const uint32 *token_array = nullptr;
+    manager.GetSuffixDictionaryData(&key_array_data, &value_arra_data,
+                                    &token_array);
+    dic.reset(new SuffixDictionary(key_array_data, value_arra_data,
+                                   token_array));
     ASSERT_NE(nullptr, dic.get());
   }
 
@@ -57,7 +61,7 @@ TEST(SuffixDictionaryTest, LookupPredictive) {
     // Lookup with empty key.  All tokens are looked up.  Here, just verify the
     // result is nonempty and each token has valid data.
     CollectTokenCallback callback;
-    dic->LookupPredictive("", false, &callback);
+    dic->LookupPredictive("", convreq, &callback);
     EXPECT_FALSE(callback.tokens().empty());
     for (size_t i = 0; i < callback.tokens().size(); ++i) {
       const Token &token = callback.tokens()[i];
@@ -70,9 +74,9 @@ TEST(SuffixDictionaryTest, LookupPredictive) {
   }
   {
     // Non-empty prefix.
-    const string kPrefix = "\xE3\x81\x9F";  // "た"
+    const string kPrefix = "た";
     CollectTokenCallback callback;
-    dic->LookupPredictive(kPrefix, false, &callback);
+    dic->LookupPredictive(kPrefix, convreq, &callback);
     EXPECT_FALSE(callback.tokens().empty());
     for (size_t i = 0; i < callback.tokens().size(); ++i) {
       const Token &token = callback.tokens()[i];
@@ -85,4 +89,6 @@ TEST(SuffixDictionaryTest, LookupPredictive) {
   }
 }
 
+}  // namespace
+}  // namespace dictionary
 }  // namespace mozc

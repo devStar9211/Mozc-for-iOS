@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,8 +37,10 @@
 #include <sstream>
 #include <string>
 
+#include "base/clock.h"
 #include "base/const.h"
 #include "base/file_util.h"
+#include "base/flags.h"
 #include "base/logging.h"
 #include "base/protobuf/descriptor.h"
 #include "base/protobuf/message.h"
@@ -46,8 +48,8 @@
 #include "base/system_util.h"
 #include "base/util.h"
 #include "client/client.h"
-#include "config/config.pb.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 #include "session/ime_switch_util.h"
 #include "unix/ibus/engine_registrar.h"
 #include "unix/ibus/ibus_candidate_window_handler.h"
@@ -75,16 +77,8 @@ DEFINE_bool(use_mozc_renderer, true,
 
 namespace {
 
-// A key which associates an IBusProperty object with MozcEngineProperty.
-const char kGObjectDataKey[] = "ibus-mozc-aux-data";
-// An ID for a candidate which is not associated with a text.
+// The ID for candidates which are not associated with texts.
 const int32 kBadCandidateId = -1;
-// The ibus-memconf section name in which we're interested.
-const char kMozcSectionName[] = "engine/Mozc";
-
-#ifdef ENABLE_GTK_RENDERER
-const char kMozcPanelSectionName[] = "panel";
-#endif  // ENABLE_GTK_RENDERER
 
 // Default UI locale
 const char kMozcDefaultUILocale[] = "en_US.UTF-8";
@@ -98,31 +92,19 @@ const char *kUILocaleEnvNames[] = {
   "LANG",
 };
 
+string GetEnv(const char *envname) {
+  const char *result = ::getenv(envname);
+  return result != nullptr ? string(result) : "";
+}
+
 string GetMessageLocale() {
   for (size_t i = 0; i < arraysize(kUILocaleEnvNames); ++i) {
-    const char *env_ptr = ::getenv(kUILocaleEnvNames[i]);
-    if (env_ptr == NULL || env_ptr[0] == '\0') {
-      continue;
+    const string result = GetEnv(kUILocaleEnvNames[i]);
+    if (!result.empty()) {
+      return result;
     }
-    return env_ptr;
   }
   return kMozcDefaultUILocale;
-}
-
-bool GetString(GVariant *value, string *out_string) {
-  if (g_variant_classify(value) != G_VARIANT_CLASS_STRING) {
-    return false;
-  }
-  *out_string = static_cast<const char *>(g_variant_get_string(value, NULL));
-  return true;
-}
-
-bool GetBoolean(GVariant *value, bool *out_boolean) {
-  if (g_variant_classify(value) != G_VARIANT_CLASS_BOOLEAN) {
-    return false;
-  }
-  *out_boolean = (g_variant_get_boolean(value) != FALSE);
-  return true;
 }
 
 struct IBusMozcEngineClass {
@@ -198,7 +180,6 @@ bool GetSurroundingText(IBusEngine *engine,
   guint cursor_pos = 0;
   guint anchor_pos = 0;
   // DO NOT call g_object_unref against this.
-  // http://ibus.googlecode.com/svn/docs/ibus-1.4/IBusText.html
   // http://developer.gnome.org/gobject/stable/gobject-The-Base-Object-Type.html#gobject-The-Base-Object-Type.description
   IBusText *text = NULL;
   ibus_engine_get_surrounding_text(engine, &text, &cursor_pos,
@@ -223,7 +204,7 @@ bool GetSurroundingText(IBusEngine *engine,
     return false;
   }
 
-  const size_t selection_start = min(cursor_pos, anchor_pos);
+  const size_t selection_start = std::min(cursor_pos, anchor_pos);
   const size_t selection_length = abs(info->relative_selected_length);
   Util::SubStringPiece(surrounding_text, 0, selection_start)
       .CopyToString(&info->preceding_text);
@@ -244,10 +225,26 @@ std::unique_ptr<client::ClientInterface> CreateAndConfigureClient() {
   return client;
 }
 
+#ifdef ENABLE_GTK_RENDERER
+CandidateWindowHandlerInterface *createGtkCandidateWindowHandler(
+    ::mozc::renderer::RendererClient *renderer_client) {
+  if (!FLAGS_use_mozc_renderer) {
+    return nullptr;
+  }
+  if (GetEnv("XDG_SESSION_TYPE") == "wayland") {
+    // mozc_renderer is not supported on wayland session.
+    return nullptr;
+  }
+  auto *handler = new GtkCandidateWindowHandler(renderer_client);
+  handler->RegisterGSettingsObserver();
+  return handler;
+}
+#endif  // !ENABLE_GTK_RENDERER
+
 }  // namespace
 
 MozcEngine::MozcEngine()
-    : last_sync_time_(Util::GetTime()),
+    : last_sync_time_(Clock::GetTime()),
       key_event_handler_(new KeyEventHandler),
       client_(CreateAndConfigureClient()),
 #ifdef MOZC_ENABLE_X11_SELECTION_MONITOR
@@ -257,7 +254,7 @@ MozcEngine::MozcEngine()
           new LocaleBasedMessageTranslator(GetMessageLocale()), client_.get())),
       preedit_handler_(new PreeditHandler()),
 #ifdef ENABLE_GTK_RENDERER
-      gtk_candidate_window_handler_(new GtkCandidateWindowHandler(
+      gtk_candidate_window_handler_(createGtkCandidateWindowHandler(
           new renderer::RendererClient())),
 #endif  // ENABLE_GTK_RENDERER
       ibus_candidate_window_handler_(new IBusCandidateWindowHandler()),
@@ -335,9 +332,14 @@ void MozcEngine::FocusOut(IBusEngine *engine) {
   GetCandidateWindowHandler(engine)->Hide(engine);
   property_handler_->ResetContentType(engine);
 
-  // Do not call SubmitSession or RevertSession. Preedit string will commit on
-  // Focus Out event automatically by ibus_engine_update_preedit_text_with_mode
-  // which called in UpdatePreedit method.
+  // Note that the preedit string (if any) will be committed by IBus runtime
+  // because we are specifying |IBUS_ENGINE_PREEDIT_COMMIT| flag to
+  // |ibus_engine_update_preedit_text_with_mode|. All we need to do here is
+  // simply resetting the current session in case there is a non-empty
+  // preedit text. Note that |RevertSession| is supposed to do nothing when
+  // there is no preedit text.
+  // See https://github.com/google/mozc/issues/255 for details.
+  RevertSession(engine);
   SyncData(false);
 }
 
@@ -362,15 +364,6 @@ gboolean MozcEngine::ProcessKeyEvent(
   if (property_handler_->IsDisabled()) {
     return FALSE;
   }
-
-  // Send current caret location to mozc_server to manage suggest window
-  // position.
-  // TODO(nona): Merge SendKey event to reduce IPC cost.
-  // TODO(nona): Add a unit test against b/6209562.
-  SendCaretLocation(engine->cursor_area.x,
-                    engine->cursor_area.y,
-                    engine->cursor_area.width,
-                    engine->cursor_area.height);
 
   // TODO(yusukes): use |layout| in IBusEngineDesc if possible.
   const bool layout_is_jp =
@@ -447,7 +440,7 @@ void MozcEngine::SetCursorLocation(IBusEngine *engine,
                                    gint y,
                                    gint w,
                                    gint h) {
-  // Do nothing
+  GetCandidateWindowHandler(engine)->UpdateCursorRect(engine);
 }
 
 void MozcEngine::SetContentType(IBusEngine *engine,
@@ -491,53 +484,6 @@ GType MozcEngine::GetType() {
 // static
 void MozcEngine::Disconnected(IBusBus *bus, gpointer user_data) {
   ibus_quit();
-}
-
-void MozcEngine::ConfigValueChanged(IBusConfig *config,
-                                    const gchar *section,
-                                    const gchar *name,
-                                    GVariant *value,
-                                    gpointer user_data) {
-  // This function might be called _before_ MozcEngineClassInit is called if
-  // you press the "Configure..." button for Mozc before switching to the Mozc
-  // input method.
-  MozcEngine *engine = mozc::Singleton<MozcEngine>::get();
-  engine->UpdateConfig(section, name, value);
-}
-
-#ifdef ENABLE_GTK_RENDERER
-void MozcEngine::InitRendererConfig(IBusConfig *config) {
-  GVariant *custom_font_value = ibus_config_get_value(config,
-                                                      kMozcPanelSectionName,
-                                                      "custom_font");
-  GVariant *use_custom_font_value = ibus_config_get_value(config,
-                                                          kMozcPanelSectionName,
-                                                          "use_custom_font");
-  bool use_custom_font;
-  if (GetBoolean(use_custom_font_value, &use_custom_font)) {
-    gtk_candidate_window_handler_->OnIBusUseCustomFontDescriptionChanged(
-        use_custom_font);
-  } else {
-    LOG(ERROR) << "Initialize Failed: "
-               << "Cannot get panel:use_custom_font configuration.";
-  }
-  string font_description;
-  if (GetString(custom_font_value, &font_description)) {
-    gtk_candidate_window_handler_->OnIBusCustomFontDescriptionChanged(
-       font_description);
-  } else {
-    LOG(ERROR) << "Initialize Failed: "
-               << "Cannot get panel:custom_font configuration.";
-  }
-}
-#endif  // ENABLE_GTK_RENDERER
-
-// TODO(mazda): Move the impelementation to an appropriate file.
-void MozcEngine::InitConfig(IBusConfig *config) {
-#ifdef ENABLE_GTK_RENDERER
-  MozcEngine *engine = mozc::Singleton<MozcEngine>::get();
-  engine->InitRendererConfig(config);
-#endif  // ENABLE_GTK_RENDERER
 }
 
 bool MozcEngine::UpdateAll(IBusEngine *engine, const commands::Output &output) {
@@ -603,36 +549,6 @@ bool MozcEngine::UpdateCandidateIDMapping(const commands::Output &output) {
   return true;
 }
 
-void MozcEngine::UpdateConfig(const gchar *section,
-                              const gchar *name,
-                              GVariant *value) {
-  if (!section || !name || !value) {
-    return;
-  }
-#ifdef ENABLE_GTK_RENDERER
-  // TODO(nona): Introduce ConfigHandler
-  if (g_strcmp0(section, kMozcPanelSectionName) == 0) {
-    if (g_strcmp0(name, "use_custom_font") == 0) {
-      bool use_custom_font;
-      if (!GetBoolean(value, &use_custom_font)) {
-        LOG(ERROR) << "Cannot get " << section << ":" << name << " value.";
-        return;
-      }
-      gtk_candidate_window_handler_->OnIBusUseCustomFontDescriptionChanged(
-          use_custom_font);
-    } else if (g_strcmp0(name, "custom_font") == 0) {
-      string font_description;
-      if (!GetString(value, &font_description)) {
-        LOG(ERROR) << "Cannot get " << section << ":" << name << " value.";
-        return;
-      }
-      gtk_candidate_window_handler_->OnIBusCustomFontDescriptionChanged(
-          font_description);
-    }
-  }
-#endif  // ENABLE_GTK_RENDERER
-}
-
 void MozcEngine::UpdatePreeditMethod() {
   config::Config config;
   if (!client_->GetConfig(&config)) {
@@ -648,7 +564,7 @@ void MozcEngine::SyncData(bool force) {
     return;
   }
 
-  const uint64 current_time = Util::GetTime();
+  const uint64 current_time = Clock::GetTime();
   if (force ||
       (current_time >= last_sync_time_ &&
        current_time - last_sync_time_ >= kSyncDataInterval)) {
@@ -668,6 +584,8 @@ bool MozcEngine::LaunchTool(const commands::Output &output) const {
 }
 
 void MozcEngine::RevertSession(IBusEngine *engine) {
+  // TODO(team): We should skip following actions when there is no on-going
+  // omposition.
   commands::SessionCommand command;
   command.set_type(commands::SessionCommand::REVERT);
   commands::Output output;
@@ -713,14 +631,12 @@ bool MozcEngine::ExecuteCallback(IBusEngine *engine,
 
   switch (callback_command.type()) {
     case commands::SessionCommand::UNDO:
-      // As far as I've tested on Ubuntu 11.10, most of applications which
-      // accept 'ibus_engine_delete_surrounding_text' doe not set
-      // IBUS_CAP_SURROUNDING_TEXT bit.
-      // So we should carefully uncomment the following code.
-      // -----
-      // if (!(engine->client_capabilities & IBUS_CAP_SURROUNDING_TEXT)) {
-      //   return false;
-      // }
+      // Having |IBUS_CAP_SURROUNDING_TEXT| does not necessarily mean that the
+      // client supports |ibus_engine_delete_surrounding_text()|, but there is
+      // no other good criteria.
+      if (!(engine->client_capabilities & IBUS_CAP_SURROUNDING_TEXT)) {
+        return false;
+      }
       break;
     case commands::SessionCommand::CONVERT_REVERSE: {
       if (!GetSurroundingText(engine,
@@ -769,7 +685,7 @@ CandidateWindowHandlerInterface *MozcEngine::GetCandidateWindowHandler(
 #ifndef ENABLE_GTK_RENDERER
   return ibus_candidate_window_handler_.get();
 #else
-  if (!FLAGS_use_mozc_renderer) {
+  if (!gtk_candidate_window_handler_) {
     return ibus_candidate_window_handler_.get();
   }
 
@@ -787,19 +703,6 @@ CandidateWindowHandlerInterface *MozcEngine::GetCandidateWindowHandler(
   // TODO(nona): Check executable bit for renderer.
   return gtk_candidate_window_handler_.get();
 #endif  // not ENABLE_GTK_RENDERER
-}
-
-void MozcEngine::SendCaretLocation(uint32 x, uint32 y, uint32 width,
-                                   uint32 height) {
-  commands::Output output;
-  commands::SessionCommand command;
-  command.set_type(commands::SessionCommand::SEND_CARET_LOCATION);
-  commands::Rectangle *caret_rectangle = command.mutable_caret_rectangle();
-  caret_rectangle->set_x(x);
-  caret_rectangle->set_y(y);
-  caret_rectangle->set_width(width);
-  caret_rectangle->set_height(height);
-  client_->SendCommand(command, &output);
 }
 
 }  // namespace ibus

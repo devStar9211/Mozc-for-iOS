@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,6 +36,8 @@
 
 #include "base/android_jni_proxy.h"
 
+#include <memory>
+
 #include "base/android_jni_mock.h"
 #include "base/logging.h"
 #include "testing/base/public/gmock.h"
@@ -43,7 +45,6 @@
 
 namespace mozc {
 namespace jni {
-
 namespace {
 
 class MockJavaHttpClientImpl : public MockJavaHttpClient {
@@ -58,10 +59,10 @@ class AndroidJniProxyTest : public ::testing::Test {
   }
 
   virtual void TearDown() {
-    jvm_.reset(NULL);
+    jvm_.reset();
   }
 
-  scoped_ptr<MockJavaVM> jvm_;
+  std::unique_ptr<MockJavaVM> jvm_;
 };
 
 bool IsEqualByteArray(MockJNIEnv *env,

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,15 +36,12 @@
 #include "base/file_stream.h"
 #include "base/logging.h"
 #include "base/protobuf/message.h"
-#include "base/protobuf/unknown_field_set.h"
 #include "base/util.h"
 #include "dictionary/user_pos_interface.h"
 
 namespace mozc {
 
 using ::mozc::protobuf::RepeatedPtrField;
-using ::mozc::protobuf::UnknownField;
-using ::mozc::protobuf::UnknownFieldSet;
 using ::mozc::user_dictionary::UserDictionaryCommandStatus;
 
 namespace {
@@ -54,9 +51,6 @@ const size_t kMaxValueSize = 300;
 const size_t kMaxCommentSize = 300;
 const char kInvalidChars[]= "\n\r\t";
 const char kUserDictionaryFile[] = "user://user_dictionary.db";
-
-const mozc::user_dictionary::UserDictionary::PosType kInvalidPosType =
-    static_cast<mozc::user_dictionary::UserDictionary::PosType>(-1);
 
 // Maximum string length for dictionary name.
 const size_t kMaxDictionaryNameSize = 300;
@@ -239,9 +233,9 @@ bool UserDictionaryUtil::Sanitize(string *str, size_t max_size) {
     const size_t original_size = str->size();
     string::iterator begin = str->begin();
     string::iterator end = str->end();
-    end = remove(begin, end, '\t');
-    end = remove(begin, end, '\n');
-    end = remove(begin, end, '\r');
+    end = std::remove(begin, end, '\t');
+    end = std::remove(begin, end, '\n');
+    end = std::remove(begin, end, '\r');
 
     if (end - begin <= max_size) {
       if (end - begin == original_size) {
@@ -303,66 +297,54 @@ namespace {
 // The index of each element should be matched with the actual value of enum.
 // See also user_dictionary_storage.proto for the definition of the enum.
 // Note that the '0' is invalid in the definition, so the corresponding
-// element is NULL.
+// element is nullptr.
 const char *kPosTypeStringTable[] = {
-  NULL,
-  "\xE5\x90\x8D\xE8\xA9\x9E",  // "名詞"
-  "\xE7\x9F\xAD\xE7\xB8\xAE\xE3\x82\x88\xE3\x81\xBF",  // "短縮よみ"
-  "\xE3\x82\xB5\xE3\x82\xB8\xE3\x82\xA7\xE3\x82\xB9\xE3\x83\x88"
-      "\xE3\x81\xAE\xE3\x81\xBF",  // "サジェストのみ"
-  "\xE5\x9B\xBA\xE6\x9C\x89\xE5\x90\x8D\xE8\xA9\x9E",  // "固有名詞"
-  "\xE4\xBA\xBA\xE5\x90\x8D",  // "人名"
-  "\xE5\xA7\x93",  // "姓"
-  "\xE5\x90\x8D",  // "名"
-  "\xE7\xB5\x84\xE7\xB9\x94",  // "組織"
-  "\xE5\x9C\xB0\xE5\x90\x8D",  // "地名"
-  "\xE5\x90\x8D\xE8\xA9\x9E\xE3\x82\xB5\xE5\xA4\x89",  // "名詞サ変"
-  "\xE5\x90\x8D\xE8\xA9\x9E\xE5\xBD\xA2\xE5\x8B\x95",  // "名詞形動"
-  "\xE6\x95\xB0",  // "数"
-  "\xE3\x82\xA2\xE3\x83\xAB\xE3\x83\x95\xE3\x82\xA1"
-      "\xE3\x83\x99\xE3\x83\x83\xE3\x83\x88",  // "アルファベット"
-  "\xE8\xA8\x98\xE5\x8F\xB7",  // "記号"
-  "\xE9\xA1\x94\xE6\x96\x87\xE5\xAD\x97",  // "顔文字"
+  nullptr,
+  "名詞",
+  "短縮よみ",
+  "サジェストのみ",
+  "固有名詞",
+  "人名",
+  "姓",
+  "名",
+  "組織",
+  "地名",
+  "名詞サ変",
+  "名詞形動",
+  "数",
+  "アルファベット",
+  "記号",
+  "顔文字",
 
-  "\xE5\x89\xAF\xE8\xA9\x9E",  // "副詞"
-  "\xE9\x80\xA3\xE4\xBD\x93\xE8\xA9\x9E",  // "連体詞"
-  "\xE6\x8E\xA5\xE7\xB6\x9A\xE8\xA9\x9E",  // "接続詞"
-  "\xE6\x84\x9F\xE5\x8B\x95\xE8\xA9\x9E",  // "感動詞"
-  "\xE6\x8E\xA5\xE9\xA0\xAD\xE8\xAA\x9E",  // "接頭語"
-  "\xE5\x8A\xA9\xE6\x95\xB0\xE8\xA9\x9E",  // "助数詞"
-  "\xE6\x8E\xA5\xE5\xB0\xBE\xE4\xB8\x80\xE8\x88\xAC",  // "接尾一般"
-  "\xE6\x8E\xA5\xE5\xB0\xBE\xE4\xBA\xBA\xE5\x90\x8D",  // "接尾人名"
-  "\xE6\x8E\xA5\xE5\xB0\xBE\xE5\x9C\xB0\xE5\x90\x8D",  // "接尾地名"
-  "\xE5\x8B\x95\xE8\xA9\x9E"
-      "\xE3\x83\xAF\xE8\xA1\x8C\xE4\xBA\x94\xE6\xAE\xB5",  // "動詞ワ行五段"
-  "\xE5\x8B\x95\xE8\xA9\x9E"
-      "\xE3\x82\xAB\xE8\xA1\x8C\xE4\xBA\x94\xE6\xAE\xB5",  // "動詞カ行五段"
-  "\xE5\x8B\x95\xE8\xA9\x9E"
-      "\xE3\x82\xB5\xE8\xA1\x8C\xE4\xBA\x94\xE6\xAE\xB5",  // "動詞サ行五段"
-  "\xE5\x8B\x95\xE8\xA9\x9E"
-      "\xE3\x82\xBF\xE8\xA1\x8C\xE4\xBA\x94\xE6\xAE\xB5",  // "動詞タ行五段"
-  "\xE5\x8B\x95\xE8\xA9\x9E"
-      "\xE3\x83\x8A\xE8\xA1\x8C\xE4\xBA\x94\xE6\xAE\xB5",  // "動詞ナ行五段"
-  "\xE5\x8B\x95\xE8\xA9\x9E"
-      "\xE3\x83\x9E\xE8\xA1\x8C\xE4\xBA\x94\xE6\xAE\xB5",  // "動詞マ行五段"
-  "\xE5\x8B\x95\xE8\xA9\x9E"
-      "\xE3\x83\xA9\xE8\xA1\x8C\xE4\xBA\x94\xE6\xAE\xB5",  // "動詞ラ行五段"
-  "\xE5\x8B\x95\xE8\xA9\x9E"
-      "\xE3\x82\xAC\xE8\xA1\x8C\xE4\xBA\x94\xE6\xAE\xB5",  // "動詞ガ行五段"
-  "\xE5\x8B\x95\xE8\xA9\x9E"
-      "\xE3\x83\x90\xE8\xA1\x8C\xE4\xBA\x94\xE6\xAE\xB5",  // "動詞バ行五段"
-  "\xE5\x8B\x95\xE8\xA9\x9E"
-      "\xE3\x83\x8F\xE8\xA1\x8C\xE5\x9B\x9B\xE6\xAE\xB5",  // "動詞ハ行四段"
-  "\xE5\x8B\x95\xE8\xA9\x9E\xE4\xB8\x80\xE6\xAE\xB5",  // "動詞一段"
-  "\xE5\x8B\x95\xE8\xA9\x9E\xE3\x82\xAB\xE5\xA4\x89",  // "動詞カ変"
-  "\xE5\x8B\x95\xE8\xA9\x9E\xE3\x82\xB5\xE5\xA4\x89",  // "動詞サ変"
-  "\xE5\x8B\x95\xE8\xA9\x9E\xE3\x82\xB6\xE5\xA4\x89",  // "動詞ザ変"
-  "\xE5\x8B\x95\xE8\xA9\x9E\xE3\x83\xA9\xE5\xA4\x89",  // "動詞ラ変"
-  "\xE5\xBD\xA2\xE5\xAE\xB9\xE8\xA9\x9E",  // "形容詞"
-  "\xE7\xB5\x82\xE5\x8A\xA9\xE8\xA9\x9E",  // "終助詞"
-  "\xE5\x8F\xA5\xE8\xAA\xAD\xE7\x82\xB9",  // "句読点"
-  "\xE7\x8B\xAC\xE7\xAB\x8B\xE8\xAA\x9E",  // "独立語"
-  "\xE6\x8A\x91\xE5\x88\xB6\xE5\x8D\x98\xE8\xAA\x9E",  // "抑制単語"
+  "副詞",
+  "連体詞",
+  "接続詞",
+  "感動詞",
+  "接頭語",
+  "助数詞",
+  "接尾一般",
+  "接尾人名",
+  "接尾地名",
+  "動詞ワ行五段",
+  "動詞カ行五段",
+  "動詞サ行五段",
+  "動詞タ行五段",
+  "動詞ナ行五段",
+  "動詞マ行五段",
+  "動詞ラ行五段",
+  "動詞ガ行五段",
+  "動詞バ行五段",
+  "動詞ハ行四段",
+  "動詞一段",
+  "動詞カ変",
+  "動詞サ変",
+  "動詞ザ変",
+  "動詞ラ変",
+  "形容詞",
+  "終助詞",
+  "句読点",
+  "独立語",
+  "抑制単語",
 };
 }  // namespace
 
@@ -387,193 +369,6 @@ user_dictionary::UserDictionary::PosType UserDictionaryUtil::ToPosType(
   return static_cast<user_dictionary::UserDictionary::PosType>(-1);
 }
 
-namespace {
-
-const UnknownField *GetUnknownFieldByTagNumber(
-    const UnknownFieldSet &unknown_field_set, int tag_number) {
-  for (int i = 0; i < unknown_field_set.field_count(); ++i) {
-    const UnknownField &field = unknown_field_set.field(i);
-    if (field.number() == tag_number) {
-      // Use first entry.
-      return &field;
-    }
-  }
-  return NULL;
-}
-
-void RemoveUnknownFieldByTagNumber(
-    int tag_number, UnknownFieldSet *unknown_field_set) {
-  UnknownFieldSet temporary_unknown_field_set;
-  for (int i = 0; i < unknown_field_set->field_count(); ++i) {
-    const UnknownField &field = unknown_field_set->field(i);
-    if (field.number() == tag_number) {
-      continue;
-    }
-    temporary_unknown_field_set.AddField(field);
-  }
-  unknown_field_set->Swap(&temporary_unknown_field_set);
-}
-
-struct RemovedPosTypeResolveTable {
-  const char *name;
-  mozc::user_dictionary::UserDictionary::PosType pos_type;
-};
-
-const RemovedPosTypeResolveTable kRemovedPosType[] = {
-  // Removed in CL/9909127.
-  // "名詞副詞可能"
-  { "\xE5\x90\x8D\xE8\xA9\x9E\xE5\x89\xAF\xE8\xA9\x9E\xE5\x8F\xAF\xE8\x83\xBD",
-    mozc::user_dictionary::UserDictionary::NOUN },
-  // "接頭形容詞接続"
-  { "\xE6\x8E\xA5\xE9\xA0\xAD\xE5\xBD\xA2\xE5\xAE\xB9\xE8\xA9\x9E"
-    "\xE6\x8E\xA5\xE7\xB6\x9A",
-    mozc::user_dictionary::UserDictionary::PREFIX },
-  // "接頭数接続"
-  { "\xE6\x8E\xA5\xE9\xA0\xAD\xE6\x95\xB0\xE6\x8E\xA5\xE7\xB6\x9A",
-    mozc::user_dictionary::UserDictionary::PREFIX },
-  // "接頭動詞接続"
-  { "\xE6\x8E\xA5\xE9\xA0\xAD\xE5\x8B\x95\xE8\xA9\x9E\xE6\x8E\xA5\xE7\xB6\x9A",
-    mozc::user_dictionary::UserDictionary::PREFIX },
-  // "接頭名詞接続"
-  { "\xE6\x8E\xA5\xE9\xA0\xAD\xE5\x90\x8D\xE8\xA9\x9E\xE6\x8E\xA5\xE7\xB6\x9A",
-    mozc::user_dictionary::UserDictionary::PREFIX },
-  // "形容詞アウオ段"
-  { "\xE5\xBD\xA2\xE5\xAE\xB9\xE8\xA9\x9E"
-    "\xE3\x82\xA2\xE3\x82\xA6\xE3\x82\xAA\xE6\xAE\xB5",
-    mozc::user_dictionary::UserDictionary::ADJECTIVE },
-  // "形容詞イ段"
-  { "\xE5\xBD\xA2\xE5\xAE\xB9\xE8\xA9\x9E\xE3\x82\xA4\xE6\xAE\xB5",
-    mozc::user_dictionary::UserDictionary::ADJECTIVE },
-
-  // Removed in CL/18000642.
-  // "括弧開"
-  { "\xE6\x8B\xAC\xE5\xBC\xA7\xE9\x96\x8B",
-    mozc::user_dictionary::UserDictionary::SYMBOL },
-  // "括弧閉"
-  { "\xE6\x8B\xAC\xE5\xBC\xA7\xE9\x96\x89",
-    mozc::user_dictionary::UserDictionary::SYMBOL },
-};
-
-mozc::user_dictionary::UserDictionary::PosType ResolveRemovedPosType(
-    const string &name) {
-  for (size_t i = 0; i < arraysize(kRemovedPosType); ++i) {
-    if (name == kRemovedPosType[i].name) {
-      return kRemovedPosType[i].pos_type;
-    }
-  }
-
-  // Not found. Return invalid pos type.
-  return kInvalidPosType;
-}
-
-// The deprecated tag number of "pos" field in UserDictionary::Entry.
-const int kDeprecatedPosTagNumber = 3;
-
-}  // namespace
-
-bool UserDictionaryUtil::ResolveUnknownFieldSet(
-    user_dictionary::UserDictionaryStorage *storage) {
-  using mozc::user_dictionary::UserDictionary;
-  typedef UserDictionary::Entry Entry;
-
-  bool result = true;
-  for (int i = 0; i < storage->dictionaries_size(); ++i) {
-    UserDictionary *dictionary = storage->mutable_dictionaries(i);
-    for (int j = 0; j < dictionary->entries_size(); ++j) {
-      Entry *entry = dictionary->mutable_entries(j);
-
-      const UnknownField *unknown_field = GetUnknownFieldByTagNumber(
-          entry->unknown_fields(), kDeprecatedPosTagNumber);
-      if (unknown_field == NULL) {
-        // Here, there are two cases:
-        // 1) The entry is already in the new format. Don't need migration.
-        // 2) The entry doesn't have POS actually.
-        // Note that it is "possible" (but not valid) for an entry to keep
-        // its POS field empty. Do not treat it as "resolving failure."
-        LOG_IF(WARNING, !entry->has_pos()) << "Unknown field is not found.";
-        continue;
-      }
-
-      UserDictionary::PosType pos_type = kInvalidPosType;
-      switch (unknown_field->type()) {
-        case UnknownField::TYPE_VARINT:
-          pos_type =
-              static_cast<UserDictionary::PosType>(unknown_field->varint());
-          break;
-        case UnknownField::TYPE_LENGTH_DELIMITED:
-          pos_type = ToPosType(unknown_field->length_delimited().c_str());
-          if (pos_type == kInvalidPosType) {
-            // The value may be created by very old mozc dictionary tool.
-            // Try to find the value from a list containing removed pos names.
-            pos_type =
-                ResolveRemovedPosType(unknown_field->length_delimited());
-          }
-          break;
-        default:
-          LOG(ERROR) << "Unknown deprecated pos type value: "
-                     << unknown_field->type();
-          break;
-      }
-
-      if (pos_type == kInvalidPosType) {
-        LOG(ERROR) << "Failed to resolve old pos data.";
-        if (!entry->has_pos()) {
-          // If there is no pos here, users cannot use this entry for the
-          // conversion. Thus, as a fallback, we fill NOUN by default.
-          entry->set_pos(UserDictionary::NOUN);
-        }
-        result = false;
-        continue;
-      }
-
-      if (entry->has_pos()) {
-        if (entry->pos() != pos_type) {
-          LOG(ERROR) << "Failed to resolve the entry due to "
-                     << "pos type inconsistency: "
-                     << entry->pos() << ", " << pos_type;
-          result = false;
-          continue;
-        }
-      } else {
-        entry->set_pos(pos_type);
-      }
-
-      // In future, we may want to add some fields into the message.
-      // So, don't touch any fields other than ones we processed.
-      UnknownFieldSet *unknown_field_set = entry->mutable_unknown_fields();
-      RemoveUnknownFieldByTagNumber(
-          kDeprecatedPosTagNumber, unknown_field_set);
-      if (unknown_field_set->field_count() == 0) {
-        entry->DiscardUnknownFields();
-      }
-    }
-  }
-
-  return result;
-}
-
-void UserDictionaryUtil::FillDesktopDeprecatedPosField(
-    user_dictionary::UserDictionaryStorage *storage) {
-  for (int i = 0; i < storage->dictionaries_size(); ++i) {
-    user_dictionary::UserDictionary *dictionary =
-        storage->mutable_dictionaries(i);
-    for (int j = 0; j < dictionary->entries_size(); ++j) {
-      user_dictionary::UserDictionary::Entry *entry =
-          dictionary->mutable_entries(j);
-      if (!entry->has_pos()) {
-        // No pos is found, so don't need backward compatibility process.
-        continue;
-      }
-
-      UnknownFieldSet *unknown_field_set = entry->mutable_unknown_fields();
-      static const int kDeprecatedPosTagNumber = 3;
-      unknown_field_set->AddLengthDelimited(
-          kDeprecatedPosTagNumber,
-          UserDictionaryUtil::GetStringPosType(entry->pos()));
-    }
-  }
-}
-
 uint64 UserDictionaryUtil::CreateNewDictionaryId(
     const user_dictionary::UserDictionaryStorage &storage) {
   static const uint64 kInvalidDictionaryId = 0;
@@ -582,11 +377,11 @@ uint64 UserDictionaryUtil::CreateNewDictionaryId(
   while (id == kInvalidDictionaryId) {
     Util::GetRandomSequence(reinterpret_cast<char *>(&id), sizeof(id));
 
-#ifdef  __native_client__
+#ifdef OS_NACL
     // Because JavaScript does not support uint64, we downsize the dictionary id
     // range from uint64 to uint32 in NaCl.
     id = static_cast<uint32>(id);
-#endif  // __native_client__
+#endif  // OS_NACL
 
     // Duplication check.
     for (int i = 0; i < storage.dictionaries_size(); ++i) {
@@ -652,9 +447,9 @@ bool UserDictionaryUtil::DeleteDictionary(
   RepeatedPtrField<user_dictionary::UserDictionary> *dictionaries =
       storage->mutable_dictionaries();
   // Move the target dictionary to the end.
-  rotate(dictionaries->pointer_begin() + index,
-         dictionaries->pointer_begin() + index + 1,
-         dictionaries->pointer_end());
+  std::rotate(dictionaries->pointer_begin() + index,
+              dictionaries->pointer_begin() + index + 1,
+              dictionaries->pointer_end());
 
   if (deleted_dictionary == NULL) {
     dictionaries->RemoveLast();

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,9 +36,9 @@
 #include "base/number_util.h"
 #include "base/util.h"
 #include "composer/composer.h"
-#include "converter/conversion_request.h"
 #include "converter/converter_interface.h"
 #include "converter/segments.h"
+#include "request/conversion_request.h"
 
 namespace mozc {
 
@@ -115,8 +115,7 @@ void AddCandidate(
   candidate->key = key;
   candidate->value = value;
   candidate->content_value = value;
-  // "Unicode 変換(" + key + ")"
-  candidate->description = "Unicode \xE5\xA4\x89\xE6\x8F\x9B (" + key + ")";
+  candidate->description = "Unicode 変換 (" + key + ")";
   candidate->attributes |= (Segment::Candidate::NO_LEARNING |
                             Segment::Candidate::NO_VARIANTS_EXPANSION);
 }

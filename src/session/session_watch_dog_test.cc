@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,10 +34,10 @@
 
 #include "base/port.h"
 #include "base/cpu_stats.h"
+#include "base/logging.h"
 #include "base/mutex.h"
 #include "base/util.h"
 #include "client/client_mock.h"
-#include "session/commands.pb.h"
 #include "testing/base/public/gunit.h"
 #include "testing/base/public/googletest.h"
 
@@ -62,7 +62,7 @@ class TestCPUStats : public CPUStatsInterface {
     return static_cast<size_t>(1);
   }
 
-  void SetCPULoads(const vector<float> &cpu_loads) {
+  void SetCPULoads(const std::vector<float> &cpu_loads) {
     scoped_lock l(&mutex_);
     cpu_loads_index_ = 0;
     cpu_loads_ = cpu_loads;
@@ -70,7 +70,7 @@ class TestCPUStats : public CPUStatsInterface {
 
  private:
   Mutex mutex_;
-  vector<float> cpu_loads_;
+  std::vector<float> cpu_loads_;
   int cpu_loads_index_;
 };
 
@@ -94,7 +94,7 @@ TEST_F(SessionWatchDogTest, SessionWatchDogTest) {
   InitializeClient(&client);
   mozc::TestCPUStats stats;
 
-  vector<float> cpu_loads;
+  std::vector<float> cpu_loads;
   // no CPU loads
   for (int i = 0; i < 20; ++i) {
     cpu_loads.push_back(0.0);
@@ -106,7 +106,7 @@ TEST_F(SessionWatchDogTest, SessionWatchDogTest) {
 
   EXPECT_EQ(0, client.GetFunctionCallCount("Cleanup"));
 
-  watchdog.Start();  // start
+  watchdog.Start("SessionWatchDogTest");  // start
 
   mozc::Util::Sleep(100);
   EXPECT_TRUE(watchdog.IsRunning());
@@ -133,7 +133,7 @@ TEST_F(SessionWatchDogTest, SessionWatchDogCPUStatsTest) {
   InitializeClient(&client);
   mozc::TestCPUStats stats;
 
-  vector<float> cpu_loads;
+  std::vector<float> cpu_loads;
   // high CPU loads
   for (int i = 0; i < 20; ++i) {
     cpu_loads.push_back(0.8);
@@ -145,7 +145,7 @@ TEST_F(SessionWatchDogTest, SessionWatchDogCPUStatsTest) {
 
   EXPECT_EQ(0, client.GetFunctionCallCount("Cleanup"));
 
-  watchdog.Start();  // start
+  watchdog.Start("SessionWatchDogCPUStatsTest");  // start
 
   mozc::Util::Sleep(100);
   EXPECT_TRUE(watchdog.IsRunning());

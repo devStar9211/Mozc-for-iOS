@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,20 +33,22 @@
 
 #include <istream>  // NOLINT
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
+#include <utility>
 
 #include "base/config_file_stream.h"
 #include "base/file_stream.h"
+#include "base/hash.h"
 #include "base/logging.h"
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "base/trie.h"
 #include "base/util.h"
 #include "composer/internal/typing_model.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 
 namespace mozc {
 namespace composer {
@@ -60,28 +62,24 @@ const char kKanaCombinationTableFile[] = "system://kana.tsv";
 const char k12keysHiraganaTableFile[] = "system://12keys-hiragana.tsv";
 const char k12keysHalfwidthasciiTableFile[]
     = "system://12keys-halfwidthascii.tsv";
-const char k12keysNumberTableFile[]
-    = "system://12keys-number.tsv";
 const char kFlickHiraganaTableFile[] = "system://flick-hiragana.tsv";
 const char kFlickHalfwidthasciiTableFile[]
     = "system://flick-halfwidthascii.tsv";
-const char kFlickNumberTableFile[]
-    = "system://flick-number.tsv";
 const char kToggleFlickHiraganaTableFile[]
     = "system://toggle_flick-hiragana.tsv";
 const char kToggleFlickHalfwidthasciiTableFile[]
     = "system://toggle_flick-halfwidthascii.tsv";
-const char kToggleFlickNumberTableFile[]
-    = "system://toggle_flick-number.tsv";
 // Special tables for QWERTY mobile
 const char kQwertyMobileHiraganaTableFile[]
     = "system://qwerty_mobile-hiragana.tsv";
-const char kQwertyMobileHiraganaNumberTableFile[]
-    = "system://qwerty_mobile-hiragana-number.tsv";
 const char kQwertyMobileHalfwidthasciiTableFile[]
     = "system://qwerty_mobile-halfwidthascii.tsv";
 // Special tables for Godan
 const char kGodanHiraganaTableFile[] = "system://godan-hiragana.tsv";
+const char kNotouchHiraganaTableFile[] = "system://notouch-hiragana.tsv";
+// Reuse qwerty_mobile-halfwidthascii table
+const char kNotouchHalfwidthasciiTableFile[]
+    = "system://qwerty_mobile-halfwidthascii.tsv";
 
 const char kNewChunkPrefix[] = "\t";
 const char kSpecialKeyOpen[] = "\x0F";  // Shift-In of ASCII
@@ -105,30 +103,32 @@ Entry::Entry(const string &input,
 // ========================================
 Table::Table()
     : entries_(new EntryTrie),
-      case_sensitive_(false),
-      typing_model_(NULL) {}
+      case_sensitive_(false) {}
 
 Table::~Table() {
   ResetEntrySet();
 }
 
-static const char kKuten[]  = "\xE3\x80\x81";  // "、"
-static const char kTouten[] = "\xE3\x80\x82";  // "。"
-static const char kComma[]  = "\xEF\xBC\x8C";  // "，"
-static const char kPeriod[] = "\xEF\xBC\x8E";  // "．"
+static const char kKuten[]  = "、";
+static const char kTouten[] = "。";
+static const char kComma[]  = "，";
+static const char kPeriod[] = "．";
 
-static const char kCornerOpen[]  = "\xE3\x80\x8C";  // "「"
-static const char kCornerClose[] = "\xE3\x80\x8D";  // "」"
-static const char kSlash[]       = "\xEF\xBC\x8F";  // "／"
+static const char kCornerOpen[]  = "「";
+static const char kCornerClose[] = "」";
+static const char kSlash[]       = "／";
 static const char kSquareOpen[]  = "[";
 static const char kSquareClose[] = "]";
-static const char kMiddleDot[]   = "\xE3\x83\xBB";  // "・"
+static const char kMiddleDot[]   = "・";
 
-bool Table::InitializeWithRequestAndConfig(const commands::Request &request,
-                                           const config::Config &config) {
+bool Table::InitializeWithRequestAndConfig(
+    const commands::Request &request,
+    const config::Config &config,
+    const DataManagerInterface& data_manager) {
   case_sensitive_ = false;
   bool result = false;
-  typing_model_ = TypingModel::GetTypingModel(request.special_romanji_table());
+  typing_model_ = TypingModel::CreateTypingModel(
+      request.special_romanji_table(), data_manager);
   if (request.special_romanji_table()
       != mozc::commands::Request::DEFAULT_TABLE) {
     const char *table_file_name;
@@ -139,26 +139,17 @@ bool Table::InitializeWithRequestAndConfig(const commands::Request &request,
       case mozc::commands::Request::TWELVE_KEYS_TO_HALFWIDTHASCII:
         table_file_name = k12keysHalfwidthasciiTableFile;
         break;
-      case mozc::commands::Request::TWELVE_KEYS_TO_NUMBER:
-        table_file_name = k12keysNumberTableFile;
-        break;
       case mozc::commands::Request::FLICK_TO_HIRAGANA:
         table_file_name = kFlickHiraganaTableFile;
         break;
       case mozc::commands::Request::FLICK_TO_HALFWIDTHASCII:
         table_file_name = kFlickHalfwidthasciiTableFile;
         break;
-      case mozc::commands::Request::FLICK_TO_NUMBER:
-        table_file_name = kFlickNumberTableFile;
-        break;
       case mozc::commands::Request::TOGGLE_FLICK_TO_HIRAGANA:
         table_file_name = kToggleFlickHiraganaTableFile;
         break;
       case mozc::commands::Request::TOGGLE_FLICK_TO_HALFWIDTHASCII:
         table_file_name = kToggleFlickHalfwidthasciiTableFile;
-        break;
-      case mozc::commands::Request::TOGGLE_FLICK_TO_NUMBER:
-        table_file_name = kToggleFlickNumberTableFile;
         break;
       case mozc::commands::Request::QWERTY_MOBILE_TO_HIRAGANA:
         // This table is almost as same as "romaji-hiragana.tsv",
@@ -168,14 +159,17 @@ bool Table::InitializeWithRequestAndConfig(const commands::Request &request,
         // TODO(hidehiko): refactor this code to clean up.
         table_file_name = kQwertyMobileHiraganaTableFile;
         break;
-      case mozc::commands::Request::QWERTY_MOBILE_TO_HIRAGANA_NUMBER:
-        table_file_name = kQwertyMobileHiraganaNumberTableFile;
-        break;
       case mozc::commands::Request::QWERTY_MOBILE_TO_HALFWIDTHASCII:
         table_file_name = kQwertyMobileHalfwidthasciiTableFile;
         break;
       case mozc::commands::Request::GODAN_TO_HIRAGANA:
         table_file_name = kGodanHiraganaTableFile;
+        break;
+      case mozc::commands::Request::NOTOUCH_TO_HIRAGANA:
+        table_file_name = kNotouchHiraganaTableFile;
+        break;
+      case mozc::commands::Request::NOTOUCH_TO_HALFWIDTHASCII:
+        table_file_name = kNotouchHalfwidthasciiTableFile;
         break;
       default:
         table_file_name = NULL;
@@ -385,12 +379,12 @@ void Table::DeleteRule(const string &input) {
 }
 
 bool Table::LoadFromString(const string &str) {
-  istringstream is(str);
+  std::istringstream is(str);
   return LoadFromStream(&is);
 }
 
 bool Table::LoadFromFile(const char *filepath) {
-  scoped_ptr<istream> ifs(ConfigFileStream::LegacyOpen(filepath));
+  std::unique_ptr<std::istream> ifs(ConfigFileStream::LegacyOpen(filepath));
   if (ifs.get() == NULL) {
     return false;
   }
@@ -398,7 +392,7 @@ bool Table::LoadFromFile(const char *filepath) {
 }
 
 const TypingModel* Table::typing_model() const {
-  return typing_model_;
+  return typing_model_.get();
 }
 
 namespace {
@@ -407,7 +401,7 @@ const char kAttributeDelimiter[] = " ";
 TableAttributes ParseAttributes(const string &input) {
   TableAttributes attributes = NO_TABLE_ATTRIBUTE;
 
-  vector<string> attribute_strings;
+  std::vector<string> attribute_strings;
   Util::SplitStringAllowEmpty(input, kAttributeDelimiter, &attribute_strings);
 
   for (size_t i = 0; i < attribute_strings.size(); ++i) {
@@ -423,9 +417,9 @@ TableAttributes ParseAttributes(const string &input) {
   }
   return attributes;
 }
-}  // anonymous namespace
+}  // namespace
 
-bool Table::LoadFromStream(istream *is) {
+bool Table::LoadFromStream(std::istream *is) {
   DCHECK(is);
   string line;
   const string empty_pending("");
@@ -436,7 +430,7 @@ bool Table::LoadFromStream(istream *is) {
       continue;
     }
 
-    vector<string> rules;
+    std::vector<string> rules;
     Util::SplitStringAllowEmpty(line, "\t", &rules);
     if (rules.size() == 4) {
       const TableAttributes attributes = ParseAttributes(rules[3]);
@@ -483,7 +477,7 @@ const Entry *Table::LookUpPrefix(const string &input,
 }
 
 void Table::LookUpPredictiveAll(const string &input,
-                                vector<const Entry *> *results) const {
+                                std::vector<const Entry *> *results) const {
   if (case_sensitive_) {
     entries_->LookUpPredictiveAll(input, results);
   } else {
@@ -558,7 +552,7 @@ bool FindBlock(const string &input, const string &open, const string &close,
 
   return true;
 }
-}  // anonymous namespace
+}  // namespace
 
 // static
 string Table::ParseSpecialKey(const string &input) {
@@ -613,19 +607,15 @@ string Table::DeleteSpecialKey(const string &input) {
 // TableContainer
 // ========================================
 TableManager::TableManager()
-    : custom_roman_table_fingerprint_(Util::Fingerprint32("")) {
+    : custom_roman_table_fingerprint_(Hash::Fingerprint32("")) {
 }
 
-TableManager::~TableManager() {
-  for (map<uint32, const Table*>::iterator iterator = table_map_.begin();
-      iterator != table_map_.end();
-      ++iterator) {
-    delete iterator->second;
-  }
-}
+TableManager::~TableManager() = default;
 
-const Table *TableManager::GetTable(const mozc::commands::Request &request,
-                                    const mozc::config::Config &config) {
+const Table *TableManager::GetTable(
+    const mozc::commands::Request &request,
+    const mozc::config::Config &config,
+    const mozc::DataManagerInterface &data_manager) {
   // calculate the hash depending on the request and the config
   uint32 hash = request.special_romanji_table();
   hash = hash * (mozc::config::Config_PreeditMethod_PreeditMethod_MAX + 1)
@@ -642,32 +632,36 @@ const Table *TableManager::GetTable(const mozc::commands::Request &request,
       config.has_custom_roman_table() &&
       !config.custom_roman_table().empty()) {
     const uint32 custom_roman_table_fingerprint =
-        Util::Fingerprint32(config.custom_roman_table());
+        Hash::Fingerprint32(config.custom_roman_table());
     if (custom_roman_table_fingerprint != custom_roman_table_fingerprint_) {
       update_custom_roman_table = true;
       custom_roman_table_fingerprint_ = custom_roman_table_fingerprint;
     }
   }
 
-  map<uint32, const Table*>::iterator iterator = table_map_.find(hash);
+  const auto iterator = table_map_.find(hash);
   if (iterator != table_map_.end()) {
     if (update_custom_roman_table) {
       // Delete the previous table to update the table.
-      delete iterator->second;
       table_map_.erase(iterator);
     } else {
-      return iterator->second;
+      return iterator->second.get();
     }
   }
 
-  scoped_ptr<Table> table(new Table());
-  if (!table->InitializeWithRequestAndConfig(request, config)) {
-    return NULL;
+  std::unique_ptr<Table> table(new Table());
+  if (!table->InitializeWithRequestAndConfig(request, config, data_manager)) {
+    return nullptr;
   }
 
-  Table* table_to_cache = table.release();
-  table_map_[hash] = table_to_cache;
-  return table_to_cache;
+  const Table* ret = table.get();
+  table_map_[hash] = std::move(table);
+  return ret;
 }
+
+void TableManager::ClearCaches() {
+  table_map_.clear();
+}
+
 }  // namespace composer
 }  // namespace mozc

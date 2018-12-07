@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -38,17 +38,12 @@
 #include "base/process.h"
 #include "base/run_level.h"
 #include "base/system_util.h"
-#include "base/update_checker.h"
 #include "base/util.h"
 #include "base/version.h"
 
 namespace mozc {
 namespace gui {
-
 namespace {
-#ifdef USE_UPDATE_CHECKER
-const UINT kUpdateCheckMessage = WM_USER;
-#endif  // USE_UPDATE_CHECKER
 
 void defaultLinkActivated(const QString &str) {
   QByteArray utf8 = str.toUtf8();
@@ -57,7 +52,7 @@ void defaultLinkActivated(const QString &str) {
 
 // set document file paths by adding <server_path>/documents/ to file name.
 bool AddLocalPath(string *str) {
-  const char *filenames[] = { "credits_en.html", "credits_ja.html" };
+  const char *filenames[] = { "credits_en.html" };
   for (size_t i = 0; i < arraysize(filenames); ++i) {
     if (str->find(filenames[i]) != string::npos) {
       string tmp;
@@ -77,13 +72,14 @@ void SetLabelText(QLabel *label) {
     label->setText(QString::fromStdString(label_text));
   }
 }
-}  // anonymous namespace
+
+}  // namespace
 
 AboutDialog::AboutDialog(QWidget *parent)
     : QDialog(parent),
       callback_(NULL) {
   setupUi(this);
-  setWindowFlags(Qt::WindowSystemMenuHint);
+  setWindowFlags(Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint);
   setWindowModality(Qt::NonModal);
   QPalette window_palette;
   window_palette.setColor(QPalette::Window, QColor(255, 255, 255));
@@ -93,13 +89,6 @@ AboutDialog::AboutDialog(QWidget *parent)
   version_info += Version::GetMozcVersion().c_str();
   version_info += ")";
   version_label->setText(version_info);
-  updateButton->hide();
-#ifdef USE_UPDATE_CHECKER
-  UpdateChecker::CallbackInfo info;
-  info.mesage_receiver_window = winId();
-  info.mesage_id = kUpdateCheckMessage;
-  UpdateChecker::BeginCheck(info);
-#endif  // USE_UPDATE_CHECKER
 
   QPalette palette;
   palette.setColor(QPalette::Window, QColor(236, 233, 216));
@@ -129,8 +118,8 @@ void AboutDialog::paintEvent(QPaintEvent *event) {
   QPainter painter(this);
   const QRect image_rect = product_image_->rect();
   // allow clipping on right / bottom borders
-  const QRect draw_rect(max(5, width() - image_rect.width() - 15),
-                        max(0, color_frame->y() - image_rect.height()),
+  const QRect draw_rect(std::max(5, width() - image_rect.width() - 15),
+                        std::max(0, color_frame->y() - image_rect.height()),
                         image_rect.width(), image_rect.height());
   painter.drawImage(draw_rect, *product_image_.get());
 }
@@ -151,47 +140,5 @@ void AboutDialog::linkActivated(const QString &link) {
   }
 }
 
-#ifdef USE_UPDATE_CHECKER
-bool AboutDialog::winEvent(MSG *message, long *result) {
-  if (message != NULL && message->message == kUpdateCheckMessage) {
-    QString version_info("(");
-    version_info += Version::GetMozcVersion().c_str();
-    version_info += ") - ";
-    // TODO(yukawa, team): Make better UI.
-    switch (message->wParam) {
-      case UpdateChecker::UPGRADE_IS_AVAILABLE:
-        version_info += tr("New version is available");
-        if (SystemUtil::IsVistaOrLater()) {
-          if (!RunLevel::IsElevatedByUAC()) {
-            QWindowsStyle style;
-            QIcon vista_icon(style.standardIcon(QStyle::SP_VistaShield));
-            updateButton->setIcon(vista_icon);
-          }
-        }
-        updateButton->show();
-        break;
-      case UpdateChecker::UPGRADE_ALREADY_UP_TO_DATE:
-        version_info += tr("You are using the latest version");
-        break;
-      case UpdateChecker::UPGRADE_ERROR:
-      default:
-        break;
-    }
-    version_label->setText(version_info);
-    *result = 0;
-    return true;
-  }
-
-  return QWidget::winEvent(message, result);
-}
-#endif  // USE_UPDATE_CHECKER
-
-void AboutDialog::updateButtonPushed() {
-  updateButton->setEnabled(false);
-  // Currently, update_dialog is available only on Windows.
-#if defined(OS_WIN)
-  Process::SpawnMozcProcess(mozc::kMozcTool, "--mode=update_dialog");
-#endif  // OS_WIN
-}
 }  // namespace gui
 }  // namespace mozc

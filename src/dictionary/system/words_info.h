@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,12 +32,14 @@
 #ifndef MOZC_DICTIONARY_SYSTEM_WORDS_INFO_H_
 #define MOZC_DICTIONARY_SYSTEM_WORDS_INFO_H_
 
+#include <cstddef>
+
 namespace mozc {
+namespace dictionary {
+
 struct Token;
 
-namespace dictionary {
 // TODO(toshiyuki): These could be implemented by protobuf
-
 // Represents each token info
 struct TokenInfo {
   enum PosType {

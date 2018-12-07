@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -43,12 +43,13 @@ class CloudHandwriting : public HandwritingInterface {
   virtual ~CloudHandwriting() {}
 
   HandwritingStatus Recognize(const Strokes &strokes,
-                              vector<string> *candidates) const;
+                              std::vector<string> *candidates) const;
 
   HandwritingStatus Commit(const Strokes &strokes, const string &result);
 
   // Parses the server response and fills to |candidates|
-  static bool ParseResponse(const string &json, vector<string> *candidates);
+  static bool ParseResponse(const string &json,
+                            std::vector<string> *candidates);
 
   // Converts the |strokes| into the request format and returns it as a string.
   static string CreateRequest(const Strokes &strokes);

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,18 +31,19 @@
 
 #include "base/logging.h"
 
-#include <cstring>
-
 namespace mozc {
 namespace storage {
 namespace louds {
-
 namespace {
+
+// Select1 is not used, so cache is unnecessary.
+const size_t kLb0CacheSize = 1024;
+const size_t kLb1CacheSize = 0;
+
 inline int ReadInt32(const uint8 *data) {
-  int32 ret;
-  std::memcpy(&ret, data, sizeof(ret));
-  return ret;
+  return *reinterpret_cast<const int32*>(data);
 }
+
 }  // namespace
 
 void BitVectorBasedArray::Open(const uint8 *image) {
@@ -52,7 +53,7 @@ void BitVectorBasedArray::Open(const uint8 *image) {
   // Check 0 padding.
   CHECK_EQ(ReadInt32(image + 12), 0);
 
-  index_.Init(image + 16, index_length);
+  index_.Init(image + 16, index_length, kLb0CacheSize, kLb1CacheSize);
   base_length_ = base_length;
   step_length_ = step_length;
   data_ = reinterpret_cast<const char*>(image + 16 + index_length);

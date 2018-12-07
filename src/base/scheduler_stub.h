@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -59,6 +59,7 @@ class SchedulerStub : public Scheduler::SchedulerInterface {
   virtual bool AddJob(const Scheduler::JobSetting &job_setting);
   virtual bool RemoveJob(const string &name);
   virtual void RemoveAllJobs();
+  virtual bool HasJob(const string &name) const;
 
   // Puts stub internal clock forward.
   // Jobs will be executed according to forwarded time.
@@ -77,7 +78,7 @@ class SchedulerStub : public Scheduler::SchedulerInterface {
         job(job), remaining_usec(job.delay_start()), backoff_count(0) {}
   };
 
-  map<string, JobForStub> jobs_;
+  std::map<string, JobForStub> jobs_;
 };
 }  // namespace mozc
 #endif  // MOZC_BASE_SCHEDULER_STUB_H_

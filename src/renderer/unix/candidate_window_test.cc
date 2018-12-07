@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,9 +30,9 @@
 #include "renderer/unix/candidate_window.h"
 
 #include <sstream>
+#include <string>
 
 #include "base/logging.h"
-#include "base/number_util.h"
 #include "base/util.h"
 #include "client/client_interface.h"
 #include "renderer/table_layout_mock.h"
@@ -110,7 +110,7 @@ void SetTestCandidates(uint32 count,
     candidate->set_index(i);
     candidate->set_id(i * 0x10);
 
-    const string id_str = NumberUtil::SimpleItoa(i);
+    const string id_str = std::to_string(i);
 
     if (has_value) {
       candidate->set_value(kSampleValue + id_str);
@@ -139,7 +139,7 @@ void SetTestCandidates(uint32 count,
 string GetExpectedValue(int index, bool has_prefix, bool has_suffix) {
   string result;
 
-  const string id_str = NumberUtil::SimpleItoa(index);
+  const string id_str = std::to_string(index);
   const string expected_prefix = kSamplePrefix + id_str;
   const string expected_value = kSampleValue + id_str;
   const string expected_suffix = kSampleSuffix + id_str;
@@ -154,12 +154,12 @@ string GetExpectedValue(int index, bool has_prefix, bool has_suffix) {
 }
 
 string GetExpectedShortcut(int index) {
-  const string id_str = NumberUtil::SimpleItoa(index);
+  const string id_str = std::to_string(index);
   return kSampleShortcut + id_str;
 }
 
 string GetExpectedDescription(int index) {
-  const string id_str = NumberUtil::SimpleItoa(index);
+  const string id_str = std::to_string(index);
   return kSampleDescription + id_str;
 }
 
@@ -1025,7 +1025,7 @@ TEST_F(CandidateWindowTest, DrawFooterIndexTest) {
     Rect original_footer_content_area(100, 200, 300, 400);
     const int focused_index = 3;
     const int total_items = 7;
-    stringstream footer_string;
+    std::stringstream footer_string;
     footer_string << focused_index + 1 << "/" << total_items << " ";
     const string index_guide_string = footer_string.str();
     const Size index_guide_size(10, 20);
@@ -1219,7 +1219,7 @@ TEST_F(CandidateWindowTest, UpdateCandidatesSizeTest) {
       const string expected_value = GetExpectedValue(i, true, true);
 
       // Shortcut string is padded with one spacing character.
-      stringstream shortcut_stream;
+      std::stringstream shortcut_stream;
       shortcut_stream << " " << GetExpectedShortcut(i) << " ";
 
       const string expected_shortcut = shortcut_stream.str();
@@ -1259,7 +1259,7 @@ TEST_F(CandidateWindowTest, UpdateCandidatesSizeTest) {
       const string expected_value = GetExpectedValue(i, true, true);
 
       // Description string is end-padded with one spacing character.
-      stringstream description_stream;
+      std::stringstream description_stream;
       description_stream << GetExpectedDescription(i) << " ";
 
       const string expected_description = description_stream.str();
@@ -1299,12 +1299,12 @@ TEST_F(CandidateWindowTest, UpdateCandidatesSizeTest) {
       const string expected_value = GetExpectedValue(i, true, true);
 
       // Shortcut string is padded with one spacing character.
-      stringstream shortcut_stream;
+      std::stringstream shortcut_stream;
       shortcut_stream << " " << GetExpectedShortcut(i) << " ";
       const string expected_shortcut = shortcut_stream.str();
 
       // Description string is end-padded with one spacing character.
-      stringstream description_stream;
+      std::stringstream description_stream;
       description_stream << GetExpectedDescription(i) << " ";
       const string expected_description = description_stream.str();
 

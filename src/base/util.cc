@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,18 +31,18 @@
 
 #ifdef OS_WIN
 #include <Windows.h>
-#include <WinCrypt.h>
-#include <time.h>
+#include <WinCrypt.h>  // WinCrypt.h must be included after Windows.h
 #include <stdio.h>  // MSVC requires this for _vsnprintf
+#include <time.h>
 #else  // OS_WIN
 
 #ifdef OS_MACOSX
 #include <mach/mach.h>
 #include <mach/mach_time.h>
 
-#elif defined(__native_client__)  // OS_MACOSX
+#elif defined(OS_NACL)  // OS_MACOSX
 #include <irt.h>
-#endif  // OS_MACOSX or __native_client__
+#endif  // OS_MACOSX or OS_NACL
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -56,75 +56,18 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "base/compiler_specific.h"
+#include "base/double_array.h"
+#include "base/japanese_util_rule.h"
 #include "base/logging.h"
 #include "base/port.h"
-#include "base/scoped_ptr.h"
-#include "base/singleton.h"
 #include "base/string_piece.h"
-#include "base/text_converter.h"
 
 
-namespace {
-
-#if MOZC_MSVC_VERSION_LT(18, 0)
-void va_copy(va_list &a, va_list &b) {
-  a = b;
-}
-#endif  // Visual C++ 2012 and prior
-
-// Lower-level routine that takes a va_list and appends to a specified
-// string.  All other routines of sprintf family are just convenience
-// wrappers around it.
-void StringAppendV(string *dst, const char *format, va_list ap) {
-  // First try with a small fixed size buffer
-  char space[1024];
-
-  // It's possible for methods that use a va_list to invalidate
-  // the data in it upon use.  The fix is to make a copy
-  // of the structure before using it and use that copy instead.
-  va_list backup_ap;
-  va_copy(backup_ap, ap);
-  int result = vsnprintf(space, sizeof(space), format, backup_ap);
-  va_end(backup_ap);
-
-  if ((result >= 0) && (result < sizeof(space))) {
-    // It fit
-    dst->append(space, result);
-    return;
-  }
-
-  // Repeatedly increase buffer size until it fits
-  int length = sizeof(space);
-  while (true) {
-    if (result < 0) {
-      // Older behavior: just try doubling the buffer size
-      length *= 2;
-    } else {
-      // We need exactly "result+1" characters
-      length = result+1;
-    }
-    char *buf = new char[length];
-
-    // Restore the va_list before we use it again
-    va_copy(backup_ap, ap);
-    result = vsnprintf(buf, length, format, backup_ap);
-    va_end(backup_ap);
-
-    if ((result >= 0) && (result < length)) {
-      // It fit
-      dst->append(buf, result);
-      delete[] buf;
-      return;
-    }
-    delete[] buf;
-  }
-}
-}   // namespace
 
 namespace mozc {
 
@@ -173,7 +116,7 @@ bool ConstChar32ReverseIterator::Done() const {
 }
 
 MultiDelimiter::MultiDelimiter(const char* delim) {
-  fill(lookup_table_, lookup_table_ + kTableSize, 0);
+  std::fill(lookup_table_, lookup_table_ + kTableSize, 0);
   for (const char* p = delim; *p != '\0'; ++p) {
     const unsigned char c = static_cast<unsigned char>(*p);
     lookup_table_[c >> 3] |= 1 << (c & 0x07);
@@ -240,7 +183,7 @@ template class SplitIterator<MultiDelimiter, AllowEmpty>;
 
 void Util::SplitStringUsing(StringPiece str,
                             const char *delim,
-                            vector<string> *output) {
+                            std::vector<string> *output) {
   if (delim[0] != '\0' && delim[1] == '\0') {
     for (SplitIterator<SingleDelimiter> iter(str, delim);
          !iter.Done(); iter.Next()) {
@@ -256,7 +199,7 @@ void Util::SplitStringUsing(StringPiece str,
 
 void Util::SplitStringUsing(StringPiece str,
                             const char *delim,
-                            vector<StringPiece> *output) {
+                            std::vector<StringPiece> *output) {
   if (delim[0] != '\0' && delim[1] == '\0') {
     for (SplitIterator<SingleDelimiter> iter(str, delim);
          !iter.Done(); iter.Next()) {
@@ -272,7 +215,7 @@ void Util::SplitStringUsing(StringPiece str,
 
 void Util::SplitStringAllowEmpty(StringPiece str,
                                  const char *delim,
-                                 vector<string> *output) {
+                                 std::vector<string> *output) {
   if (delim[0] != '\0' && delim[1] == '\0') {
     for (SplitIterator<SingleDelimiter, AllowEmpty> iter(str, delim);
          !iter.Done(); iter.Next()) {
@@ -286,20 +229,20 @@ void Util::SplitStringAllowEmpty(StringPiece str,
   }
 }
 
-void Util::SplitStringToUtf8Chars(const string &str, vector<string> *output) {
-  size_t begin = 0;
-  const size_t end = str.size();
-
+void Util::SplitStringToUtf8Chars(StringPiece str,
+                                  std::vector<string> *output) {
+  const char *begin = str.data();
+  const char *const end = str.data() + str.size();
   while (begin < end) {
-    const size_t mblen = OneCharLen(str.c_str() + begin);
-    output->push_back(str.substr(begin, mblen));
+    const size_t mblen = OneCharLen(begin);
+    output->emplace_back(begin, mblen);
     begin += mblen;
   }
   DCHECK_EQ(begin, end);
 }
 
-void Util::SplitCSV(const string &input, vector<string> *output) {
-  scoped_ptr<char[]> tmp(new char[input.size() + 1]);
+void Util::SplitCSV(const string &input, std::vector<string> *output) {
+  std::unique_ptr<char[]> tmp(new char[input.size() + 1]);
   char *str = tmp.get();
   memcpy(str, input.data(), input.size());
   str[input.size()] = '\0';
@@ -325,10 +268,10 @@ void Util::SplitCSV(const string &input, vector<string> *output) {
         }
         *end++ = *str;
       }
-      str = find(str, eos, ',');
+      str = std::find(str, eos, ',');
     } else {
       start = str;
-      str = find(str, eos, ',');
+      str = std::find(str, eos, ',');
       end = str;
     }
     bool end_is_empty = false;
@@ -345,7 +288,7 @@ void Util::SplitCSV(const string &input, vector<string> *output) {
   }
 }
 
-void Util::JoinStrings(const vector<string> &input,
+void Util::JoinStrings(const std::vector<string> &input,
                        const char *delim,
                        string *output) {
   output->clear();
@@ -357,7 +300,7 @@ void Util::JoinStrings(const vector<string> &input,
   }
 }
 
-void Util::JoinStringPieces(const vector<StringPiece> &pieces,
+void Util::JoinStringPieces(const std::vector<StringPiece> &pieces,
                             const char *delim,
                             string *output) {
   if (pieces.empty()) {
@@ -371,11 +314,16 @@ void Util::JoinStringPieces(const vector<StringPiece> &pieces,
     len += pieces[i].size();
   }
   output->reserve(len);
-  pieces[0].CopyToString(output);
+  output->assign(pieces[0].data(), pieces[0].size());
   for (size_t i = 1; i < pieces.size(); ++i) {
     output->append(delim, delim_len);
     output->append(pieces[i].data(), pieces[i].size());
   }
+}
+
+void Util::ConcatStrings(StringPiece s1, StringPiece s2, string *output) {
+  output->assign(s1.data(), s1.size());
+  output->append(s2.data(), s2.size());
 }
 
 void Util::AppendStringWithDelimiter(StringPiece delimiter,
@@ -383,9 +331,9 @@ void Util::AppendStringWithDelimiter(StringPiece delimiter,
                                      string *output) {
   CHECK(output);
   if (!output->empty()) {
-    delimiter.AppendToString(output);
+    output->append(delimiter.data(), delimiter.size());
   }
-  append_string.AppendToString(output);
+  output->append(append_string.data(), append_string.size());
 }
 
 
@@ -393,7 +341,7 @@ void Util::StringReplace(StringPiece s, StringPiece oldsub,
                          StringPiece newsub, bool replace_all,
                          string *res) {
   if (oldsub.empty()) {
-    s.AppendToString(res);  // if empty, append the given string.
+    res->append(s.data(), s.size());  // if empty, append the given string.
     return;
   }
 
@@ -405,7 +353,7 @@ void Util::StringReplace(StringPiece s, StringPiece oldsub,
       break;
     }
     res->append(s.data() + start_pos, pos - start_pos);
-    newsub.AppendToString(res);
+    res->append(newsub.data(), newsub.size());
     start_pos = pos + oldsub.size();  // start searching again after the "old"
   } while (replace_all);
   res->append(s.data() + start_pos, s.length() - start_pos);
@@ -506,7 +454,7 @@ bool Util::IsCapitalizedAscii(StringPiece s) {
     return true;
   }
   if (isupper(*s.begin())) {
-    return IsLowerAscii(s.substr(1));
+    return IsLowerAscii(ClippedSubstr(s, 1));
   }
   return false;
 }
@@ -516,10 +464,10 @@ bool Util::IsLowerOrUpperAscii(StringPiece s) {
     return true;
   }
   if (islower(*s.begin())) {
-    return IsLowerAscii(s.substr(1));
+    return IsLowerAscii(ClippedSubstr(s, 1));
   }
   if (isupper(*s.begin())) {
-    return IsUpperAscii(s.substr(1));
+    return IsUpperAscii(ClippedSubstr(s, 1));
   }
   return false;
 }
@@ -529,7 +477,7 @@ bool Util::IsUpperOrCapitalizedAscii(StringPiece s) {
     return true;
   }
   if (isupper(*s.begin())) {
-    return IsLowerOrUpperAscii(s.substr(1));
+    return IsLowerOrUpperAscii(ClippedSubstr(s, 1));
   }
   return false;
 }
@@ -615,7 +563,7 @@ bool Util::SplitFirstChar32(StringPiece s,
   }
 
   *first_char32 = 0;
-  rest->clear();
+  *rest = StringPiece();
 
   while (true) {
     if (s.empty()) {
@@ -630,7 +578,7 @@ bool Util::SplitFirstChar32(StringPiece s,
       const uint8 leading_byte = static_cast<uint8>(s[0]);
       if (leading_byte < 0x80) {
         *first_char32 = leading_byte;
-        *rest = s.substr(1);
+        *rest = ClippedSubstr(s, 1);
         return true;
       }
 
@@ -690,7 +638,7 @@ bool Util::SplitFirstChar32(StringPiece s,
       return false;
     }
     *first_char32 = result;
-    *rest = s.substr(len);
+    *rest = ClippedSubstr(s, len);
     return true;
   }
 }
@@ -708,7 +656,7 @@ bool Util::SplitLastChar32(StringPiece s,
   }
 
   *last_char32 = 0;
-  rest->clear();
+  *rest = StringPiece();
 
   if (s.empty()) {
     return false;
@@ -718,8 +666,8 @@ bool Util::SplitLastChar32(StringPiece s,
   if (it == s.rend()) {
     return false;
   }
-  const StringPiece::difference_type len = distance(s.rbegin(), it) + 1;
-  const StringPiece last_piece = s.substr(s.size() - len);
+  const StringPiece::difference_type len = std::distance(s.rbegin(), it) + 1;
+  const StringPiece last_piece = ClippedSubstr(s, s.size() - len);
   StringPiece result_piece;
   if (!SplitFirstChar32(last_piece, last_char32, &result_piece)) {
     return false;
@@ -738,63 +686,61 @@ void Util::UCS4ToUTF8(char32 c, string *output) {
 }
 
 void Util::UCS4ToUTF8Append(char32 c, string *output) {
+  char buf[7];
+  output->append(buf, UCS4ToUTF8(c, buf));
+}
+
+size_t Util::UCS4ToUTF8(char32 c, char* output) {
   if (c == 0) {
     // Do nothing if |c| is NUL. Previous implementation of UCS4ToUTF8Append
     // worked like this.
-    return;
+    output[0] = '\0';
+    return 0;
   }
   if (c < 0x00080) {
-    output->push_back(static_cast<char>(c & 0xFF));
-    return;
+    output[0] = static_cast<char>(c & 0xFF);
+    output[1] = '\0';
+    return 1;
   }
   if (c < 0x00800) {
-    const char buf[] = {
-      static_cast<char>(0xC0 + ((c >> 6) & 0x1F)),
-      static_cast<char>(0x80 + (c & 0x3F)),
-    };
-    output->append(buf, arraysize(buf));
-    return;
+    output[0] = static_cast<char>(0xC0 + ((c >> 6) & 0x1F));
+    output[1] = static_cast<char>(0x80 + (c & 0x3F));
+    output[2] = '\0';
+    return 2;
   }
   if (c < 0x10000) {
-    const char buf[] = {
-      static_cast<char>(0xE0 + ((c >> 12) & 0x0F)),
-      static_cast<char>(0x80 + ((c >> 6) & 0x3F)),
-      static_cast<char>(0x80 + (c & 0x3F)),
-    };
-    output->append(buf, arraysize(buf));
-    return;
+    output[0] = static_cast<char>(0xE0 + ((c >> 12) & 0x0F));
+    output[1] = static_cast<char>(0x80 + ((c >> 6) & 0x3F));
+    output[2] = static_cast<char>(0x80 + (c & 0x3F));
+    output[3] = '\0';
+    return 3;
   }
   if (c < 0x200000) {
-    const char buf[] = {
-      static_cast<char>(0xF0 + ((c >> 18) & 0x07)),
-      static_cast<char>(0x80 + ((c >> 12) & 0x3F)),
-      static_cast<char>(0x80 + ((c >> 6)  & 0x3F)),
-      static_cast<char>(0x80 + (c & 0x3F)),
-    };
-    output->append(buf, arraysize(buf));
-    return;
+    output[0] = static_cast<char>(0xF0 + ((c >> 18) & 0x07));
+    output[1] = static_cast<char>(0x80 + ((c >> 12) & 0x3F));
+    output[2] = static_cast<char>(0x80 + ((c >> 6) & 0x3F));
+    output[3] = static_cast<char>(0x80 + (c & 0x3F));
+    output[4] = '\0';
+    return 4;
   }
   // below is not in UCS4 but in 32bit int.
   if (c < 0x8000000) {
-    const char buf[] = {
-      static_cast<char>(0xF8 + ((c >> 24) & 0x03)),
-      static_cast<char>(0x80 + ((c >> 18) & 0x3F)),
-      static_cast<char>(0x80 + ((c >> 12) & 0x3F)),
-      static_cast<char>(0x80 + ((c >> 6)  & 0x3F)),
-      static_cast<char>(0x80 + (c & 0x3F)),
-    };
-    output->append(buf, arraysize(buf));
-    return;
+    output[0] = static_cast<char>(0xF8 + ((c >> 24) & 0x03));
+    output[1] = static_cast<char>(0x80 + ((c >> 18) & 0x3F));
+    output[2] = static_cast<char>(0x80 + ((c >> 12) & 0x3F));
+    output[3] = static_cast<char>(0x80 + ((c >> 6) & 0x3F));
+    output[4] = static_cast<char>(0x80 + (c & 0x3F));
+    output[5] = '\0';
+    return 5;
   }
-  const char buf[] = {
-    static_cast<char>(0xFC + ((c >> 30) & 0x01)),
-    static_cast<char>(0x80 + ((c >> 24) & 0x3F)),
-    static_cast<char>(0x80 + ((c >> 18) & 0x3F)),
-    static_cast<char>(0x80 + ((c >> 12) & 0x3F)),
-    static_cast<char>(0x80 + ((c >> 6)  & 0x3F)),
-    static_cast<char>(0x80 + (c & 0x3F)),
-  };
-  output->append(buf, arraysize(buf));
+  output[0] = static_cast<char>(0xFC + ((c >> 30) & 0x01));
+  output[1] = static_cast<char>(0x80 + ((c >> 24) & 0x3F));
+  output[2] = static_cast<char>(0x80 + ((c >> 18) & 0x3F));
+  output[3] = static_cast<char>(0x80 + ((c >> 12) & 0x3F));
+  output[4] = static_cast<char>(0x80 + ((c >> 6) & 0x3F));
+  output[5] = static_cast<char>(0x80 + (c & 0x3F));
+  output[6] = '\0';
+  return 6;
 }
 
 #ifdef OS_WIN
@@ -807,14 +753,14 @@ size_t Util::WideCharsLen(StringPiece src) {
   return num_chars;
 }
 
-int Util::UTF8ToWide(StringPiece input, wstring *output) {
+int Util::UTF8ToWide(StringPiece input, std::wstring *output) {
   const size_t output_length = WideCharsLen(input);
   if (output_length == 0) {
     return 0;
   }
 
   const size_t buffer_len = output_length + 1;
-  scoped_ptr<wchar_t[]> input_wide(new wchar_t[buffer_len]);
+  std::unique_ptr<wchar_t[]> input_wide(new wchar_t[buffer_len]);
   const int copied_num_chars = ::MultiByteToWideChar(
       CP_UTF8, 0, input.begin(), input.size(), input_wide.get(),
       buffer_len);
@@ -831,7 +777,7 @@ int Util::WideToUTF8(const wchar_t *input, string *output) {
     return 0;
   }
 
-  scoped_ptr<char[]> input_encoded(new char[output_length + 1]);
+  std::unique_ptr<char[]> input_encoded(new char[output_length + 1]);
   const int result = WideCharToMultiByte(CP_UTF8, 0, input, -1,
                                          input_encoded.get(),
                                          output_length + 1, NULL, NULL);
@@ -841,7 +787,7 @@ int Util::WideToUTF8(const wchar_t *input, string *output) {
   return result;
 }
 
-int Util::WideToUTF8(const wstring &input, string *output) {
+int Util::WideToUTF8(const std::wstring &input, string *output) {
   return WideToUTF8(input.c_str(), output);
 }
 #endif  // OS_WIN
@@ -873,22 +819,15 @@ void Util::SubString(StringPiece src, size_t start, size_t length,
                      string *result) {
   DCHECK(result);
   const StringPiece substr = SubStringPiece(src, start, length);
-  substr.CopyToString(result);
+  result->assign(substr.data(), substr.size());
 }
 
 bool Util::StartsWith(StringPiece str, StringPiece prefix) {
-  if (str.size() < prefix.size()) {
-    return false;
-  }
-  return (0 == memcmp(str.data(), prefix.data(), prefix.size()));
+  return str.starts_with(prefix);
 }
 
 bool Util::EndsWith(StringPiece str, StringPiece suffix) {
-  if (str.size() < suffix.size()) {
-    return false;
-  }
-  return (0 == memcmp(str.data() + str.size() - suffix.size(),
-                      suffix.data(), suffix.size()));
+  return str.ends_with(suffix);
 }
 
 void Util::StripUTF8BOM(string *line) {
@@ -909,12 +848,70 @@ bool Util::IsUTF16BOM(const string &line) {
   return false;
 }
 
-bool Util::IsAndroidPuaEmoji(StringPiece s) {
-  static const char kUtf8MinAndroidPuaEmoji[] = "\xf3\xbe\x80\x80";
-  static const char kUtf8MaxAndroidPuaEmoji[] = "\xf3\xbe\xba\xa0";
-  return (s.size() == 4 &&
-          kUtf8MinAndroidPuaEmoji <= s && s <= kUtf8MaxAndroidPuaEmoji);
+namespace {
+// http://unicode.org/~scherer/emoji4unicode/snapshot/full.html
+static const char kUtf8MinGooglePuaEmoji[] = "\xf3\xbe\x80\x80";
+static const char kUtf8MaxGooglePuaEmoji[] = "\xf3\xbe\xba\xa0";
+static const char32 kUcs4MinGooglePuaEmoji = 0xFE000;
+static const char32 kUcs4MaxGooglePuaEmoji = 0xFEEA0;
 }
+
+bool Util::IsAndroidPuaEmoji(StringPiece s) {
+  return (s.size() == 4 &&
+          kUtf8MinGooglePuaEmoji <= s && s <= kUtf8MaxGooglePuaEmoji);
+}
+
+namespace {
+
+// Lower-level routine that takes a va_list and appends to a specified
+// string.  All other routines of sprintf family are just convenience
+// wrappers around it.
+void StringAppendV(string *dst, const char *format, va_list ap) {
+  // First try with a small fixed size buffer
+  char space[1024];
+
+  // It's possible for methods that use a va_list to invalidate
+  // the data in it upon use.  The fix is to make a copy
+  // of the structure before using it and use that copy instead.
+  va_list backup_ap;
+  va_copy(backup_ap, ap);
+  int result = vsnprintf(space, sizeof(space), format, backup_ap);
+  va_end(backup_ap);
+
+  if ((result >= 0) && (result < sizeof(space))) {
+    // It fit
+    dst->append(space, result);
+    return;
+  }
+
+  // Repeatedly increase buffer size until it fits
+  int length = sizeof(space);
+  while (true) {
+    if (result < 0) {
+      // Older behavior: just try doubling the buffer size
+      length *= 2;
+    } else {
+      // We need exactly "result+1" characters
+      length = result+1;
+    }
+    char *buf = new char[length];
+
+    // Restore the va_list before we use it again
+    va_copy(backup_ap, ap);
+    result = vsnprintf(buf, length, format, backup_ap);
+    va_end(backup_ap);
+
+    if ((result >= 0) && (result < length)) {
+      // It fit
+      dst->append(buf, result);
+      delete[] buf;
+      return;
+    }
+    delete[] buf;
+  }
+}
+
+}   // namespace
 
 string Util::StringPrintf(const char *format, ...) {
   va_list ap;
@@ -924,6 +921,8 @@ string Util::StringPrintf(const char *format, ...) {
   va_end(ap);
   return result;
 }
+
+
 
 bool Util::ChopReturns(string *line) {
   const string::size_type line_end = line->find_last_not_of("\r\n");
@@ -954,7 +953,7 @@ bool GetSecureRandomSequence(char *buf, size_t buf_size) {
   }
   ::CryptReleaseContext(hprov, 0);
   return true;
-#elif defined(__native_client__)
+#elif defined(OS_NACL)
   struct nacl_irt_random interface;
 
   if (nacl_interface_query(NACL_IRT_RANDOM_v0_1, &interface,
@@ -974,16 +973,16 @@ bool GetSecureRandomSequence(char *buf, size_t buf_size) {
     return false;
   }
   return true;
-#else  // !OS_WIN && !__native_client__
+#else  // !OS_WIN && !OS_NACL
   // Use non blocking interface on Linux.
   // Mac also have /dev/urandom (although it's identical with /dev/random)
-  ifstream ifs("/dev/urandom", ios::binary);
+  std::ifstream ifs("/dev/urandom", std::ios::binary);
   if (!ifs) {
     return false;
   }
   ifs.read(buf, buf_size);
   return true;
-#endif  // OS_WIN or __native_client__
+#endif  // OS_WIN or OS_NACL
 }
 }  // namespace
 
@@ -1025,175 +1024,6 @@ void Util::SetRandomSeed(uint32 seed) {
   ::srand(seed);
 }
 
-namespace {
-class ClockImpl : public Util::ClockInterface {
- public:
-#ifndef __native_client__
-  ClockImpl() {}
-#else  // __native_client__
-  ClockImpl() : timezone_offset_sec_(0) {}
-#endif  // __native_client__
-  virtual ~ClockImpl() {}
-
-  virtual void GetTimeOfDay(uint64 *sec, uint32 *usec) {
-#ifdef OS_WIN
-    FILETIME file_time;
-    GetSystemTimeAsFileTime(&file_time);
-    ULARGE_INTEGER time_value;
-    time_value.HighPart = file_time.dwHighDateTime;
-    time_value.LowPart = file_time.dwLowDateTime;
-    // Convert into microseconds
-    time_value.QuadPart /= 10;
-    // kDeltaEpochInMicroSecs is difference between January 1, 1970 and
-    // January 1, 1601 in microsecond.
-    // This number is calculated as follows.
-    // ((1970 - 1601) * 365 + 89) * 24 * 60 * 60 * 1000000
-    // 89 is the number of leap years between 1970 and 1601.
-    const uint64 kDeltaEpochInMicroSecs = 11644473600000000ULL;
-    // Convert file time to unix epoch
-    time_value.QuadPart -= kDeltaEpochInMicroSecs;
-    *sec = static_cast<uint64>(time_value.QuadPart / 1000000UL);
-    *usec = static_cast<uint32>(time_value.QuadPart % 1000000UL);
-#else  // OS_WIN
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    *sec = tv.tv_sec;
-    *usec = tv.tv_usec;
-#endif  // OS_WIN
-  }
-
-  virtual uint64 GetTime() {
-#ifdef OS_WIN
-    return static_cast<uint64>(_time64(NULL));
-#else
-    return static_cast<uint64>(time(NULL));
-#endif  // OS_WIN
-  }
-
-  virtual bool GetTmWithOffsetSecond(time_t offset_sec, tm *output) {
-    const time_t current_sec = static_cast<time_t>(this->GetTime());
-    const time_t modified_sec = current_sec + offset_sec;
-
-#ifdef OS_WIN
-    if (_localtime64_s(output, &modified_sec) != 0) {
-      return false;
-    }
-#elif defined(__native_client__)
-    const time_t localtime_sec = modified_sec + timezone_offset_sec_;
-    if (gmtime_r(&localtime_sec, output) == NULL) {
-      return false;
-    }
-#else  // !OS_WIN && !__native_client__
-    if (localtime_r(&modified_sec, output) == NULL) {
-      return false;
-    }
-#endif  // OS_WIN
-    return true;
-  }
-
-  virtual uint64 GetFrequency() {
-#if defined(OS_WIN)
-    LARGE_INTEGER timestamp;
-    // TODO(yukawa): Consider the case where QueryPerformanceCounter is not
-    // available.
-    const BOOL result = ::QueryPerformanceFrequency(&timestamp);
-    return static_cast<uint64>(timestamp.QuadPart);
-#elif defined(OS_MACOSX)
-    static mach_timebase_info_data_t timebase_info;
-    mach_timebase_info(&timebase_info);
-    return static_cast<uint64>(
-        1.0e9 * timebase_info.denom / timebase_info.numer);
-#elif defined(OS_LINUX)
-#if defined(HAVE_LIBRT)
-    return 1000000000uLL;
-#else  // HAVE_LIBRT
-    return 1000000uLL;
-#endif  // HAVE_LIBRT
-#else  // platforms (OS_WIN, OS_MACOSX, OS_LINUX, ...)
-#error "Not supported platform"
-#endif  // platforms (OS_WIN, OS_MACOSX, OS_LINUX, ...)
-  }
-
-  virtual uint64 GetTicks() {
-#if defined(OS_WIN)
-    LARGE_INTEGER timestamp;
-    // TODO(yukawa): Consider the case where QueryPerformanceCounter is not
-    // available.
-    const BOOL result = ::QueryPerformanceCounter(&timestamp);
-    return static_cast<uint64>(timestamp.QuadPart);
-#elif defined(OS_MACOSX)
-    return static_cast<uint64>(mach_absolute_time());
-#elif defined(OS_LINUX)
-#if defined(HAVE_LIBRT)
-    struct timespec timestamp;
-    if (-1 == clock_gettime(CLOCK_REALTIME, &timestamp)) {
-      return 0;
-    }
-    return timestamp.tv_sec * 1000000000uLL + timestamp.tv_nsec;
-#else  // HAVE_LIBRT
-    // librt is not linked on Android, so we uses GetTimeOfDay instead.
-    // GetFrequency() always returns 1MHz when librt is not available,
-    // so we uses microseconds as ticks.
-    uint64 sec;
-    uint32 usec;
-    GetTimeOfDay(&sec, &usec);
-    return sec * 1000000 + usec;
-#endif  // HAVE_LIBRT
-#else  // platforms (OS_WIN, OS_MACOSX, OS_LINUX, ...)
-#error "Not supported platform"
-#endif  // platforms (OS_WIN, OS_MACOSX, OS_LINUX, ...)
-  }
-
-#ifdef __native_client__
-  virtual void SetTimezoneOffset(int32 timezone_offset_sec) {
-    timezone_offset_sec_ = timezone_offset_sec;
-  }
-
- private:
-  int32 timezone_offset_sec_;
-#endif  // __native_client__
-};
-
-Util::ClockInterface *g_clock_handler = NULL;
-
-Util::ClockInterface *GetClockHandler() {
-  if (g_clock_handler != NULL) {
-    return g_clock_handler;
-  } else {
-    return Singleton<ClockImpl>::get();
-  }
-}
-
-}  // namespace
-
-void Util::SetClockHandler(Util::ClockInterface *handler) {
-  g_clock_handler = handler;
-}
-
-void Util::GetTimeOfDay(uint64 *sec, uint32 *usec) {
-  GetClockHandler()->GetTimeOfDay(sec, usec);
-}
-
-uint64 Util::GetTime() {
-  return GetClockHandler()->GetTime();
-}
-
-bool Util::GetCurrentTm(tm *current_time) {
-  return GetTmWithOffsetSecond(current_time, 0);
-}
-
-bool Util::GetTmWithOffsetSecond(tm *time_with_offset, int offset_sec) {
-  return GetClockHandler()->GetTmWithOffsetSecond(offset_sec, time_with_offset);
-}
-
-uint64 Util::GetFrequency() {
-  return GetClockHandler()->GetFrequency();
-}
-
-uint64 Util::GetTicks() {
-  return GetClockHandler()->GetTicks();
-}
-
 void Util::Sleep(uint32 msec) {
 #ifdef OS_WIN
   ::Sleep(msec);
@@ -1202,109 +1032,198 @@ void Util::Sleep(uint32 msec) {
 #endif  // OS_WIN
 }
 
-#ifdef __native_client__
-void Util::SetTimezoneOffset(int32 timezone_offset_sec) {
-  return GetClockHandler()->SetTimezoneOffset(timezone_offset_sec);
-}
-#endif  // __native_client__
-
 namespace {
 
-void EscapeInternal(char input, const string &prefix, string *output) {
+void EscapeInternal(char input, StringPiece prefix, string *output) {
   const int hi = ((static_cast<int>(input) & 0xF0) >> 4);
   const int lo = (static_cast<int>(input) & 0x0F);
-  *output += prefix;
+  output->append(prefix.data(), prefix.size());
   *output += static_cast<char>(hi >= 10 ? hi - 10 + 'A' : hi + '0');
   *output += static_cast<char>(lo >= 10 ? lo - 10 + 'A' : lo + '0');
 }
 
+bool ParseHexChar(char c, char *n) {
+  if ('0' <= c && c <= '9') {
+    *n = c - '0';
+    return true;
+  }
+  if ('a' <= c && c <= 'f') {
+    *n = (c - 'a') + 10;
+    return true;
+  }
+  if ('A' <= c && c <= 'F') {
+    *n = (c - 'A') + 10;
+    return true;
+  }
+  return false;
+}
+
+// Note: we cannot use strtoul() because it requires input to be
+// null-terminated (StringPiece may not be null-terminated).
+bool UnescapeInternal(StringPiece input, StringPiece prefix, char *output) {
+  if (!Util::StartsWith(input, prefix)) {
+    return false;
+  }
+  input.remove_prefix(prefix.size());
+  char hi, lo;
+  if (input.size() < 2 || !ParseHexChar(input[0], &hi) ||
+      !ParseHexChar(input[1], &lo)) {
+    return false;
+  }
+  *output = (hi << 4) | lo;
+  return true;
+}
+
+int LookupDoubleArray(const japanese_util_rule::DoubleArray *array,
+                      const char *key, int len, int *result) {
+  int seekto = 0;
+  int n = 0;
+  int b = array[0].base;
+  uint32 p = 0;
+  *result = -1;
+  uint32 num = 0;
+
+  for (int i = 0; i < len; ++i) {
+    p = b;
+    n = array[p].base;
+    if (static_cast<uint32>(b) == array[p].check && n < 0) {
+      seekto = i;
+      *result = - n - 1;
+      ++num;
+    }
+    p = b + static_cast<uint8>(key[i]) + 1;
+    if (static_cast<uint32>(b) == array[p].check) {
+      b = array[p].base;
+    } else {
+      return seekto;
+    }
+  }
+  p = b;
+  n = array[p].base;
+  if (static_cast<uint32>(b) == array[p].check && n < 0) {
+    seekto = len;
+    *result = -n - 1;
+  }
+
+  return seekto;
+}
+
 }  // namespace
 
-// Load  Rules
-#include "base/japanese_util_rule.h"
+void Util::ConvertUsingDoubleArray(const japanese_util_rule::DoubleArray *da,
+                                   const char *ctable,
+                                   StringPiece input,
+                                   string *output) {
+  output->clear();
+  const char *begin = input.data();
+  const char *const end = input.data() + input.size();
+  while (begin < end) {
+    int result = 0;
+    int mblen = LookupDoubleArray(da, begin, static_cast<int>(end - begin),
+                                  &result);
+    if (mblen > 0) {
+      const char *p = &ctable[result];
+      const size_t len = strlen(p);
+      output->append(p, len);
+      mblen -= static_cast<int32>(p[len + 1]);
+      begin += mblen;
+    } else {
+      mblen = OneCharLen(begin);
+      output->append(begin, mblen);
+      begin += mblen;
+    }
+  }
+}
 
 void Util::HiraganaToKatakana(StringPiece input, string *output) {
-  TextConverter::Convert(hiragana_to_katakana_da,
-                         hiragana_to_katakana_table,
-                         input,
-                         output);
+  ConvertUsingDoubleArray(japanese_util_rule::hiragana_to_katakana_da,
+                          japanese_util_rule::hiragana_to_katakana_table,
+                          input,
+                          output);
 }
 
 void Util::HiraganaToHalfwidthKatakana(StringPiece input,
                                        string *output) {
   // combine two rules
   string tmp;
-  TextConverter::Convert(hiragana_to_katakana_da,
-                         hiragana_to_katakana_table,
-                         input, &tmp);
-  TextConverter::Convert(fullwidthkatakana_to_halfwidthkatakana_da,
-                         fullwidthkatakana_to_halfwidthkatakana_table,
-                         tmp, output);
+  ConvertUsingDoubleArray(
+      japanese_util_rule::hiragana_to_katakana_da,
+      japanese_util_rule::hiragana_to_katakana_table,
+      input, &tmp);
+  ConvertUsingDoubleArray(
+      japanese_util_rule::fullwidthkatakana_to_halfwidthkatakana_da,
+      japanese_util_rule::fullwidthkatakana_to_halfwidthkatakana_table,
+      tmp, output);
 }
 
 void Util::HiraganaToRomanji(StringPiece input, string *output) {
-  TextConverter::Convert(hiragana_to_romanji_da,
-                         hiragana_to_romanji_table,
-                         input,
-                         output);
+  ConvertUsingDoubleArray(japanese_util_rule::hiragana_to_romanji_da,
+                          japanese_util_rule::hiragana_to_romanji_table,
+                          input,
+                          output);
 }
 
 void Util::HalfWidthAsciiToFullWidthAscii(StringPiece input,
                                           string *output) {
-  TextConverter::Convert(halfwidthascii_to_fullwidthascii_da,
-                         halfwidthascii_to_fullwidthascii_table,
-                         input,
-                         output);
+  ConvertUsingDoubleArray(
+      japanese_util_rule::halfwidthascii_to_fullwidthascii_da,
+      japanese_util_rule::halfwidthascii_to_fullwidthascii_table,
+      input,
+      output);
 }
 
 void Util::FullWidthAsciiToHalfWidthAscii(StringPiece input,
                                           string *output) {
-  TextConverter::Convert(fullwidthascii_to_halfwidthascii_da,
-                         fullwidthascii_to_halfwidthascii_table,
-                         input,
-                         output);
+  ConvertUsingDoubleArray(
+      japanese_util_rule::fullwidthascii_to_halfwidthascii_da,
+      japanese_util_rule::fullwidthascii_to_halfwidthascii_table,
+      input,
+      output);
 }
 
 void Util::HiraganaToFullwidthRomanji(StringPiece input, string *output) {
   string tmp;
-  TextConverter::Convert(hiragana_to_romanji_da,
-                         hiragana_to_romanji_table,
-                         input,
-                         &tmp);
-  TextConverter::Convert(halfwidthascii_to_fullwidthascii_da,
-                         halfwidthascii_to_fullwidthascii_table,
-                         tmp,
-                         output);
+  ConvertUsingDoubleArray(japanese_util_rule::hiragana_to_romanji_da,
+                          japanese_util_rule::hiragana_to_romanji_table,
+                          input,
+                          &tmp);
+  ConvertUsingDoubleArray(
+      japanese_util_rule::halfwidthascii_to_fullwidthascii_da,
+      japanese_util_rule::halfwidthascii_to_fullwidthascii_table,
+      tmp,
+      output);
 }
 
 void Util::RomanjiToHiragana(StringPiece input, string *output) {
-  TextConverter::Convert(romanji_to_hiragana_da,
-                         romanji_to_hiragana_table,
-                         input,
-                         output);
+  ConvertUsingDoubleArray(japanese_util_rule::romanji_to_hiragana_da,
+                          japanese_util_rule::romanji_to_hiragana_table,
+                          input,
+                          output);
 }
 
 void Util::KatakanaToHiragana(StringPiece input, string *output) {
-  TextConverter::Convert(katakana_to_hiragana_da,
-                         katakana_to_hiragana_table,
-                         input,
-                         output);
+  ConvertUsingDoubleArray(japanese_util_rule::katakana_to_hiragana_da,
+                          japanese_util_rule::katakana_to_hiragana_table,
+                          input,
+                          output);
 }
 
 void Util::HalfWidthKatakanaToFullWidthKatakana(StringPiece input,
                                                 string *output) {
-  TextConverter::Convert(halfwidthkatakana_to_fullwidthkatakana_da,
-                         halfwidthkatakana_to_fullwidthkatakana_table,
-                         input,
-                         output);
+  ConvertUsingDoubleArray(
+      japanese_util_rule::halfwidthkatakana_to_fullwidthkatakana_da,
+      japanese_util_rule::halfwidthkatakana_to_fullwidthkatakana_table,
+      input,
+      output);
 }
 
 void Util::FullWidthKatakanaToHalfWidthKatakana(StringPiece input,
                                                 string *output) {
-  TextConverter::Convert(fullwidthkatakana_to_halfwidthkatakana_da,
-                         fullwidthkatakana_to_halfwidthkatakana_table,
-                         input,
-                         output);
+  ConvertUsingDoubleArray(
+      japanese_util_rule::fullwidthkatakana_to_halfwidthkatakana_da,
+      japanese_util_rule::fullwidthkatakana_to_halfwidthkatakana_table,
+      input,
+      output);
 }
 
 void Util::FullWidthToHalfWidth(StringPiece input, string *output) {
@@ -1325,101 +1244,78 @@ void Util::HalfWidthToFullWidth(StringPiece input, string *output) {
 // of some UNICODE only characters (required to display
 // and commit for old clients)
 void Util::NormalizeVoicedSoundMark(StringPiece input, string *output) {
-  TextConverter::Convert(normalize_voiced_sound_da,
-                         normalize_voiced_sound_table,
-                         input,
-                         output);
+  ConvertUsingDoubleArray(japanese_util_rule::normalize_voiced_sound_da,
+                          japanese_util_rule::normalize_voiced_sound_table,
+                          input,
+                          output);
 }
 
 namespace {
-class BracketHandler {
- public:
-  BracketHandler() {
-    VLOG(1) << "Init bracket mapping";
 
-    const struct BracketType {
-      const char *open_bracket;
-      const char *close_bracket;
-    } kBracketType[] = {
-      //  { "（", "）" },
-      //  { "〔", "〕" },
-      //  { "［", "］" },
-      //  { "｛", "｝" },
-      //  { "〈", "〉" },
-      //  { "《", "》" },
-      //  { "「", "」" },
-      //  { "『", "』" },
-      //  { "【", "】" },
-      //  { "〘", "〙" },
-      //  { "〚", "〛" },
-      { "\xEF\xBC\x88", "\xEF\xBC\x89" },
-      { "\xE3\x80\x94", "\xE3\x80\x95" },
-      { "\xEF\xBC\xBB", "\xEF\xBC\xBD" },
-      { "\xEF\xBD\x9B", "\xEF\xBD\x9D" },
-      { "\xE3\x80\x88", "\xE3\x80\x89" },
-      { "\xE3\x80\x8A", "\xE3\x80\x8B" },
-      { "\xE3\x80\x8C", "\xE3\x80\x8D" },
-      { "\xE3\x80\x8E", "\xE3\x80\x8F" },
-      { "\xE3\x80\x90", "\xE3\x80\x91" },
-      { "\xe3\x80\x98", "\xe3\x80\x99" },
-      { "\xe3\x80\x9a", "\xe3\x80\x9b" },
-      { NULL, NULL },  // sentinel
-    };
-    string open_full_width, open_half_width;
-    string close_full_width, close_half_width;
+struct BracketPair {
+  StringPiece GetOpenBracket() const { return StringPiece(open, open_len); }
+  StringPiece GetCloseBracket() const { return StringPiece(close, close_len); }
 
-    for (size_t i = 0;
-         (kBracketType[i].open_bracket != NULL ||
-          kBracketType[i].close_bracket != NULL);
-         ++i) {
-      Util::FullWidthToHalfWidth(kBracketType[i].open_bracket,
-                                 &open_full_width);
-      Util::HalfWidthToFullWidth(kBracketType[i].open_bracket,
-                                 &open_half_width);
-      Util::FullWidthToHalfWidth(kBracketType[i].close_bracket,
-                                 &close_full_width);
-      Util::HalfWidthToFullWidth(kBracketType[i].close_bracket,
-                                 &close_half_width);
-      open_bracket_[open_half_width]   = close_half_width;
-      open_bracket_[open_full_width]   = close_full_width;
-      close_bracket_[close_half_width] = open_half_width;
-      close_bracket_[close_full_width] = open_full_width;
-    }
-  }
-  ~BracketHandler() {}
+  const char *open;
+  size_t open_len;
 
-  bool IsOpenBracket(const string &key, string *close_bracket) const {
-    map<string, string>::const_iterator it =
-        open_bracket_.find(key);
-    if (it == open_bracket_.end()) {
-      return false;
-    }
-    *close_bracket = it->second;
-    return true;
-  }
-
-  bool IsCloseBracket(const string &key, string *open_bracket) const {
-    map<string, string>::const_iterator it =
-        close_bracket_.find(key);
-    if (it == close_bracket_.end()) {
-      return false;
-    }
-    *open_bracket = it->second;
-    return true;
-  }
-
- private:
-  map<string, string> open_bracket_;
-  map<string, string> close_bracket_;
+  const char *close;
+  size_t close_len;
 };
+
+// A bidirectional map between opening and closing brackets as a sorted array.
+// NOTE: This array is sorted in order of both |open| and |close|.  If you add a
+// new bracket pair, you must keep this property.
+const BracketPair kSortedBracketPairs[] = {
+  {"(", 1, ")", 1},
+  {"[", 1, "]", 1},
+  {"{", 1, "}", 1},
+  {"〈", 3, "〉", 3},
+  {"《", 3, "》", 3},
+  {"「", 3, "」", 3},
+  {"『", 3, "』", 3},
+  {"【", 3, "】", 3},
+  {"〔", 3, "〕", 3},
+  {"〘", 3, "〙", 3},
+  {"〚", 3, "〛", 3},
+  {"（", 3, "）", 3},
+  {"［", 3, "］", 3},
+  {"｛", 3, "｝", 3},
+  {"｢", 3, "｣", 3},
+};
+
 }  // namespace
 
-bool Util::IsOpenBracket(const string &key, string *close_bracket) {
-  return Singleton<BracketHandler>::get()->IsOpenBracket(key, close_bracket);
+bool Util::IsOpenBracket(StringPiece key, string *close_bracket) {
+  struct OrderByOpenBracket {
+    bool operator()(const BracketPair &x, StringPiece key) const {
+      return x.GetOpenBracket() < key;
+    }
+  };
+  const auto end = std::end(kSortedBracketPairs);
+  const auto iter = std::lower_bound(
+      std::begin(kSortedBracketPairs), end, key, OrderByOpenBracket());
+  if (iter == end || iter->GetOpenBracket() != key) {
+    return false;
+  }
+  *close_bracket = string(iter->GetCloseBracket());
+  return true;
 }
 
-bool Util::IsCloseBracket(const string &key, string *open_bracket) {
-  return Singleton<BracketHandler>::get()->IsCloseBracket(key, open_bracket);
+bool Util::IsCloseBracket(StringPiece key, string *open_bracket) {
+  struct OrderByCloseBracket {
+    bool operator()(const BracketPair &x, StringPiece key) const {
+      return x.GetCloseBracket() < key;
+    }
+  };
+  const auto end = std::end(kSortedBracketPairs);
+  const auto iter = std::lower_bound(
+      std::begin(kSortedBracketPairs), end, key, OrderByCloseBracket());
+  if (iter == end || iter->GetCloseBracket() != key) {
+    return false;
+  }
+  *open_bracket = string(iter->GetOpenBracket());
+  return true;
 }
 
 bool Util::IsFullWidthSymbolInHalfWidthKatakana(const string &input) {
@@ -1540,16 +1436,16 @@ void Util::DecodeURI(const string &src, string *output) {
   }
 }
 
-void Util::AppendCGIParams(const vector<pair<string, string> > &params,
-                           string *base) {
+void Util::AppendCGIParams(
+    const std::vector<std::pair<string, string> > &params, string *base) {
   if (params.size() == 0 || base == NULL) {
     return;
   }
 
   string encoded;
-  for (vector<pair<string, string> >::const_iterator it = params.begin();
-       it != params.end();
-       ++it) {
+  for (std::vector<std::pair<string, string> >::const_iterator it =
+           params.begin();
+       it != params.end(); ++it) {
     // Append "<first>=<encoded second>&"
     base->append(it->first);
     base->append("=");
@@ -1564,11 +1460,32 @@ void Util::AppendCGIParams(const vector<pair<string, string> > &params,
   }
 }
 
-void Util::Escape(const string &input, string *output) {
+void Util::Escape(StringPiece input, string *output) {
   output->clear();
   for (size_t i = 0; i < input.size(); ++i) {
     EscapeInternal(input[i], "\\x", output);
   }
+}
+
+string Util::Escape(StringPiece input) {
+  string s;
+  Escape(input, &s);
+  return s;
+}
+
+bool Util::Unescape(StringPiece input, string *output) {
+  output->clear();
+  // Expected input format is "\xNN\xNN\xNN...", so input is parsed every four
+  // bytes (4 is the length of \xNN pattern).
+  for (; !input.empty(); input.remove_prefix(4)) {
+    char c;
+    // Try parsing \xNN pattern of 4 bytes.
+    if (!UnescapeInternal(input, "\\x", &c)) {
+      return false;
+    }
+    output->append(1, c);
+  }
+  return true;
 }
 
 void Util::EscapeUrl(const string &input, string *output) {
@@ -1663,7 +1580,8 @@ Util::ScriptType Util::GetScriptType(char32 w) {
       INRANGE(w, 0x1F600, 0x1F64F) ||  // Emoticons
       INRANGE(w, 0x1F680, 0x1F6FF) ||  // Transport And Map Symbols
       INRANGE(w, 0x1F700, 0x1F77F) ||  // Alchemical Symbols
-      w == 0x26CE) {                   // Ophiuchus
+      w == 0x26CE ||                   // Ophiuchus
+      INRANGE(w, kUcs4MinGooglePuaEmoji, kUcs4MaxGooglePuaEmoji)) {
     return EMOJI;
   }
 
@@ -1722,8 +1640,7 @@ Util::ScriptType Util::GetScriptType(const char *begin,
 
 namespace {
 
-Util::ScriptType GetScriptTypeInternal(const string &str,
-                                       bool ignore_symbols) {
+Util::ScriptType GetScriptTypeInternal(StringPiece str, bool ignore_symbols) {
   Util::ScriptType result = Util::SCRIPT_TYPE_SIZE;
 
   for (ConstChar32Iterator iter(str); !iter.Done(); iter.Next()) {
@@ -1769,7 +1686,7 @@ Util::ScriptType GetScriptTypeInternal(const string &str,
 
 }  // namespace
 
-Util::ScriptType Util::GetScriptType(const string &str) {
+Util::ScriptType Util::GetScriptType(StringPiece str) {
   return GetScriptTypeInternal(str, false);
 }
 
@@ -1824,14 +1741,63 @@ Util::FormType Util::GetFormType(const string &str) {
 }
 
 // Util::CharcterSet Util::GetCharacterSet(char32 ucs4);
-#include "base/character_set.h"
+#include "base/character_set.inc"
 
-Util::CharacterSet Util::GetCharacterSet(const string &str) {
+Util::CharacterSet Util::GetCharacterSet(StringPiece str) {
   CharacterSet result = ASCII;
   for (ConstChar32Iterator iter(str); !iter.Done(); iter.Next()) {
-    result = max(result, GetCharacterSet(iter.Get()));
+    result = std::max(result, GetCharacterSet(iter.Get()));
   }
   return result;
+}
+
+// CAUTION: Be careful to change the implementation of serialization.  Some
+// files use this format, so compatibility can be lost.  See, e.g.,
+// data_manager/dataset_writer.cc.
+string Util::SerializeUint64(uint64 x) {
+  const char s[8] = {
+      static_cast<char>(x >> 56),
+      static_cast<char>((x >> 48) & 0xFF),
+      static_cast<char>((x >> 40) & 0xFF),
+      static_cast<char>((x >> 32) & 0xFF),
+      static_cast<char>((x >> 24) & 0xFF),
+      static_cast<char>((x >> 16) & 0xFF),
+      static_cast<char>((x >> 8) & 0xFF),
+      static_cast<char>(x & 0xFF),
+  };
+  return string(s, 8);
+}
+
+bool Util::DeserializeUint64(StringPiece s, uint64 *x) {
+  if (s.size() != 8) {
+    return false;
+  }
+  *x = static_cast<uint64>(s[0]) << 56 |
+       static_cast<uint64>(s[1]) << 48 |
+       static_cast<uint64>(s[2]) << 40 |
+       static_cast<uint64>(s[3]) << 32 |
+       static_cast<uint64>(s[4]) << 24 |
+       static_cast<uint64>(s[5]) << 16 |
+       static_cast<uint64>(s[6]) << 8 |
+       static_cast<uint64>(s[7]);
+  return true;
+}
+
+bool Util::IsLittleEndian() {
+#ifdef OS_WIN
+  return true;
+#else  // OS_WIN
+  union {
+    unsigned char c[4];
+    unsigned int i;
+  } u;
+  static_assert(sizeof(u.c) == sizeof(u.i),
+                "Expecting (unsigned) int is 32-bit integer.");
+  static_assert(sizeof(u) == sizeof(u.i),
+                "Checking alignment.");
+  u.i = 0x12345678U;
+  return u.c[0] == 0x78U;
+#endif  // OS_WIN
 }
 
 }  // namespace mozc

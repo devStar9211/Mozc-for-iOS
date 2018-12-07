@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -32,29 +32,15 @@
     # Implementation of a Trie data structure based on LOUDS and its builder.
     {
       'target_name': 'louds',
-      'type': 'none',
+      'type': 'static_library',
       'toolsets': ['target', 'host'],
       'sources': [
-        'louds.h',
+        'louds.cc',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {
-      'target_name': 'key_expansion_table',
-      'type': 'none',
-      'toolsets': ['target', 'host'],
-      'sources': [
-        'key_expansion_table.h',
+      'dependencies': [
+        '../../base/base.gyp:base',
+        'simple_succinct_bit_vector_index',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'louds_trie',
@@ -65,15 +51,9 @@
       ],
       'dependencies': [
         '../../base/base.gyp:base',
-        'key_expansion_table',
         'louds',
         'simple_succinct_bit_vector_index',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'louds_trie_builder',
@@ -86,11 +66,6 @@
         '../../base/base.gyp:base',
         'bit_stream',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     # Implementation of an array of string based on bit vector.
     {
@@ -104,11 +79,6 @@
         '../../base/base.gyp:base',
         'simple_succinct_bit_vector_index',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'bit_vector_based_array_builder',
@@ -121,11 +91,6 @@
         '../../base/base.gyp:base',
         'bit_stream',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     # Implemantation of the succinct bit vector.
     {
@@ -138,11 +103,6 @@
       'dependencies': [
         '../../base/base.gyp:base',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     # Bit stream implementation for builders.
     {
@@ -152,11 +112,6 @@
       'sources': [
         'bit_stream.cc',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'dependencies': [
         '../../base/base.gyp:base',
       ],

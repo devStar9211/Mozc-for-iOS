@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,22 +33,27 @@
 #define MOZC_BASE_STRING_PIECE_H_
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
 #include <iosfwd>
+#include <iterator>
 #include <string>
+
+// Include namespace.h instead of port.h to reduce a dependency.
+#include "base/port_string.h"
 
 namespace mozc {
 
 
 class StringPiece {
  public:
-  typedef size_t size_type;
+  using size_type = size_t;
 
   // We provide non-explicit singleton constructors so users can pass
   // in a "const char*" or a "string" wherever a "StringPiece" is expected.
-  StringPiece() : ptr_(NULL), length_(0) {}
+  StringPiece() : ptr_(nullptr), length_(0) {}
   StringPiece(const char *str)    // NOLINT
-      : ptr_(str), length_((str != NULL) ? strlen(str) : 0) {}
+      : ptr_(str), length_((str != nullptr) ? strlen(str) : 0) {}
   StringPiece(const string &str)  // NOLINT
       : ptr_(str.data()), length_(str.size()) {}
   // Constructs a StringPiece from char ptr and length.
@@ -56,9 +61,6 @@ class StringPiece {
   // This method's 2nd argument is *length*.
   StringPiece(const char *offset, size_type len)
       : ptr_(offset), length_(len) {}
-  // Caution! This method's 2nd argument is *position*.
-  StringPiece(const StringPiece str, size_type pos);
-  StringPiece(const StringPiece str, size_type pos, size_type len);
 
   // data() may return a pointer to a buffer with embedded NULs, and the
   // returned buffer may or may not be null terminated.  Therefore it is
@@ -69,11 +71,11 @@ class StringPiece {
   size_type length() const { return length_; }
   bool empty() const { return length_ == 0; }
 
-  void clear() { ptr_ = NULL; length_ = 0; }
+  void clear() { ptr_ = nullptr; length_ = 0; }
   void set(const char *data, size_type len) { ptr_ = data; length_ = len; }
   void set(const char *str) {
     ptr_ = str;
-    length_ = (str != NULL) ? strlen(str) : 0;
+    length_ = (str != nullptr) ? strlen(str) : 0;
   }
   void set(const void *data, size_type len) {
     ptr_ = reinterpret_cast<const char *>(data);
@@ -111,7 +113,11 @@ class StringPiece {
   }
 
   string as_string() const {
-    // string doesn't like to take a NULL pointer even with a 0 size.
+    // string doesn't like to take a nullptr pointer even with a 0 size.
+    return string(!empty() ? data() : "", size());
+  }
+
+  explicit operator string() const {
     return string(!empty() ? data() : "", size());
   }
 
@@ -147,9 +153,6 @@ class StringPiece {
     return const_reverse_iterator(ptr_);
   }
 
-  size_type max_size() const { return length_; }
-  size_type capacity() const { return length_; }
-
   size_type copy(char *buf, size_type n, size_type pos = 0) const;
 
   size_type find(const StringPiece &s, size_type pos = 0) const;
@@ -184,7 +187,7 @@ class StringPiece {
   }
 
   friend bool operator<(const StringPiece &x, const StringPiece &y) {
-    const int min_size = x.size() < y.size() ? x.size() : y.size();
+    const size_type min_size = x.size() < y.size() ? x.size() : y.size();
     const int r = memcmp(x.data(), y.data(), min_size);
     return (r < 0) || (r == 0 && x.size() < y.size());
   }
@@ -207,7 +210,15 @@ class StringPiece {
 };
 
 // allow StringPiece to be logged (needed for unit testing).
-extern ostream &operator<<(ostream &o, const StringPiece &piece);
+extern std::ostream &operator<<(std::ostream &o, const StringPiece &piece);
+
+inline StringPiece ClippedSubstr(StringPiece sp, size_t pos,
+                                 size_t n = StringPiece::npos) {
+  size_t sp_size = sp.size();
+  pos = std::min(pos, sp_size);
+  n = std::min(n, sp_size - pos);
+  return sp.substr(pos, n);
+}
 
 
 }  // namespace mozc

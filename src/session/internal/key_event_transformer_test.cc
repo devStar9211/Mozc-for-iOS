@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,14 +31,47 @@
 
 #include "base/port.h"
 #include "base/singleton.h"
-#include "config/config.pb.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 
 #include "testing/base/public/gunit.h"
 
 namespace mozc {
 namespace session {
 namespace {
+
+::testing::AssertionResult IsKeyEventTransformerEq(
+     const KeyEventTransformer &x, const KeyEventTransformer &y) {
+  {
+    if (x.table().size() != y.table().size()) {
+      return ::testing::AssertionFailure() << "Table size differs";
+    }
+
+    KeyEventTransformer::Table::const_iterator x_iter = x.table().begin();
+    KeyEventTransformer::Table::const_iterator y_iter = y.table().begin();
+    while (x_iter != x.table().end() && y_iter != y.table().end()) {
+      if (x_iter->first != y_iter->first) {
+        return ::testing::AssertionFailure() << "Key mismatch: "
+                                             << x_iter->first << " vs "
+                                             << y_iter->first;
+      }
+      if (x_iter->second.DebugString() != y_iter->second.DebugString()) {
+        return ::testing::AssertionFailure()
+            << "Value mismatch for key = " << x_iter->first;
+      }
+      ++x_iter;
+      ++y_iter;
+    }
+  }
+
+  if (x.numpad_character_form() != y.numpad_character_form()) {
+    return ::testing::AssertionFailure()
+        << "numpad_character_form is different: "
+        << x.numpad_character_form() << " vs " << y.numpad_character_form();
+  }
+
+  return ::testing::AssertionSuccess();
+}
 
 void TestNumpadTransformation(commands::KeyEvent::SpecialKey input,
                               uint32 expected_key_code,
@@ -101,14 +134,12 @@ TEST(KeyEventTransformerTest, Numpad) {
     table->ReloadConfig(config);
     {
       SCOPED_TRACE("NUMPAD_INPUT_MODE: input: 0");
-      // "０"
-      TestNumpadTransformation(commands::KeyEvent::NUMPAD0, '0', "\xef\xbc\x90",
+      TestNumpadTransformation(commands::KeyEvent::NUMPAD0, '0', "０",
                                commands::KeyEvent::FOLLOW_MODE);
     }
     {
-      // "＝"
       SCOPED_TRACE("NUMPAD_INPUT_MODE: input: =");
-      TestNumpadTransformation(commands::KeyEvent::EQUALS, '=', "\xef\xbc\x9d",
+      TestNumpadTransformation(commands::KeyEvent::EQUALS, '=', "＝",
                                commands::KeyEvent::FOLLOW_MODE);
     }
   }
@@ -119,14 +150,12 @@ TEST(KeyEventTransformerTest, Numpad) {
     table->ReloadConfig(config);
     {
       SCOPED_TRACE("NUMPAD_FULL_WIDTH: input: 0");
-      // "０"
-      TestNumpadTransformation(commands::KeyEvent::NUMPAD0, '0', "\xef\xbc\x90",
+      TestNumpadTransformation(commands::KeyEvent::NUMPAD0, '0', "０",
                                commands::KeyEvent::AS_IS);
     }
     {
       SCOPED_TRACE("NUMPAD_FULL_WIDTH: input: =");
-      // "＝"
-      TestNumpadTransformation(commands::KeyEvent::EQUALS, '=', "\xef\xbc\x9d",
+      TestNumpadTransformation(commands::KeyEvent::EQUALS, '=', "＝",
                                commands::KeyEvent::AS_IS);
     }
   }
@@ -168,10 +197,10 @@ TEST(KeyEventTransformerTest, Kana) {
   KeyEventTransformer *table = Singleton<KeyEventTransformer>::get();
 
   {  // Punctuation
-    const char *kFullKuten = "\xe3\x80\x81";  // "、"
-    const char *kFullTouten = "\xE3\x80\x82";  // "。"
-    const char *kFullComma = "\xef\xbc\x8c";  // "，"
-    const char *kFullPeriod = "\xef\xbc\x8e";  // "．"
+    const char *kFullKuten = "、";
+    const char *kFullTouten = "。";
+    const char *kFullComma = "，";
+    const char *kFullPeriod = "．";
 
     {
       SCOPED_TRACE("KUTEN_TOUTEN");
@@ -212,12 +241,12 @@ TEST(KeyEventTransformerTest, Kana) {
   }
 
   {  // Symbol
-    const char *kFullLeftSquareBracket = "\xef\xbc\xbb";  // "［"
-    const char *kFullRightSquareBracket = "\xef\xbc\xbd";  // "］"
-    const char *kFullLeftCornerBracket = "\xe3\x80\x8c";  // "「"
-    const char *kFullRightCornerBracket = "\xe3\x80\x8d";  // "」"
-    const char *kFullSlash = "\xef\xbc\x8f";  // "／"
-    const char *kFullMiddleDot = "\xE3\x83\xBB";  // "・"
+    const char *kFullLeftSquareBracket = "［";
+    const char *kFullRightSquareBracket = "］";
+    const char *kFullLeftCornerBracket = "「";
+    const char *kFullRightCornerBracket = "」";
+    const char *kFullSlash = "／";
+    const char *kFullMiddleDot = "・";
 
     {
       SCOPED_TRACE("CORNER_BRACKET_MIDDLE_DOT");
@@ -268,6 +297,18 @@ TEST(KeyEventTransformerTest, Kana) {
       TestKanaTransformation(kFullMiddleDot, '/', kFullMiddleDot);
     }
   }
+}
+
+TEST(KeyEventTransformerTest, CopyFrom) {
+  KeyEventTransformer x, y;
+
+  config::Config config;
+  config.set_punctuation_method(config::Config::COMMA_PERIOD);
+  x.ReloadConfig(config);
+  EXPECT_FALSE(IsKeyEventTransformerEq(x, y));
+
+  y.CopyFrom(x);
+  EXPECT_TRUE(IsKeyEventTransformerEq(x, y));
 }
 
 }  // namespace session

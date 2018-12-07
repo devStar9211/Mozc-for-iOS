@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -98,11 +98,13 @@
           'dependencies': [
             '../../base/base.gyp:base',
             '../../base/base.gyp:crash_report_handler',
+            '../../base/base.gyp:update_util',
             '../../client/client.gyp:client',
             '../../config/config.gyp:config_handler',
             '../../config/config.gyp:stats_config_util',
             '../../protobuf/protobuf.gyp:protobuf',
-            '../../renderer/renderer.gyp:renderer_protocol',
+            '../../protocol/protocol.gyp:commands_proto',
+            '../../protocol/protocol.gyp:renderer_proto',
             '../../renderer/renderer.gyp:renderer_style_handler',
             '../../renderer/renderer.gyp:table_layout',
             '../../renderer/renderer.gyp:win32_renderer_client',
@@ -110,7 +112,6 @@
             '../../renderer/renderer.gyp:win32_text_renderer',
             '../../renderer/renderer.gyp:window_util',
             '../../session/session_base.gyp:output_util',
-            '../../session/session_base.gyp:session_protocol',
             '../base/win32_base.gyp:ime_base',
             '../base/win32_base.gyp:ime_impl_base',
             '../base/win32_base.gyp:imframework_util',

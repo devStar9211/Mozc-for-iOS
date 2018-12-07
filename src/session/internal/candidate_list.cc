@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,9 +37,9 @@
 #include <vector>
 
 #include "base/freelist.h"
+#include "base/hash.h"
 #include "base/logging.h"
 #include "base/port.h"
-#include "base/util.h"
 
 namespace mozc {
 namespace session {
@@ -109,18 +109,18 @@ void Candidate::set_subcandidate_list(CandidateList *subcandidate_list) {
 }
 
 
-static const size_t kPageSize = 9;
+static const size_t kDefaultPageSize = 9;
 
 CandidateList::CandidateList(const bool rotate)
     : rotate_(rotate),
-      page_size_(kPageSize),
+      page_size_(kDefaultPageSize),
       focused_index_(0),
       focused_(false),
-      candidate_pool_(new ObjectPool<Candidate>(kPageSize)),
-      candidates_(new vector<Candidate *>),
+      candidate_pool_(new ObjectPool<Candidate>(kDefaultPageSize)),
+      candidates_(new std::vector<Candidate *>),
       next_available_id_(0),
-      added_candidates_(new map<uint64, int>),
-      alternative_ids_(new map<int, int>) {
+      added_candidates_(new std::map<uint64, int>),
+      alternative_ids_(new std::map<int, int>) {
 }
 
 CandidateList::~CandidateList() {
@@ -128,7 +128,7 @@ CandidateList::~CandidateList() {
 }
 
 void CandidateList::Clear() {
-  vector<Candidate *>::iterator it;
+  std::vector<Candidate *>::iterator it;
   for (it = candidates_->begin(); it != candidates_->end(); ++it) {
     (*it)->Clear();
     candidate_pool_->Release(*it);
@@ -163,10 +163,10 @@ void CandidateList::AddCandidateWithAttributes(const int id,
 
   // If the value has already been stored in the candidate list, reuse it and
   // update the alternative_ids_.
-  const uint64 fp = Util::Fingerprint(value);
+  const uint64 fp = Hash::Fingerprint(value);
 
-  const pair<map<uint64, int>::iterator, bool> result =
-    added_candidates_->insert(make_pair(fp, id));
+  const std::pair<std::map<uint64, int>::iterator, bool> result =
+      added_candidates_->insert(std::make_pair(fp, id));
   if (!result.second) {  // insertion was failed.
     const int alt_id = result.first->second;
     (*alternative_ids_)[id] = alt_id;
@@ -274,7 +274,7 @@ void CandidateList::GetPageRange(const size_t index,
                                  size_t *page_begin,
                                  size_t *page_end) const {
   *page_begin = index - (index % page_size_);
-  *page_end = min(last_index(), *page_begin + page_size_ - 1);
+  *page_end = std::min(last_index(), *page_begin + page_size_ - 1);
 }
 
 void CandidateList::MoveFirst() {

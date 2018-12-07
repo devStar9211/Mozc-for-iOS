@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,55 +34,66 @@
 #include <vector>
 
 #include "base/port.h"
-#include "converter/connector_interface.h"
+#include "converter/connector.h"
 #include "converter/immutable_converter_interface.h"
 #include "converter/node.h"
 #include "converter/segments.h"
+#include "dictionary/dictionary_interface.h"
+#include "dictionary/pos_group.h"
+#include "dictionary/pos_matcher.h"
+#include "dictionary/suppression_dictionary.h"
 //  for FRIEND_TEST()
 #include "testing/base/public/gunit_prod.h"
 
 namespace mozc {
 
 struct Node;
-class DictionaryInterface;
 class ImmutableConverterInterface;
 class Lattice;
 class NBestGenerator;
-class POSMatcher;
-class PosGroup;
-class SegmenterInterface;
+class Segmenter;
 class SuggestionFilter;
-class SuppressionDictionary;
 
 class ImmutableConverterImpl : public ImmutableConverterInterface {
  public:
-  ImmutableConverterImpl(const DictionaryInterface *dictionary,
-                         const DictionaryInterface *suffix_dictionary,
-                         const SuppressionDictionary *suppression_dictionary,
-                         const ConnectorInterface *connector,
-                         const SegmenterInterface *segmenter,
-                         const POSMatcher *pos_matcher,
-                         const PosGroup *pos_group,
-                         const SuggestionFilter *suggestion_filter);
+  ImmutableConverterImpl(
+      const dictionary::DictionaryInterface *dictionary,
+      const dictionary::DictionaryInterface *suffix_dictionary,
+      const dictionary::SuppressionDictionary *suppression_dictionary,
+      const Connector *connector,
+      const Segmenter *segmenter,
+      const dictionary::POSMatcher *pos_matcher,
+      const dictionary::PosGroup *pos_group,
+      const SuggestionFilter *suggestion_filter);
   virtual ~ImmutableConverterImpl() {}
 
   virtual bool ConvertForRequest(
       const ConversionRequest &request, Segments *segments) const;
 
  private:
+  FRIEND_TEST(ImmutableConverterTest, AddPredictiveNodes);
   FRIEND_TEST(ImmutableConverterTest, DummyCandidatesCost);
   FRIEND_TEST(ImmutableConverterTest, DummyCandidatesInnerSegmentBoundary);
-  FRIEND_TEST(ImmutableConverterTest, PredictiveNodesOnlyForConversionKey);
-  FRIEND_TEST(ImmutableConverterTest, AddPredictiveNodes);
   FRIEND_TEST(ImmutableConverterTest, NotConnectedTest);
-  friend class NBestGeneratorTest;
+  FRIEND_TEST(ImmutableConverterTest, PredictiveNodesOnlyForConversionKey);
+  FRIEND_TEST(NBestGeneratorTest, InnerSegmentBoundary);
   FRIEND_TEST(NBestGeneratorTest, MultiSegmentConnectionTest);
   FRIEND_TEST(NBestGeneratorTest, SingleSegmentConnectionTest);
+  friend class NBestGeneratorTest;
 
   enum InsertCandidatesType {
     MULTI_SEGMENTS,  // Normal conversion ("私の|名前は|中野です")
     SINGLE_SEGMENT,  // Realtime conversion ("私の名前は中野です")
     ONLY_FIRST_SEGMENT,  // Insert only first segment ("私の")
+  };
+
+  enum FilterType {
+    // Suppress exact match for prediction.
+    // Users will use conversion for candidates for exact match.
+    DESKTOP,
+    // Do not suppress exact match for prediction.
+    // Users will mainly use suggestion/prediction for all mach cases.
+    MOBILE,
   };
 
   void ExpandCandidates(const string &original_key,
@@ -138,26 +149,28 @@ class ImmutableConverterImpl : public ImmutableConverterInterface {
   // Costs will be modified using the existing candidates.
   void InsertFirstSegmentToCandidates(Segments *segments,
                                       const Lattice &lattice,
-                                      const vector<uint16> &group,
-                                      size_t max_candidates_size) const;
+                                      const std::vector<uint16> &group,
+                                      size_t max_candidates_size,
+                                      FilterType filter_type) const;
 
   void InsertCandidates(Segments *segments,
                         const Lattice &lattice,
-                        const vector<uint16> &group,
+                        const std::vector<uint16> &group,
                         size_t max_candidates_size,
-                        InsertCandidatesType type) const;
+                        InsertCandidatesType type,
+                        FilterType filter_type) const;
 
   // Helper function for InsertCandidates().
   // Returns true if |node| is valid node for segment end.
   bool IsSegmentEndNode(const Segments &segments,
                         const Node *node,
-                        const vector<uint16> &group,
+                        const std::vector<uint16> &group,
                         bool is_single_segment) const;
 
   // Helper function for InsertCandidates().
   // Returns the segment for inserting candidates.
   Segment *GetInsertTargetSegment(const Lattice &lattice,
-                                  const vector<uint16> &group,
+                                  const std::vector<uint16> &group,
                                   InsertCandidatesType type,
                                   size_t begin_pos,
                                   const Node *node,
@@ -165,10 +178,10 @@ class ImmutableConverterImpl : public ImmutableConverterInterface {
 
   bool MakeSegments(const ConversionRequest &request,
                     const Lattice &lattice,
-                    const vector<uint16> &group,
+                    const std::vector<uint16> &group,
                     Segments *segments) const;
 
-  void MakeGroup(const Segments &segments, vector<uint16> *group) const;
+  void MakeGroup(const Segments &segments, std::vector<uint16> *group) const;
 
   inline int GetCost(const Node *lnode, const Node *rnode) const {
     const int kInvalidPenaltyCost = 100000;
@@ -178,13 +191,13 @@ class ImmutableConverterImpl : public ImmutableConverterInterface {
     return connector_->GetTransitionCost(lnode->rid, rnode->lid) + rnode->wcost;
   }
 
-  const DictionaryInterface *dictionary_;
-  const DictionaryInterface *suffix_dictionary_;
-  const SuppressionDictionary *suppression_dictionary_;
-  const ConnectorInterface *connector_;
-  const SegmenterInterface *segmenter_;
-  const POSMatcher *pos_matcher_;
-  const PosGroup *pos_group_;
+  const dictionary::DictionaryInterface *dictionary_;
+  const dictionary::DictionaryInterface *suffix_dictionary_;
+  const dictionary::SuppressionDictionary *suppression_dictionary_;
+  const Connector *connector_;
+  const Segmenter *segmenter_;
+  const dictionary::POSMatcher *pos_matcher_;
+  const dictionary::PosGroup *pos_group_;
   const SuggestionFilter *suggestion_filter_;
 
   // Cache for POS ids.

@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -34,41 +34,54 @@
 {
   'conditions': [['use_qt=="YES"', {
 
-  'variables': {
-    'includes': ['qt_vars.gypi'],
-    'conditions': [
-      ['qt_dir', {
-        'qt_cflags': [],
-        'qt_include_dirs': ['<(qt_dir)/include'],
-      }, {
-        'conditions': [
-          ['pkg_config_command', {
-            'qt_cflags': ['<!@(<(pkg_config_command) --cflags QtGui QtCore)'],
-            'qt_include_dirs': [],
-          }, {
-            'qt_cflags': [],
-            'qt_include_dirs': ['<(qt_dir_env)/include'],
-          }],
-        ],
-      }],
-    ],
-  },
-  # compilation settings
-  'cflags': ['<@(qt_cflags)'],
-  'include_dirs': ['<@(qt_include_dirs)'],
   # link settings
   # TODO(yukawa): Use 'link_settings' so that linker settings can be passed
   #     to executables and loadable modules.
   'conditions': [
-    ['OS=="mac"', {
+    ['qt_dir and target_platform=="Windows"', {
+      'include_dirs': ['<(qt_dir)/include'],
+      'configurations': {
+        'Debug_Base': {
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'AdditionalLibraryDirectories': [
+                '<(qt_dir)/lib',
+              ],
+              'AdditionalDependencies': [
+                'Qt5Cored.lib',
+                'Qt5Guid.lib',
+                'Qt5Widgetsd.lib',
+              ],
+            },
+          },
+        },
+        'Release_Base': {
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'AdditionalLibraryDirectories': [
+                '<(qt_dir)/lib',
+              ],
+              'AdditionalDependencies': [
+                'Qt5Core.lib',
+                'Qt5Gui.lib',
+                'Qt5Widgets.lib',
+              ],
+            },
+          },
+        },
+      },
+    }],
+    ['target_platform=="Mac"', {
       'conditions': [
         ['qt_dir', {
+          'include_dirs': ['<(qt_dir)/include'],
+          'xcode_settings': {
+            'WARNING_CFLAGS': ['-Wno-inconsistent-missing-override'],
+          },
           # Supposing Qt libraries in qt_dir will be built as static libraries.
           'link_settings': {
             'xcode_settings': {
-              'LIBRARY_SEARCH_PATHS': [
-                '<(qt_dir)/lib',
-              ],
+              'LIBRARY_SEARCH_PATHS': ['<(qt_dir)/lib'],
             },
             'mac_framework_dirs': [
               '<(qt_dir)/lib',
@@ -76,7 +89,8 @@
             'libraries': [
               '<(qt_dir)/lib/QtCore.framework',
               '<(qt_dir)/lib/QtGui.framework',
-            ],
+              '<(qt_dir)/lib/QtWidgets.framework',
+            ]
           },
         }],
       ],
@@ -84,30 +98,9 @@
         '$(SDKROOT)/System/Library/Frameworks/Carbon.framework',
       ]
     }],
-    ['OS=="linux"', {
-      'conditions': [
-        ['qt_dir', {
-          'libraries': [
-            '-L<(qt_dir)/lib',
-            '-lQtGui',
-            '-lQtCore',
-            # Supposing Qt libraries in qt_dir will be built as static libraries
-            # without support of pkg-config, we need to list all the
-            # dependencies of QtGui.
-            # See http://doc.qt.nokia.com/4.7/requirements-x11.html
-            # pthread library is removed because it must not be specific to Qt.
-            '<!@(<(pkg_config_command) --libs-only-L --libs-only-l'
-            ' xrender xrandr xcursor xfixes xinerama fontconfig freetype2'
-            ' xi xt xext x11'
-            ' sm ice'
-            ' gobject-2.0)',
-          ],
-        }, {
-          'libraries': [
-            '<!@(<(pkg_config_command) --libs QtGui QtCore)',
-          ],
-        }],
-      ],
+    ['target_platform=="Linux"', {
+      'cflags': ['<!@(pkg-config --cflags Qt5Widgets Qt5Gui Qt5Core)'],
+      'libraries': ['<!@(pkg-config --libs Qt5Widgets Qt5Gui Qt5Core)'],
     }],
     # Workarounds related with clang.
     ['(_toolset=="target" and compiler_target=="clang") or '

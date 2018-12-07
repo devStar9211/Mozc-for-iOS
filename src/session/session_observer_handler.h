@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -52,10 +52,9 @@ class SessionObserverHandler {
 
   void AddObserver(SessionObserverInterface *observer);
   void EvalCommandHandler(const commands::Command &command);
-  void Reload();
 
  private:
-  vector<SessionObserverInterface *> observers_;
+  std::vector<SessionObserverInterface *> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(SessionObserverHandler);
 };

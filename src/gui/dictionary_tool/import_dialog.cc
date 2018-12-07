@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,8 @@
 #include "gui/dictionary_tool/import_dialog.h"
 
 #include <QtGui/QtGui>
+#include <QtWidgets/QFileDialog>
+
 #include "base/util.h"
 #include "dictionary/user_dictionary_storage.h"
 #include "dictionary/user_dictionary_importer.h"

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,10 +30,10 @@
 #ifndef MOZC_CONVERTER_NODE_LIST_BUILDER_H_
 #define MOZC_CONVERTER_NODE_LIST_BUILDER_H_
 
-#include "base/port.h"
 #include "base/logging.h"
-#include "base/trie.h"
+#include "base/port.h"
 #include "converter/node.h"
+#include "converter/node_allocator.h"
 #include "dictionary/dictionary_interface.h"
 #include "dictionary/dictionary_token.h"
 
@@ -45,9 +45,9 @@ static const int32 kKanaModifierInsensitivePenalty = 1700;
 // Provides basic functionality for building a list of nodes.
 // This class is defined inline because it contributes to the performance of
 // dictionary lookup.
-class BaseNodeListBuilder : public DictionaryInterface::Callback {
+class BaseNodeListBuilder : public dictionary::DictionaryInterface::Callback {
  public:
-  BaseNodeListBuilder(NodeAllocatorInterface *allocator, int limit)
+  BaseNodeListBuilder(mozc::NodeAllocator *allocator, int limit)
       : allocator_(allocator), limit_(limit), penalty_(0), result_(NULL) {
     DCHECK(allocator_) << "Allocator must not be NULL";
   }
@@ -62,7 +62,7 @@ class BaseNodeListBuilder : public DictionaryInterface::Callback {
 
   // Creates a new node and prepends it to the current list.
   virtual ResultType OnToken(StringPiece key, StringPiece actual_key,
-                             const Token &token) {
+                             const dictionary::Token &token) {
     Node *new_node = NewNodeFromToken(token);
     PrependNode(new_node);
     return (limit_ <= 0) ? TRAVERSE_DONE : TRAVERSE_CONTINUE;
@@ -71,9 +71,9 @@ class BaseNodeListBuilder : public DictionaryInterface::Callback {
   int limit() const { return limit_; }
   int penalty() const { return penalty_; }
   Node *result() const { return result_; }
-  NodeAllocatorInterface *allocator() { return allocator_; }
+  NodeAllocator *allocator() { return allocator_; }
 
-  Node *NewNodeFromToken(const Token &token) {
+  Node *NewNodeFromToken(const dictionary::Token &token) {
     Node *new_node = allocator_->NewNode();
     new_node->InitFromToken(token);
     new_node->wcost += penalty_;
@@ -87,7 +87,7 @@ class BaseNodeListBuilder : public DictionaryInterface::Callback {
   }
 
  protected:
-  NodeAllocatorInterface *allocator_;
+  NodeAllocator *allocator_;
   int limit_;
   int penalty_;
   Node *result_;
@@ -100,8 +100,8 @@ class BaseNodeListBuilder : public DictionaryInterface::Callback {
 // This class is also defined inline.
 class NodeListBuilderForLookupPrefix : public BaseNodeListBuilder {
  public:
-  NodeListBuilderForLookupPrefix(NodeAllocatorInterface *allocator,
-                                 int limit, size_t min_key_length)
+  NodeListBuilderForLookupPrefix(mozc::NodeAllocator *allocator, int limit,
+                                 size_t min_key_length)
       : BaseNodeListBuilder(allocator, limit),
         min_key_length_(min_key_length) {}
 

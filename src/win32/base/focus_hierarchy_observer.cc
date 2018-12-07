@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,8 +31,7 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlcom.h>
 
 #include <memory>
@@ -59,7 +58,7 @@ const size_t kMaxHierarchyLevel = 50;
 DWORD g_tls_index = TLS_OUT_OF_INDEXES;
 HMODULE g_module_handle = nullptr;
 
-string UTF16ToUTF8(const wstring &str) {
+string UTF16ToUTF8(const std::wstring &str) {
   string utf8;
   Util::WideToUTF8(str, &utf8);
   return utf8;
@@ -78,7 +77,7 @@ string GetWindowTestAsUTF8(HWND window_handle) {
       copied_len_without_null + 1 > buffer_len) {
     return "";
   }
-  return UTF16ToUTF8(wstring(buffer.get(), copied_len_without_null));
+  return UTF16ToUTF8(std::wstring(buffer.get(), copied_len_without_null));
 }
 
 string GetWindowClassNameAsUTF8(HWND window_handle) {
@@ -90,7 +89,7 @@ string GetWindowClassNameAsUTF8(HWND window_handle) {
       copied_len_without_null + 1 > kBufferLen) {
     return "";
   }
-  return UTF16ToUTF8(wstring(buffer.get(), copied_len_without_null));
+  return UTF16ToUTF8(std::wstring(buffer.get(), copied_len_without_null));
 }
 
 DWORD GetProcessIdFromWindow(HWND window_handle) {
@@ -103,7 +102,7 @@ DWORD GetProcessIdFromWindow(HWND window_handle) {
 
 void FillWindowInfo(
     HWND window_handle,
-    vector<FocusHierarchyObserver::WindowInfo> *window_hierarchy) {
+    std::vector<FocusHierarchyObserver::WindowInfo> *window_hierarchy) {
   if (window_handle == nullptr) {
     // error
     window_hierarchy->clear();
@@ -140,7 +139,7 @@ void FillWindowInfo(
 void FillAccessibleInfo(
     AccessibleObject accessible,
     HWND focused_window_handle,
-    vector<AccessibleObjectInfo> *hierarchy) {
+    std::vector<AccessibleObjectInfo> *hierarchy) {
   if (!accessible.IsValid()) {
     return;
   }
@@ -169,10 +168,10 @@ void FillAccessibleInfo(
 
 class ThreadLocalInfo {
  public:
-  vector<AccessibleObjectInfo> ui_hierarchy() const {
+  std::vector<AccessibleObjectInfo> ui_hierarchy() const {
     return ui_hierarchy_;
   }
-  vector<FocusHierarchyObserver::WindowInfo> window_hierarchy() const {
+  std::vector<FocusHierarchyObserver::WindowInfo> window_hierarchy() const {
     return window_hierarchy_;
   }
   string root_window_name() const {
@@ -327,8 +326,8 @@ class ThreadLocalInfo {
 
   int ref_count_;
   HWINEVENTHOOK hook_handle_;
-  vector<AccessibleObjectInfo> ui_hierarchy_;
-  vector<FocusHierarchyObserver::WindowInfo> window_hierarchy_;
+  std::vector<AccessibleObjectInfo> ui_hierarchy_;
+  std::vector<FocusHierarchyObserver::WindowInfo> window_hierarchy_;
   string root_window_name_;
 };
 
@@ -369,17 +368,17 @@ class FocusHierarchyObserverImpl : public FocusHierarchyObserver {
   virtual bool IsAbailable() const {
     return ThreadLocalInfo::Self() != nullptr;
   }
-  virtual vector<AccessibleObjectInfo> GetUIHierarchy() const {
+  virtual std::vector<AccessibleObjectInfo> GetUIHierarchy() const {
     auto *self = ThreadLocalInfo::Self();
     if (self == nullptr) {
-      return vector<AccessibleObjectInfo>();
+      return std::vector<AccessibleObjectInfo>();
     }
     return self->ui_hierarchy();
   }
-  virtual vector<WindowInfo> GetWindowHierarchy() const {
+  virtual std::vector<WindowInfo> GetWindowHierarchy() const {
     auto *self = ThreadLocalInfo::Self();
     if (self == nullptr) {
-      return vector<FocusHierarchyObserver::WindowInfo>();
+      return std::vector<FocusHierarchyObserver::WindowInfo>();
     }
     return self->window_hierarchy();
   }
@@ -409,11 +408,11 @@ class FocusHierarchyObserverNullImpl : public FocusHierarchyObserver {
   virtual bool IsAbailable() const {
     return false;
   }
-  virtual vector<AccessibleObjectInfo> GetUIHierarchy() const {
-    return vector<AccessibleObjectInfo>();
+  virtual std::vector<AccessibleObjectInfo> GetUIHierarchy() const {
+    return std::vector<AccessibleObjectInfo>();
   }
-  virtual vector<WindowInfo> GetWindowHierarchy() const {
-    return vector<WindowInfo>();
+  virtual std::vector<WindowInfo> GetWindowHierarchy() const {
+    return std::vector<WindowInfo>();
   }
   virtual string GetRootWindowName() const {
     return "";
@@ -454,14 +453,21 @@ void FocusHierarchyObserver::OnDllProcessDetach(HINSTANCE module_handle,
 FocusHierarchyObserver *FocusHierarchyObserver::Create() {
   // Note: Currently FocusHierarchyObserver is enabled only with Chromium.
   // TODO(yukawa): Extend the target applications.
-  if (BrowserInfo::GetBrowerType() != BrowserInfo::kBrowserTypeChrome) {
-    return new FocusHierarchyObserverNullImpl();
-  }
 
-  auto *impl = FocusHierarchyObserverImpl::Create();
-  if (impl != nullptr) {
-    return impl;
-  }
+  // The following code may affect the issue that the suggest window is not
+  // shown in Chromium.  As a workaround, this function always returns
+  // new FocusHierarchyObserverNullImpl();
+  //
+  // TODO: Reactivate the following code when b/23803984 is properly fixed.
+  //
+  // if (BrowserInfo::GetBrowerType() != BrowserInfo::kBrowserTypeChrome) {
+  //   return new FocusHierarchyObserverNullImpl();
+  // }
+  //
+  // auto *impl = FocusHierarchyObserverImpl::Create();
+  // if (impl != nullptr) {
+  //   return impl;
+  // }
   return new FocusHierarchyObserverNullImpl();
 }
 

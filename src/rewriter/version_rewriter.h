@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,9 @@
 #ifndef MOZC_REWRITER_VERSION_REWRITER_H_
 #define MOZC_REWRITER_VERSION_REWRITER_H_
 
+#include <memory>
+
+#include "base/string_piece.h"
 #include "rewriter/rewriter_interface.h"
 
 namespace mozc {
@@ -40,13 +43,17 @@ class Segments;
 // A very simple rewriter to put version candidates for some segments.
 class VersionRewriter : public RewriterInterface  {
  public:
-  VersionRewriter();
-  virtual ~VersionRewriter();
+  explicit VersionRewriter(StringPiece data_version);
+  ~VersionRewriter() override;
 
-  virtual int capability(const ConversionRequest &request) const;
+  int capability(const ConversionRequest &request) const override;
 
-  virtual bool Rewrite(const ConversionRequest &request,
-                       Segments *segments) const;
+  bool Rewrite(const ConversionRequest &request,
+               Segments *segments) const override;
+
+ private:
+  class VersionDataImpl;
+  std::unique_ptr<VersionDataImpl> impl_;
 };
 
 }  // namespace mozc

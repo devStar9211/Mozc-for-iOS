@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -38,7 +38,7 @@
 
 namespace mozc {
 namespace usage_stats {
-typedef map<uint32, Stats::TouchEventStats> TouchEventStatsMap;
+typedef std::map<uint32, Stats::TouchEventStats> TouchEventStatsMap;
 
 class UsageStats {
  public:
@@ -74,7 +74,8 @@ class UsageStats {
   //                        source_id_2 : TouchEventStats,
   //                        source_id_3 : TouchEventStats))
   static void StoreTouchEventStats(
-      const string &name, const map<string, TouchEventStatsMap> &touch_stats);
+      const string &name,
+      const std::map<string, TouchEventStatsMap> &touch_stats);
 
   // Synchronizes (writes) usage data into disk. Returns false on failure.
   static bool Sync();
@@ -107,4 +108,4 @@ class UsageStats {
 };
 }  // namespace usage_stats
 }  // namespace mozc
-#endif  // GOOCLECLIENT_IME_MOZC_USAGE_STATS_USAGE_STATS_H_
+#endif  // MOZC_USAGE_STATS_USAGE_STATS_H_

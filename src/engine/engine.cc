@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,25 +29,27 @@
 
 #include "engine/engine.h"
 
+#include <utility>
+
 #include "base/logging.h"
 #include "base/port.h"
-#include "converter/connector_base.h"
+#include "converter/connector.h"
 #include "converter/converter.h"
 #include "converter/converter_interface.h"
 #include "converter/immutable_converter.h"
 #include "converter/immutable_converter_interface.h"
-#include "converter/segmenter_base.h"
+#include "converter/segmenter.h"
 #include "data_manager/data_manager_interface.h"
 #include "dictionary/dictionary_impl.h"
 #include "dictionary/dictionary_interface.h"
 #include "dictionary/pos_group.h"
 #include "dictionary/pos_matcher.h"
 #include "dictionary/suffix_dictionary.h"
-#include "dictionary/suffix_dictionary_token.h"
 #include "dictionary/suppression_dictionary.h"
 #include "dictionary/system/system_dictionary.h"
 #include "dictionary/system/value_dictionary.h"
 #include "dictionary/user_dictionary.h"
+#include "dictionary/user_pos.h"
 #include "engine/engine_interface.h"
 #include "engine/user_data_manager_interface.h"
 #include "prediction/dictionary_predictor.h"
@@ -58,28 +60,33 @@
 #include "rewriter/rewriter.h"
 #include "rewriter/rewriter_interface.h"
 
-namespace mozc {
-
 using mozc::dictionary::DictionaryImpl;
+using mozc::dictionary::PosGroup;
+using mozc::dictionary::SuffixDictionary;
+using mozc::dictionary::SuppressionDictionary;
 using mozc::dictionary::SystemDictionary;
+using mozc::dictionary::UserDictionary;
+using mozc::dictionary::UserPOS;
 using mozc::dictionary::ValueDictionary;
 
+namespace mozc {
 namespace {
 
-class UserDataManagerImpl : public UserDataManagerInterface {
+class UserDataManagerImpl final : public UserDataManagerInterface {
  public:
   explicit UserDataManagerImpl(PredictorInterface *predictor,
                                RewriterInterface *rewriter)
       : predictor_(predictor), rewriter_(rewriter) {}
-  ~UserDataManagerImpl();
+  ~UserDataManagerImpl() override;
 
-  virtual bool Sync();
-  virtual bool Reload();
-  virtual bool ClearUserHistory();
-  virtual bool ClearUserPrediction();
-  virtual bool ClearUnusedUserPrediction();
-  virtual bool ClearUserPredictionEntry(const string &key, const string &value);
-  virtual bool WaitForSyncerForTest();
+  bool Sync() override;
+  bool Reload() override;
+  bool ClearUserHistory() override;
+  bool ClearUserPrediction() override;
+  bool ClearUnusedUserPrediction() override;
+  bool ClearUserPredictionEntry(
+      const string &key, const string &value) override;
+  bool Wait() override;
 
  private:
   PredictorInterface *predictor_;
@@ -122,30 +129,52 @@ bool UserDataManagerImpl::ClearUserPredictionEntry(const string &key,
   return predictor_->ClearHistoryEntry(key, value);
 }
 
-bool UserDataManagerImpl::WaitForSyncerForTest() {
-  return predictor_->WaitForSyncerForTest();
+bool UserDataManagerImpl::Wait() {
+  return predictor_->Wait();
 }
 
 }  // namespace
 
-Engine::Engine() {}
-Engine::~Engine() {}
+std::unique_ptr<Engine> Engine::CreateDesktopEngine(
+    std::unique_ptr<const DataManagerInterface> data_manager) {
+  std::unique_ptr<Engine> engine(new Engine());
+  engine->Init(data_manager.release(),
+               &DefaultPredictor::CreateDefaultPredictor,
+               false);
+  return engine;
+}
+
+std::unique_ptr<Engine> Engine::CreateMobileEngine(
+    std::unique_ptr<const DataManagerInterface> data_manager) {
+  std::unique_ptr<Engine> engine(new Engine());
+  engine->Init(data_manager.release(),
+               &MobilePredictor::CreateMobilePredictor,
+               true);
+  return engine;
+}
+
+Engine::Engine() = default;
+Engine::~Engine() = default;
 
 // Since the composite predictor class differs on desktop and mobile, Init()
 // takes a function pointer to create an instance of predictor class.
 void Engine::Init(
     const DataManagerInterface *data_manager,
     PredictorInterface *(*predictor_factory)(PredictorInterface *,
-                                             PredictorInterface *)) {
+                                             PredictorInterface *),
+    bool enable_content_word_learning) {
   CHECK(data_manager);
   CHECK(predictor_factory);
 
   suppression_dictionary_.reset(new SuppressionDictionary);
   CHECK(suppression_dictionary_.get());
 
+  pos_matcher_.reset(
+      new dictionary::POSMatcher(data_manager->GetPOSMatcherData()));
+
   user_dictionary_.reset(
-      new UserDictionary(new UserPOS(data_manager->GetUserPOSData()),
-                         data_manager->GetPOSMatcher(),
+      new UserDictionary(UserPOS::CreateFromDataManager(*data_manager),
+                         *pos_matcher_,
                          suppression_dictionary_.get()));
   CHECK(user_dictionary_.get());
 
@@ -153,27 +182,30 @@ void Engine::Init(
   int dictionary_size = 0;
   data_manager->GetSystemDictionaryData(&dictionary_data, &dictionary_size);
 
+  SystemDictionary *sysdic =
+      SystemDictionary::Builder(dictionary_data, dictionary_size).Build();
   dictionary_.reset(new DictionaryImpl(
-      SystemDictionary::CreateSystemDictionaryFromImage(
-          dictionary_data, dictionary_size),
-      ValueDictionary::CreateValueDictionaryFromImage(
-          *data_manager->GetPOSMatcher(), dictionary_data, dictionary_size),
+      sysdic,  // DictionaryImpl takes the ownership
+      new ValueDictionary(*pos_matcher_, &sysdic->value_trie()),
       user_dictionary_.get(),
       suppression_dictionary_.get(),
-      data_manager->GetPOSMatcher()));
+      pos_matcher_.get()));
   CHECK(dictionary_.get());
 
-  const SuffixToken *suffix_tokens = NULL;
-  size_t suffix_tokens_size = 0;
-  data_manager->GetSuffixDictionaryData(&suffix_tokens, &suffix_tokens_size);
-  suffix_dictionary_.reset(new SuffixDictionary(suffix_tokens,
-                                                suffix_tokens_size));
+  StringPiece suffix_key_array_data, suffix_value_array_data;
+  const uint32 *token_array;
+  data_manager->GetSuffixDictionaryData(&suffix_key_array_data,
+                                        &suffix_value_array_data,
+                                        &token_array);
+  suffix_dictionary_.reset(new SuffixDictionary(suffix_key_array_data,
+                                                suffix_value_array_data,
+                                                token_array));
   CHECK(suffix_dictionary_.get());
 
-  connector_.reset(ConnectorBase::CreateFromDataManager(*data_manager));
+  connector_.reset(Connector::CreateFromDataManager(*data_manager));
   CHECK(connector_.get());
 
-  segmenter_.reset(SegmenterBase::CreateFromDataManager(*data_manager));
+  segmenter_.reset(Segmenter::CreateFromDataManager(*data_manager));
   CHECK(segmenter_.get());
 
   pos_group_.reset(new PosGroup(data_manager->GetPosGroupData()));
@@ -193,7 +225,7 @@ void Engine::Init(
       suppression_dictionary_.get(),
       connector_.get(),
       segmenter_.get(),
-      data_manager->GetPOSMatcher(),
+      pos_matcher_.get(),
       pos_group_.get(),
       suggestion_filter_.get()));
   CHECK(immutable_converter_.get());
@@ -212,20 +244,22 @@ void Engine::Init(
     // Create a predictor with three sub-predictors, dictionary predictor, user
     // history predictor, and extra predictor.
     PredictorInterface *dictionary_predictor =
-        new DictionaryPredictor(converter_.get(),
+        new DictionaryPredictor(*data_manager,
+                                converter_.get(),
                                 immutable_converter_.get(),
                                 dictionary_.get(),
                                 suffix_dictionary_.get(),
                                 connector_.get(),
                                 segmenter_.get(),
-                                data_manager->GetPOSMatcher(),
+                                pos_matcher_.get(),
                                 suggestion_filter_.get());
     CHECK(dictionary_predictor);
 
     PredictorInterface *user_history_predictor =
         new UserHistoryPredictor(dictionary_.get(),
-                                 data_manager->GetPOSMatcher(),
-                                 suppression_dictionary_.get());
+                                 pos_matcher_.get(),
+                                 suppression_dictionary_.get(),
+                                 enable_content_word_learning);
     CHECK(user_history_predictor);
 
     predictor_ = (*predictor_factory)(dictionary_predictor,
@@ -239,13 +273,15 @@ void Engine::Init(
                                dictionary_.get());
   CHECK(rewriter_);
 
-  converter_impl->Init(data_manager->GetPOSMatcher(),
+  converter_impl->Init(pos_matcher_.get(),
                        suppression_dictionary_.get(),
                        predictor_,
                        rewriter_,
                        immutable_converter_.get());
 
   user_data_manager_.reset(new UserDataManagerImpl(predictor_, rewriter_));
+
+  data_manager_.reset(data_manager);
 }
 
 bool Engine::Reload() {

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,15 +30,14 @@
 #include "storage/encrypted_string_storage.h"
 
 #include <iostream>
+#include <memory>
 
 #include "base/file_stream.h"
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "base/scoped_ptr.h"
 #include "base/system_util.h"
+#include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
-
-DECLARE_string(test_tmpdir);
 
 namespace mozc {
 namespace storage {
@@ -89,7 +88,7 @@ class EncryptedStringStorageTest : public testing::Test {
   }
 
   string filename_;
-  scoped_ptr<EncryptedStringStorage> storage_;
+  std::unique_ptr<EncryptedStringStorage> storage_;
 };
 
 TEST_F(EncryptedStringStorageTest, SaveAndLoad) {
@@ -109,7 +108,7 @@ TEST_F(EncryptedStringStorageTest, Encrypt) {
   const string original_data = "abcdefghijklmnopqrstuvwxyz";
   ASSERT_TRUE(storage_->Save(original_data));
 
-  InputFileStream ifs(filename_.c_str(), (ios::in | ios::binary));
+  InputFileStream ifs(filename_.c_str(), (std::ios::in | std::ios::binary));
   const size_t kBufSize = 128;
   char buf[kBufSize];
   // |ifs.readsome(buf, kBufSize)| returns 0 on Visual C++ because

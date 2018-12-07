@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,11 +36,13 @@
 
 #include <string>
 
+#include "base/port_string.h"
+
 namespace mozc {
 
 class UserDataManagerInterface {
  public:
-  virtual ~UserDataManagerInterface() {}
+  virtual ~UserDataManagerInterface() = default;
 
   // Syncs mutable user data to local file system.
   virtual bool Sync() = 0;
@@ -62,7 +64,7 @@ class UserDataManagerInterface {
       const string &key, const string &value) = 0;
 
   // Waits for syncer thread to complete.
-  virtual bool WaitForSyncerForTest() = 0;
+  virtual bool Wait() = 0;
 };
 
 }  // namespace mozc

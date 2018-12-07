@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -28,6 +28,8 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "composer/internal/composition.h"
+
+#include <memory>
 
 #include "base/logging.h"
 #include "base/util.h"
@@ -123,7 +125,7 @@ size_t Composition::DeleteAt(const size_t position) {
 
     CharChunk *left_deleted_chunk_ptr = NULL;
     (*chunk_it)->SplitChunk(Transliterators::LOCAL, 1, &left_deleted_chunk_ptr);
-    scoped_ptr<CharChunk> left_deleted_chunk(left_deleted_chunk_ptr);
+    std::unique_ptr<CharChunk> left_deleted_chunk(left_deleted_chunk_ptr);
   }
   return new_position;
 }
@@ -268,14 +270,14 @@ void Composition::GetStringWithModes(
 }
 
 void Composition::GetExpandedStrings(string *base,
-                                     set<string> *expanded) const {
+                                     std::set<string> *expanded) const {
   GetExpandedStringsWithTransliterator(Transliterators::LOCAL, base, expanded);
 }
 
 void Composition::GetExpandedStringsWithTransliterator(
     Transliterators::Transliterator transliterator,
     string *base,
-    set<string> *expanded) const {
+    std::set<string> *expanded) const {
   DCHECK(base);
   DCHECK(expanded);
   base->clear();

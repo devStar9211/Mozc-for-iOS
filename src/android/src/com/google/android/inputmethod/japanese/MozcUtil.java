@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,11 +29,8 @@
 
 package org.mozc.android.inputmethod.japanese;
 
+import org.mozc.android.inputmethod.japanese.keyboard.Keyboard.KeyboardSpecification;
 import org.mozc.android.inputmethod.japanese.protobuf.ProtoCommands.Request;
-import org.mozc.android.inputmethod.japanese.protobuf.ProtoCommands.Request.CrossingEdgeBehavior;
-import org.mozc.android.inputmethod.japanese.protobuf.ProtoCommands.Request.SpaceOnAlphanumeric;
-import org.mozc.android.inputmethod.japanese.protobuf.ProtoCommands.Request.SpecialRomanjiTable;
-import org.mozc.android.inputmethod.japanese.util.ResourcesWrapper;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
@@ -41,19 +38,14 @@ import com.google.common.base.Strings;
 import com.google.protobuf.ByteString;
 
 import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.app.Dialog;
 import android.content.Context;
-import android.content.ContextWrapper;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Configuration;
 import android.content.res.Resources;
-import android.graphics.Bitmap;
-import android.graphics.Bitmap.Config;
-import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -88,48 +80,6 @@ import java.util.zip.ZipFile;
  *
  */
 public final class MozcUtil {
-
-  private static class OutOfMemoryRetryingResources extends ResourcesWrapper {
-
-    private final int retryCount;
-    public OutOfMemoryRetryingResources(Resources base, int retryCount) {
-      super(Preconditions.checkNotNull(base));
-      this.retryCount = retryCount;
-    }
-
-    @Override
-    public Drawable getDrawable(int id) throws NotFoundException {
-      Resources base = getBase();
-      for (int i = 0; i < retryCount; ++i) {
-        try {
-          return base.getDrawable(id);
-        } catch (OutOfMemoryError e) {
-          // Retry with running gc.
-          System.gc();
-        }
-      }
-
-      // Final trial.
-      return base.getDrawable(id);
-    }
-
-    @TargetApi(15)
-    @Override
-    public Drawable getDrawableForDensity(int id, int density) throws NotFoundException {
-      Resources base = getBase();
-      for (int i = 0; i < retryCount; ++i) {
-        try {
-          return base.getDrawableForDensity(id, density);
-        } catch (OutOfMemoryError e) {
-          // Retry with running gc.
-          System.gc();
-        }
-      }
-
-      // Final trial.
-      return base.getDrawableForDensity(id, density);
-    }
-  }
 
   /**
    * Simple interface to use mock of TelephonyManager for testing purpose.
@@ -176,12 +126,13 @@ public final class MozcUtil {
   // If you want to change the tag name, see also kProductPrefix in base/const.h.
   public static final String LOGTAG = "Mozc";
 
-  private static final int OUT_OF_MEMORY_RETRY_COUNT = 5;
-
   private static Optional<Boolean> isDebug = Optional.<Boolean>absent();
   private static Optional<Boolean> isDevChannel = Optional.<Boolean>absent();
   private static Optional<Boolean> isMozcEnabled = Optional.<Boolean>absent();
   private static Optional<Boolean> isMozcDefaultIme = Optional.<Boolean>absent();
+  private static Optional<Boolean> isSystemApplication = Optional.<Boolean>absent();
+  private static Optional<Boolean> isTouchUI = Optional.<Boolean>absent();
+  private static Optional<Boolean> isUpdatedSystemApplication = Optional.<Boolean>absent();
   private static Optional<Integer> versionCode = Optional.<Integer>absent();
   private static Optional<Long> uptimeMillis = Optional.<Long>absent();
 
@@ -250,6 +201,38 @@ public final class MozcUtil {
     return isDevChannelVersionName(getVersionName(context));
   }
 
+  public static final boolean isSystemApplication(Context context) {
+    Preconditions.checkNotNull(context);
+    if (isSystemApplication.isPresent()) {
+      return isSystemApplication.get();
+    }
+    return checkApplicationFlag(context, ApplicationInfo.FLAG_SYSTEM);
+  }
+
+  /**
+   * For testing purpose.
+   * @param isSystemApplication Optional.absent() if default behavior is preferable
+   */
+  public static final void setSystemApplication(Optional<Boolean> isSystemApplication) {
+    MozcUtil.isSystemApplication = Preconditions.checkNotNull(isSystemApplication);
+  }
+
+  public static final boolean isUpdatedSystemApplication(Context context) {
+    Preconditions.checkNotNull(context);
+    if (isUpdatedSystemApplication.isPresent()) {
+      return isUpdatedSystemApplication.get();
+    }
+    return checkApplicationFlag(context, ApplicationInfo.FLAG_UPDATED_SYSTEM_APP);
+  }
+
+  /**
+   * For testing purpose.
+   * @param isUpdatedSystemApplication Optional.absent() if default behavior is preferable
+   */
+  public static final void setUpdatedSystemApplication(
+      Optional<Boolean> isUpdatedSystemApplication) {
+    MozcUtil.isUpdatedSystemApplication = Preconditions.checkNotNull(isUpdatedSystemApplication);
+  }
 
   /**
    * Gets version name.
@@ -303,18 +286,18 @@ public final class MozcUtil {
    *
    * ABI independent version code is equivalent to "Build number" of Mozc project.
    *
-   * <p>Must be consistent with split_abi.py
+   * <p>Must be consistent with mozc_version.py
    */
   public static int getAbiIndependentVersionCode(Context context) {
     // Version code format:
     // 00000BBBBB or
-    // 0005BBBBBA
-    // A: ABI (0: Fat, 5: x86, 4: armeabi-v7a, 3: armeabi, 1:mips)
-    // B: Build number
+    // 0006BBBBBA
+    // A: ABI (0: Fat, 6: x86_64, 5:arm64, 4:mips64, 3: x86, 2: armeabi-v7a, 1:mips)
+    // B: ANDROID_VERSION_CODE
     Preconditions.checkNotNull(context);
     int rawVersionCode = getVersionCode(context);
     String versionCode = Integer.toString(getVersionCode(context));
-    if (versionCode.length() == 7 && versionCode.charAt(0) == '5') {
+    if (versionCode.length() == 7 && versionCode.charAt(0) == '6') {
       return Integer.valueOf(versionCode.substring(1, versionCode.length() - 1));
     }
     return rawVersionCode;
@@ -437,6 +420,26 @@ public final class MozcUtil {
     return Optional.absent();
   }
 
+  /**
+   * Returns true is touch UI should be shown.
+   */
+  public static boolean isTouchUI(Context context) {
+    Preconditions.checkNotNull(context);
+    if (isTouchUI.isPresent()) {
+      return isTouchUI.get();
+    }
+    return context.getResources().getConfiguration().touchscreen
+               != Configuration.TOUCHSCREEN_NOTOUCH;
+  }
+
+  /**
+   * For testing purpose.
+   *
+   * @param isTouchUI Optional.absent() if default behavior is preferable
+   */
+  public static final void setTouchUI(Optional<Boolean> isTouchUI) {
+    MozcUtil.isTouchUI = Preconditions.checkNotNull(isTouchUI);
+  }
 
   public static long getUptimeMillis() {
     if (uptimeMillis.isPresent()) {
@@ -482,65 +485,6 @@ public final class MozcUtil {
         TelephonyManager.class.cast(context.getSystemService(Context.TELEPHONY_SERVICE)));
   }
 
-  public static Context getContextWithOutOfMemoryRetrial(Context context) {
-    Preconditions.checkNotNull(context);
-    return new ContextWrapper(context) {
-      final Resources resources =
-          new OutOfMemoryRetryingResources(super.getResources(), OUT_OF_MEMORY_RETRY_COUNT);
-
-      @Override
-      public Resources getResources() {
-        return resources;
-      }
-    };
-  }
-
-  public static <T extends View> T inflateWithOutOfMemoryRetrial(
-      Class<T> clazz, LayoutInflater inflater,
-      int resourceId, Optional<ViewGroup> root, boolean attachToRoot) {
-    Preconditions.checkNotNull(clazz);
-    Preconditions.checkNotNull(inflater);
-    Preconditions.checkNotNull(root);
-    for (int i = 0; i < OUT_OF_MEMORY_RETRY_COUNT; ++i) {
-      try {
-        return clazz.cast(inflater.inflate(resourceId, root.orNull(), attachToRoot));
-      } catch (OutOfMemoryError e) {
-        // Retry with GC.
-        System.gc();
-      }
-    }
-
-    return clazz.cast(inflater.inflate(resourceId, root.orNull(), attachToRoot));
-  }
-
-  public static Bitmap createBitmap(int width, int height, Config config) {
-    Preconditions.checkNotNull(config);
-    for (int i = 0; i < OUT_OF_MEMORY_RETRY_COUNT; ++i) {
-      try {
-        return Bitmap.createBitmap(width, height, config);
-      } catch (OutOfMemoryError e) {
-        // Retry with GC.
-        System.gc();
-      }
-    }
-
-    return Bitmap.createBitmap(width, height, config);
-  }
-
-  public static Bitmap createBitmap(Bitmap src) {
-    Preconditions.checkNotNull(src);
-    for (int i = 0; i < OUT_OF_MEMORY_RETRY_COUNT; ++i) {
-      try {
-        return Bitmap.createBitmap(src);
-      } catch (OutOfMemoryError e) {
-        // Retry with GC.
-        System.gc();
-      }
-    }
-
-    return Bitmap.createBitmap(src);
-  }
-
   /**
    * Sets the given {@code token} and some layout parameters required to show the dialog from
    * the IME service correctly to the {@code dialog}.
@@ -557,67 +501,100 @@ public final class MozcUtil {
     window.setAttributes(layoutParams);
   }
 
-  public static Request getRequestForKeyboard(
-      KeyboardSpecificationName specName,
-      Optional<SpecialRomanjiTable> romanjiTable,
-      Optional<SpaceOnAlphanumeric> spaceOnAlphanumeric,
-      Optional<Boolean> isKanaModifierInsensitiveConversion,
-      Optional<CrossingEdgeBehavior> crossingEdgeBehavior,
-      Configuration configuration) {
-    Preconditions.checkNotNull(specName);
-    Preconditions.checkNotNull(romanjiTable);
-    Preconditions.checkNotNull(spaceOnAlphanumeric);
-    Preconditions.checkNotNull(isKanaModifierInsensitiveConversion);
-    Preconditions.checkNotNull(crossingEdgeBehavior);
+  private static Request.Builder getRequestBuilderInternal(
+      KeyboardSpecification specification, Configuration configuration) {
+    return Request.newBuilder()
+        .setKeyboardName(
+            specification.getKeyboardSpecificationName().formattedKeyboardName(configuration))
+        .setSpecialRomanjiTable(specification.getSpecialRomanjiTable())
+        .setSpaceOnAlphanumeric(specification.getSpaceOnAlphanumeric())
+        .setKanaModifierInsensitiveConversion(
+            specification.isKanaModifierInsensitiveConversion())
+        .setCrossingEdgeBehavior(specification.getCrossingEdgeBehavior());
+  }
+
+  private static void setHardwareKeyboardRequest(Request.Builder builder, Resources resources) {
+    builder.setMixedConversion(false)
+        .setZeroQuerySuggestion(false)
+        .setUpdateInputModeFromSurroundingText(true)
+        .setAutoPartialSuggestion(false)
+        .setCandidatePageSize(resources.getInteger(R.integer.floating_candidate_candidate_num));
+  }
+
+  public static void setSoftwareKeyboardRequest(Request.Builder builder) {
+    builder.setMixedConversion(true)
+        .setZeroQuerySuggestion(true)
+        .setUpdateInputModeFromSurroundingText(false)
+        .setAutoPartialSuggestion(true);
+  }
+
+  public static Request.Builder getRequestBuilder(
+      Resources resources, KeyboardSpecification specification, Configuration configuration) {
+    Preconditions.checkNotNull(resources);
+    Preconditions.checkNotNull(specification);
     Preconditions.checkNotNull(configuration);
-    Request.Builder builder = Request.newBuilder();
-    builder.setKeyboardName(specName.formattedKeyboardName(configuration));
-    if (romanjiTable.isPresent()) {
-      builder.setSpecialRomanjiTable(romanjiTable.get());
+    Request.Builder builder = getRequestBuilderInternal(specification, configuration);
+    if (specification.isHardwareKeyboard()) {
+      setHardwareKeyboardRequest(builder, resources);
+    } else {
+      setSoftwareKeyboardRequest(builder);
     }
-    if (spaceOnAlphanumeric.isPresent()) {
-      builder.setSpaceOnAlphanumeric(spaceOnAlphanumeric.get());
-    }
-    if (isKanaModifierInsensitiveConversion.isPresent()) {
-      builder.setKanaModifierInsensitiveConversion(
-          isKanaModifierInsensitiveConversion.get().booleanValue());
-    }
-    if (crossingEdgeBehavior.isPresent()) {
-      builder.setCrossingEdgeBehavior(crossingEdgeBehavior.get());
-    }
-    return builder.build();
+    return builder;
   }
 
   @SuppressLint("InlinedApi")
-  public static boolean isPasswordField(EditorInfo editorInfo) {
-    Preconditions.checkNotNull(editorInfo);
-    int inputType = editorInfo.inputType;
+  public static boolean isPasswordField(int inputType) {
     int inputClass = inputType & InputType.TYPE_MASK_CLASS;
     int inputVariation = inputType & InputType.TYPE_MASK_VARIATION;
-    return inputClass == InputType.TYPE_CLASS_TEXT &&
-        (inputVariation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
-        inputVariation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
-        inputVariation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD);
+    return inputClass == InputType.TYPE_CLASS_TEXT
+        && (inputVariation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            || inputVariation == InputType.TYPE_TEXT_VARIATION_PASSWORD
+            || inputVariation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD);
   }
 
   /**
-   * Returns true if the editor accepts microphone input.
+   * Returns true if voice input is preferred by EditorInfo.inputType.
    *
-   * <p>Some editors sends a special record in privateImeOptions. In such situation transition to
-   * Voice IME should be disabled.
+   * <p>Caller should check that voice input is allowed or not by isVoiceInputAllowed().
    */
-  public static boolean isVoiceInputAllowed(EditorInfo editorInfo) {
+  public static boolean isVoiceInputPreferred(EditorInfo editorInfo) {
     Preconditions.checkNotNull(editorInfo);
-    if (editorInfo.privateImeOptions == null) {
-      return true;
+
+    // Check privateImeOptions to ensure the text field supports voice input.
+    if (editorInfo.privateImeOptions != null) {
+      for (String option : editorInfo.privateImeOptions.split(",")) {
+        if (option.equals(IME_OPTION_NO_MICROPHONE)
+            || option.equals(IME_OPTION_NO_MICROPHONE_COMPAT)) {
+          return false;
+        }
+      }
     }
-    for (String option : editorInfo.privateImeOptions.split(",")) {
-      if (option.equals(IME_OPTION_NO_MICROPHONE) ||
-          option.equals(IME_OPTION_NO_MICROPHONE_COMPAT)) {
-        return false;
+
+    int inputType = editorInfo.inputType;
+    if (isNumberKeyboardPreferred(inputType) || isPasswordField(inputType)) {
+      return false;
+    }
+    if ((inputType & EditorInfo.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT) {
+      switch (inputType & EditorInfo.TYPE_MASK_VARIATION) {
+        case InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS:
+        case InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS:
+        case InputType.TYPE_TEXT_VARIATION_URI:
+          return false;
+        default:
+          break;
       }
     }
     return true;
+  }
+
+  /** Returns true if number keyboard is preferred by EditorInfo.inputType. */
+  public static boolean isNumberKeyboardPreferred(int inputType) {
+    int typeClass = inputType & InputType.TYPE_MASK_CLASS;
+    // As of API Level 21, following condition equals to "typeClass != InputType.TYPE_CLASS_TEXT".
+    // However type-class might be added in future so safer expression is employed here.
+    return typeClass == InputType.TYPE_CLASS_DATETIME
+        || typeClass == InputType.TYPE_CLASS_NUMBER
+        || typeClass == InputType.TYPE_CLASS_PHONE;
   }
 
   public static String utf8CStyleByteStringToString(ByteString value) {
@@ -785,7 +762,6 @@ public final class MozcUtil {
    *
    * public accessibility for easier invocation via reflection.
    */
-  @TargetApi(9)
   public static class StrictModeRelaxer {
     private StrictModeRelaxer() {}
     public static void relaxStrictMode() {
@@ -848,5 +824,25 @@ public final class MozcUtil {
    */
   public static float clamp(float value, float min, float max) {
     return Math.max(Math.min(value, max), min);
+  }
+
+  /**
+   * Get a dimension for the specified orientation.
+   * This method may be heavy since it updates the {@code resources} twice.
+   */
+  public static float getDimensionForOrientation(Resources resources, int id, int orientation) {
+    Configuration configuration = resources.getConfiguration();
+    if (configuration.orientation == orientation) {
+      return resources.getDimension(id);
+    }
+
+    Configuration originalConfiguration = new Configuration(resources.getConfiguration());
+    try {
+      configuration.orientation = orientation;
+      resources.updateConfiguration(configuration, null);
+      return resources.getDimension(id);
+    } finally {
+      resources.updateConfiguration(originalConfiguration, null);
+    }
   }
 }

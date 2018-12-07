@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,8 +31,7 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlcom.h>
 
 #include <string>
@@ -48,7 +47,7 @@ using ::ATL::CComPtr;
 using ::ATL::CComQIPtr;
 using ::ATL::CComVariant;
 
-string UTF16ToUTF8(const wstring &str) {
+string UTF16ToUTF8(const std::wstring &str) {
   string utf8;
   Util::WideToUTF8(str, &utf8);
   return utf8;
@@ -58,7 +57,7 @@ string BSTRToUTF8(const BSTR &bstr) {
   if (bstr == nullptr) {
     return "";
   }
-  return UTF16ToUTF8(wstring(bstr, ::SysStringLen(bstr)));
+  return UTF16ToUTF8(std::wstring(bstr, ::SysStringLen(bstr)));
 }
 
 string RoleToString(const CComVariant &role) {
@@ -264,8 +263,8 @@ AccessibleObjectInfo AccessibleObject::GetInfo() const {
   return info;
 }
 
-vector<AccessibleObject> AccessibleObject::GetChildren() const {
-  vector<AccessibleObject> result;
+std::vector<AccessibleObject> AccessibleObject::GetChildren() const {
+  std::vector<AccessibleObject> result;
   if (!container_) {
     result;
   }
@@ -277,7 +276,7 @@ vector<AccessibleObject> AccessibleObject::GetChildren() const {
     return result;
   }
 
-  vector<CComVariant> buffer;
+  std::vector<CComVariant> buffer;
   buffer.resize(num_children);
 
   LONG num_fetched = 0;

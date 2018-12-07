@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,13 +31,11 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlcom.h>
 
 #include <string>
 
-#include "base/system_util.h"
 #include "base/util.h"
 #include "base/win_util.h"
 #include "win32/base/accessible_object.h"
@@ -63,20 +61,14 @@ bool g_exe_module_ver_initialized_ = false;
 BrowserInfo::BrowserType g_browser_type_ = BrowserInfo::kBrowserTypeUnknown;
 bool g_browser_type_initialized_ = false;
 
-wstring GetProcessModuleName() {
+std::wstring GetProcessModuleName() {
   if (g_exe_module_name_len_ == 0) {
     return L"";
   }
-  return wstring(g_exe_module_name_, g_exe_module_name_len_);
+  return std::wstring(g_exe_module_name_, g_exe_module_name_len_);
 }
 
 }  // namespace
-
-BrowserInfo::Version::Version()
-    : major(0),
-      minor(0),
-      build(0),
-      revision(0) {}
 
 // static
 BrowserInfo::BrowserType BrowserInfo::GetBrowerType() {
@@ -127,17 +119,11 @@ bool BrowserInfo::IsInIncognitoMode(
   const char *sufix_en = nullptr;
   switch (GetBrowerType()) {
     case kBrowserTypeChrome:
-      // "（シークレット モード）"
-      sufix_ja = "\xEF\xBC\x88\xE3\x82\xB7\xE3\x83\xBC"
-                 "\xE3\x82\xAF\xE3\x83\xAC\xE3\x83\x83\xE3\x83\x88\x20"
-                 "\xE3\x83\xA2\xE3\x83\xBC\xE3\x83\x89\xEF\xBC\x89";
+      sufix_ja = "（シークレット モード）";
       sufix_en = "(Incognito)";
       break;
     case kBrowserTypeFirefox:
-      // " (プライベートブラウジング)"
-      sufix_ja = " (\xE3\x83\x97\xE3\x83\xA9\xE3\x82\xA4"
-                 "\xE3\x83\x99\xE3\x83\xBC\xE3\x83\x88\xE3\x83\x96\xE3\x83\xA9"
-                 "\xE3\x82\xA6\xE3\x82\xB8\xE3\x83\xB3\xE3\x82\xB0)";
+      sufix_ja = " (プライベートブラウジング)";
       sufix_en = "(Private Browsing)";
       break;
     case kBrowserTypeIE:
@@ -176,10 +162,7 @@ bool BrowserInfo::IsOnChromeOmnibox(
       current_ui_element.role != "ROLE_SYSTEM_TEXT") {
     return false;
   }
-  // "アドレス検索バー"
-  const char kOmniboxDescJa[] =
-      "\xE3\x82\xA2\xE3\x83\x89\xE3\x83\xAC\xE3\x82\xB9\xE6\xA4\x9C"
-      "\xE7\xB4\xA2\xE3\x83\x90\xE3\x83\xBC";
+  const char kOmniboxDescJa[] = "アドレス検索バー";
   if (current_ui_element.name == kOmniboxDescJa) {
     return true;
   }
@@ -188,34 +171,6 @@ bool BrowserInfo::IsOnChromeOmnibox(
     return true;
   }
   return false;
-}
-
-// static
-BrowserInfo::Version BrowserInfo::GetProcessModuleVersion() {
-  if (!g_exe_module_ver_initialized_) {
-    bool loder_locked = false;
-    if (!WinUtil::IsDLLSynchronizationHeld(&loder_locked) ||
-        loder_locked) {
-      return Version();
-    }
-
-    const wstring &exe_path = GetProcessModuleName();
-    if (!exe_path.empty()) {
-      SystemUtil::GetFileVersion(exe_path,
-                                 &g_exe_module_ver_major_,
-                                 &g_exe_module_ver_minor_,
-                                 &g_exe_module_ver_build_,
-                                 &g_exe_module_ver_revision_);
-    }
-    g_exe_module_ver_initialized_ = true;
-  }
-
-  Version version;
-  version.major = g_exe_module_ver_major_;
-  version.minor = g_exe_module_ver_minor_;
-  version.build = g_exe_module_ver_build_;
-  version.revision = g_exe_module_ver_revision_;
-  return version;
 }
 
 // static

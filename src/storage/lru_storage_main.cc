@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,13 +27,12 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "storage/lru_storage.h"
-
 #include <string>
 
 #include "base/logging.h"
 #include "base/port.h"
 #include "base/util.h"
+#include "storage/lru_storage.h"
 
 DEFINE_bool(create_db, false, "initialize database");
 DEFINE_string(file, "test.db", "");
@@ -42,7 +41,7 @@ DEFINE_int32(size, 10, "size");
 using mozc::storage::LRUStorage;
 
 int main(int argc, char **argv) {
-  InitGoogle(argv[0], &argc, &argv, false);
+  mozc::InitMozc(argv[0], &argc, &argv, false);
 
   if (FLAGS_create_db) {
     CHECK(LRUStorage::CreateStorageFile(
@@ -58,7 +57,7 @@ int main(int argc, char **argv) {
   LOG(INFO) << "value_size=" << s.value_size();
 
   string line;
-  vector<string> fields;
+  std::vector<string> fields;
   while (getline(cin, line)) {
     fields.clear();
     mozc::Util::SplitStringUsing(line, "\t ", &fields);

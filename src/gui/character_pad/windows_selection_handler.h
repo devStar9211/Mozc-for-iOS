@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -28,12 +28,11 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef MOZC_GUI_CHARACTER_PAD_WINDOWS_SELECTION_HANDLER_H_
-#define MOZC_IPC_CHARACTER_PAD_WINDOWS_SELECTION_HANDLER_H_
-
-#include <string>
-
+#define MOZC_GUI_CHARACTER_PAD_WINDOWS_SELECTION_HANDLER_H_
 #ifdef OS_WIN
+
 #include <QtCore/QString>
+
 #include "gui/character_pad/selection_handler.h"
 
 namespace mozc {
@@ -41,11 +40,14 @@ namespace gui {
 
 class WindowsSelectionHandler : public SelectionCallbackInterface {
  public:
-  virtual void Select(const QString &str);
   WindowsSelectionHandler();
   virtual ~WindowsSelectionHandler();
+
+  virtual void Select(const QString &str);
 };
-}
-}
-#endif
-#endif  // MOZC_IPC_CHARACTER_PAD_WINDOWS_SELECTION_HANDLER_H_
+
+}  // namespace gui
+}  // namespace mozc
+
+#endif  // OS_WIN
+#endif  // MOZC_GUI_CHARACTER_PAD_WINDOWS_SELECTION_HANDLER_H_

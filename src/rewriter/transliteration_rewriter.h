@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,20 +32,17 @@
 
 #include <string>
 #include <vector>
+
 #include "base/port.h"
 #include "converter/segments.h"
+#include "dictionary/pos_matcher.h"
 #include "rewriter/rewriter_interface.h"
 
 namespace mozc {
 
-class ConversionRequest;
-class POSMatcher;
-class Segments;
-class Segment;
-
 class TransliterationRewriter : public RewriterInterface  {
  public:
-  explicit TransliterationRewriter(const POSMatcher &pos_matcher);
+  explicit TransliterationRewriter(const dictionary::POSMatcher &pos_matcher);
   virtual ~TransliterationRewriter();
 
   virtual int capability(const ConversionRequest &request) const;
@@ -63,7 +60,7 @@ class TransliterationRewriter : public RewriterInterface  {
                          Segment::Candidate *cand) const;
   // Sets transliteration values into segment.  If t13ns is invalid,
   // false is returned.
-  bool SetTransliterations(const vector<string> &t13ns,
+  bool SetTransliterations(const std::vector<string> &t13ns,
                            const string &key,
                            Segment *segment) const;
   bool FillT13nsFromComposer(const ConversionRequest &request,
@@ -73,6 +70,8 @@ class TransliterationRewriter : public RewriterInterface  {
                                   Segments *segments) const;
 
   const uint16 unknown_id_;
+
+  DISALLOW_COPY_AND_ASSIGN(TransliterationRewriter);
 };
 
 }  // namespace mozc

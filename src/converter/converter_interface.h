@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,9 +31,10 @@
 #define MOZC_CONVERTER_CONVERTER_INTERFACE_H_
 
 #include <string>
+
 #include "base/port.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
+#include "request/conversion_request.h"
 
 namespace mozc {
 
@@ -158,8 +159,8 @@ class ConverterInterface {
   // |candidate_index| is a vector containing candidate index.
   // candidate_index[0] corresponds to the index of the candidate of
   // 1st segment.
-  virtual bool CommitSegments(Segments *segments,
-                              const vector<size_t> &candidate_index) const = 0;
+  virtual bool CommitSegments(
+      Segments *segments, const std::vector<size_t> &candidate_index) const = 0;
 
   // Resize segment_index-th segment by offset_length.
   // offset_lenth can be negative.

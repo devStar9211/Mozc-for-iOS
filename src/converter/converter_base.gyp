@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -39,68 +39,25 @@
   },
   'targets': [
     {
-      'target_name': 'segmenter_base',
+      'target_name': 'segmenter',
       'type': 'static_library',
       'sources': [
-        'segmenter_base.cc',
+        'segmenter.cc',
       ],
       'dependencies': [
         '../base/base.gyp:base',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
-      'target_name': 'sparse_connector',
+      'target_name': 'connector',
       'type': 'static_library',
       'sources': [
-        'sparse_connector.cc',
+        'connector.cc',
       ],
       'dependencies': [
         '../base/base.gyp:base',
         '../storage/louds/louds.gyp:simple_succinct_bit_vector_index',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {
-      'target_name': 'cached_connector',
-      'type': 'static_library',
-      'sources': [
-        'cached_connector.cc',
-      ],
-      'dependencies': [
-        '../base/base.gyp:base',
-        'sparse_connector',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {
-      'target_name': 'connector_base',
-      'type': 'static_library',
-      'sources': [
-        'connector_base.cc',
-      ],
-      'dependencies': [
-        '../base/base.gyp:base',
-        'cached_connector',
-        'sparse_connector',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'lattice',
@@ -112,11 +69,6 @@
       'dependencies': [
         '../base/base.gyp:base',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'segments',
@@ -132,13 +84,10 @@
         '../dictionary/dictionary_base.gyp:pos_matcher',
         '../prediction/prediction_base.gyp:suggestion_filter',
         '../transliteration/transliteration.gyp:transliteration',
+        'connector',
         'lattice',
+        'segmenter',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'converter_util',
@@ -149,11 +98,6 @@
       'dependencies': [
         'segments',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'immutable_converter_interface',
@@ -162,13 +106,8 @@
         'immutable_converter_interface.cc',
       ],
       'dependencies': [
-        'conversion_request',
+        '../request/request.gyp:conversion_request',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'immutable_converter',
@@ -180,21 +119,17 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../config/config.gyp:config_handler',
-        '../config/config.gyp:config_protocol',
-        '../data_manager/data_manager.gyp:user_pos_manager',
         '../dictionary/dictionary.gyp:suffix_dictionary',
         '../dictionary/dictionary_base.gyp:pos_matcher',
         '../dictionary/dictionary_base.gyp:suppression_dictionary',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
         '../rewriter/rewriter_base.gyp:gen_rewriter_files#host',
-        '../session/session_base.gyp:session_protocol',
+        'connector',
         'immutable_converter_interface',
+        'segmenter',
         'segments',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'converter_mock',
@@ -204,15 +139,10 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
-        '../session/session_base.gyp:session_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../request/request.gyp:conversion_request',
         'segments',
-        'conversion_request',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'gen_segmenter_bitarray',
@@ -223,28 +153,8 @@
       ],
       'dependencies' : [
         '../base/base.gyp:base',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {
-      'target_name': 'conversion_request',
-      'type': 'static_library',
-      'sources': [
-        'conversion_request.cc',
-      ],
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../session/session_base.gyp:session_protocol',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
+        '../protocol/protocol.gyp:segmenter_data_proto',
+      ]
     },
     {
       'target_name': 'pos_id_printer',
@@ -255,11 +165,6 @@
       'dependencies': [
         '../base/base.gyp:base',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
   ],
 }

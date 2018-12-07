@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,15 +33,15 @@
 #include <vector>
 
 #include "base/util.h"
-#include "base/version.h"
 #include "testing/base/public/gunit.h"
 
 namespace mozc {
 namespace {
+
 const char kSurveyBaseURL[] =
     "http://www.google.com/support/ime/japanese/bin/request.py";
 
-bool FindEncodedParam(const vector<string> &params,
+bool FindEncodedParam(const std::vector<string> &params,
                       const string &key, const string &value) {
   string encoded;
   Util::EncodeURI(value, &encoded);
@@ -53,16 +53,15 @@ bool FindEncodedParam(const vector<string> &params,
   }
   return false;
 }
-}  // namespace
 
 TEST(URLTest, UninstallationSurveyURL) {
   string url;
   URL::GetUninstallationSurveyURL("0.1.2.3", &url);
-  vector<string> url_and_params;
+  std::vector<string> url_and_params;
   Util::SplitStringUsing(url, "?", &url_and_params);
   EXPECT_EQ(2, url_and_params.size());
   EXPECT_EQ(kSurveyBaseURL, url_and_params[0]);
-  vector<string> params;
+  std::vector<string> params;
   Util::SplitStringUsing(url_and_params[1], "&", &params);
   EXPECT_EQ(4, params.size());
   EXPECT_TRUE(FindEncodedParam(params, "contact_type", "surveyime"));
@@ -74,15 +73,17 @@ TEST(URLTest, UninstallationSurveyURL) {
 TEST(URLTest, UninstallationSurveyURLWithNoVersion) {
   string url;
   URL::GetUninstallationSurveyURL("", &url);
-  vector<string> url_and_params;
+  std::vector<string> url_and_params;
   Util::SplitStringUsing(url, "?", &url_and_params);
   EXPECT_EQ(2, url_and_params.size());
   EXPECT_EQ(kSurveyBaseURL, url_and_params[0]);
-  vector<string> params;
+  std::vector<string> params;
   Util::SplitStringUsing(url_and_params[1], "&", &params);
   EXPECT_EQ(3, params.size());
   EXPECT_TRUE(FindEncodedParam(params, "contact_type", "surveyime"));
   EXPECT_TRUE(FindEncodedParam(params, "hl", "jp"));
   EXPECT_TRUE(FindEncodedParam(params, "format", "inproduct"));
 }
+
+}  // namespace
 }  // namespace mozc

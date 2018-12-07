@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -43,25 +43,27 @@
 #include "base/string_piece.h"
 #include "base/util.h"
 #include "config/character_form_manager.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
 #include "dictionary/pos_group.h"
 #include "dictionary/pos_matcher.h"
+#include "protocol/config.pb.h"
+#include "request/conversion_request.h"
 #include "rewriter/rewriter_interface.h"
 #include "rewriter/variants_rewriter.h"
 #include "storage/lru_storage.h"
 #include "transliteration/transliteration.h"
 #include "usage_stats/usage_stats.h"
 
+using mozc::config::CharacterFormManager;
+using mozc::config::Config;
+using mozc::dictionary::POSMatcher;
+using mozc::dictionary::PosGroup;
+using mozc::storage::LRUStorage;
+
 namespace mozc {
-
-using config::CharacterFormManager;
-using config::Config;
-using storage::LRUStorage;
-
 namespace {
+
 const uint32 kValueSize = 4;
 const uint32 kLRUSize   = 20000;
 const uint32 kSeedValue = 0xf28defe3;
@@ -95,14 +97,10 @@ class FeatureValue {
 MOZC_CLANG_POP_WARNING();
 
 bool IsPunctuationInternal(const string &str) {
-  // return (str == "。" || str == "｡" ||
-  // str == "、" || str == "､" ||
-  // str == "，" || str == "," ||
-  // str == "．"  || str == ".");
-  return (str == "\xE3\x80\x82" || str == "\xEF\xBD\xA1" ||
-          str == "\xE3\x80\x81" || str == "\xEF\xBD\xA4" ||
-          str == "\xEF\xBC\x8C" || str == "," ||
-          str == "\xEF\xBC\x8E"  || str == ".");
+  return (str == "。" || str == "｡" ||
+          str == "、" || str == "､" ||
+          str == "，" || str == "," ||
+          str == "．"  || str == ".");
 }
 
 // Temporarily disable unused private field warning against
@@ -127,7 +125,7 @@ class KeyTriggerValue {
   }
 
   void set_candidates_size(uint32 size) {
-    candidates_size_ = min(size, kMaxCandidatesSize);
+    candidates_size_ = std::min(size, kMaxCandidatesSize);
   }
 
  private:
@@ -153,8 +151,8 @@ class ScoreTypeCompare {
 inline int GetDefaultCandidateIndex(const Segment &segment) {
   // Check up to kMaxRerankSize + 1 candidates because candidate with
   // BEST_CANDIATE is highly possibly in that range (http://b/9992330).
-  const int size = static_cast<int>(min(segment.candidates_size(),
-                                        kMaxRerankSize + 1));
+  const int size =
+      static_cast<int>(std::min(segment.candidates_size(), kMaxRerankSize + 1));
   for (int i = 0; i < size; ++i) {
     if (segment.candidate(i).attributes &
         Segment::Candidate::BEST_CANDIDATE) {
@@ -331,7 +329,7 @@ inline bool GetFeatureS(const Segments &segments, size_t i,
 // used for number rewrite
 inline bool GetFeatureN(uint16 type, string *value) {
   DCHECK(value);
-  JoinStringsWithTab2(StringPiece("N", 1), NumberUtil::SimpleItoa(type), value);
+  JoinStringsWithTab2("N", std::to_string(type), value);
   return true;
 }
 
@@ -439,11 +437,11 @@ bool IsT13NCandidate(const Segment::Candidate &cand) {
 }  // namespace
 
 bool UserSegmentHistoryRewriter::SortCandidates(
-    const vector<ScoreType> &sorted_scores, Segment *segment) const {
+    const std::vector<ScoreType> &sorted_scores, Segment *segment) const {
   const uint32 top_score = sorted_scores[0].score;
-  const size_t size = min(sorted_scores.size(), kMaxRerankSize);
+  const size_t size = std::min(sorted_scores.size(), kMaxRerankSize);
   const uint32 kScoreGap = 20;   // TODO(taku): no justification
-  set<string> seen;
+  std::set<string> seen;
 
   size_t next_pos = 0;
   for (size_t n = 0; n < size; ++n) {
@@ -543,18 +541,18 @@ do { \
   } \
 } while (0)
 
-#define FETCH_FEATURE(func, base_key, base_value, weight)        \
-do { \
-  if (func(segments, segment_index, base_key, base_value, &feature_key)) { \
-    const FeatureValue *v = \
-      reinterpret_cast<const FeatureValue *> \
-       (storage_->Lookup(feature_key, &last_access_time_result)); \
-    if (v != NULL && v->IsValid()) { \
-       *score = max(*score, weight);                                     \
-       *last_access_time = max(*last_access_time, last_access_time_result); \
-    } \
-  } \
-} while (0)
+#define FETCH_FEATURE(func, base_key, base_value, weight)                    \
+  do {                                                                       \
+    if (func(segments, segment_index, base_key, base_value, &feature_key)) { \
+      const FeatureValue *v = reinterpret_cast<const FeatureValue *>(        \
+          storage_->Lookup(feature_key, &last_access_time_result));          \
+      if (v != NULL && v->IsValid()) {                                       \
+        *score = std::max(*score, weight);                                   \
+        *last_access_time =                                                  \
+            std::max(*last_access_time, last_access_time_result);            \
+      }                                                                      \
+    }                                                                        \
+  } while (0)
 
 bool UserSegmentHistoryRewriter::GetScore(const Segments &segments,
                                           size_t segment_index,
@@ -757,8 +755,10 @@ void UserSegmentHistoryRewriter::RememberFirstCandidate(
   }
 }
 
-bool UserSegmentHistoryRewriter::IsAvailable(const Segments &segments) const {
-  if (GET_CONFIG(incognito_mode)) {
+bool UserSegmentHistoryRewriter::IsAvailable(
+    const ConversionRequest &request,
+    const Segments &segments) const {
+  if (request.config().incognito_mode()) {
     VLOG(2) << "incognito_mode";
     return false;
   }
@@ -790,11 +790,11 @@ void UserSegmentHistoryRewriter::Finish(const ConversionRequest &request,
     return;
   }
 
-  if (!IsAvailable(*segments)) {
+  if (!IsAvailable(request, *segments)) {
     return;
   }
 
-  if (GET_CONFIG(history_learning_level) != Config::DEFAULT_HISTORY) {
+  if (request.config().history_learning_level() != Config::DEFAULT_HISTORY) {
     VLOG(2) << "history_learning_level is not DEFAULT_HISTORY";
     return;
   }
@@ -825,7 +825,7 @@ bool UserSegmentHistoryRewriter::Reload() {
   if (!storage_->OpenOrCreate(filename.c_str(),
                               kValueSize, kLRUSize, kSeedValue)) {
     LOG(WARNING) << "cannot initialize UserSegmentHistoryRewriter";
-    storage_.reset(NULL);
+    storage_.reset();
     return false;
   }
 
@@ -865,7 +865,7 @@ bool UserSegmentHistoryRewriter::ShouldRewrite(
   const size_t v2_size = (v2 == NULL || !v2->IsValid()) ?
       0 : v2->candidates_size();
 
-  *max_candidates_size = max(v1_size, v2_size);
+  *max_candidates_size = std::max(v1_size, v2_size);
 
   return *max_candidates_size > 0;
 }
@@ -900,7 +900,7 @@ void UserSegmentHistoryRewriter::InsertTriggerKey(const Segment &segment) {
 }
 
 bool UserSegmentHistoryRewriter::RewriteNumber(Segment *segment) const {
-  vector<ScoreType> scores;
+  std::vector<ScoreType> scores;
   for (size_t l = 0;
        l < segment->candidates_size() + segment->meta_candidates_size(); ++l) {
     int j = static_cast<int>(l);
@@ -939,17 +939,17 @@ bool UserSegmentHistoryRewriter::RewriteNumber(Segment *segment) const {
     return false;
   }
 
-  stable_sort(scores.begin(), scores.end(), ScoreTypeCompare());
+  std::stable_sort(scores.begin(), scores.end(), ScoreTypeCompare());
   return SortCandidates(scores, segment);
 }
 
 bool UserSegmentHistoryRewriter::Rewrite(const ConversionRequest &request,
                                          Segments *segments) const {
-  if (!IsAvailable(*segments)) {
+  if (!IsAvailable(request, *segments)) {
     return false;
   }
 
-  if (GET_CONFIG(history_learning_level) == Config::NO_HISTORY) {
+  if (request.config().history_learning_level() == Config::NO_HISTORY) {
     VLOG(2) << "history_learning_level is NO_HISTORY";
     return false;
   }
@@ -992,7 +992,7 @@ bool UserSegmentHistoryRewriter::Rewrite(const ConversionRequest &request,
         << "Cannot expand candidates. ignored. Rewrite may be failed";
 
     // for each all candidates expanded
-    vector<ScoreType> scores;
+    std::vector<ScoreType> scores;
     for (size_t l = 0;
          l < segment->candidates_size() + segment->meta_candidates_size();
          ++l) {
@@ -1016,7 +1016,7 @@ bool UserSegmentHistoryRewriter::Rewrite(const ConversionRequest &request,
       continue;
     }
 
-    stable_sort(scores.begin(), scores.end(), ScoreTypeCompare());
+    std::stable_sort(scores.begin(), scores.end(), ScoreTypeCompare());
     modified |= SortCandidates(scores, segment);
   }
   return modified;

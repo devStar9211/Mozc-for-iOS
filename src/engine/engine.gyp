@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -34,6 +34,19 @@
   },
   'targets': [
     {
+      'target_name': 'engine_builder',
+      'type': 'static_library',
+      'sources': [
+        'engine_builder.cc',
+      ],
+      'dependencies': [
+        'engine',
+        '../base/base.gyp:base',
+        '../data_manager/data_manager_base.gyp:data_manager',
+        '../protocol/protocol.gyp:engine_builder_proto',
+      ],
+    },
+    {
       'target_name': 'engine',
       'type': 'static_library',
       'sources': [
@@ -43,11 +56,10 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../converter/converter.gyp:converter',
-        '../converter/converter_base.gyp:connector_base',
-        '../converter/converter_base.gyp:segmenter_base',
+        '../converter/converter_base.gyp:connector',
+        '../converter/converter_base.gyp:segmenter',
         '../dictionary/dictionary.gyp:dictionary_impl',
         '../dictionary/dictionary.gyp:suffix_dictionary',
-        '../dictionary/dictionary_base.gyp:dictionary_protocol',
         '../dictionary/dictionary_base.gyp:pos_matcher',
         '../dictionary/dictionary_base.gyp:suppression_dictionary',
         '../dictionary/dictionary_base.gyp:user_dictionary',
@@ -56,14 +68,10 @@
         '../dictionary/system/system_dictionary.gyp:value_dictionary',
         '../prediction/prediction.gyp:prediction',
         '../prediction/prediction_base.gyp:suggestion_filter',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:user_dictionary_storage_proto',
         '../rewriter/rewriter.gyp:rewriter',
-        '../session/session_base.gyp:session_protocol',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'mock_converter_engine',
@@ -76,54 +84,16 @@
         '../base/base.gyp:base',
         '../converter/converter_base.gyp:converter_mock'
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {  # An engine just for converter/converter_main.cc.
-      'target_name': 'chromeos_engine_factory',
-      'type': 'none',
-      'sources': [
-        'chromeos_engine_factory.cc',
-      ],
     },
     {
       'target_name': 'oss_engine_factory',
-      'type': 'static_library',
-      'sources': [
-        'oss_engine_factory.cc',
-      ],
+      'type': 'none',
       'dependencies': [
         '../base/base.gyp:base',
         '../data_manager/oss/oss_data_manager.gyp:oss_data_manager',
         '../prediction/prediction.gyp:prediction',
         'engine',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {
-      'target_name': 'packed_engine_factory',
-      'type': 'static_library',
-      'sources': [
-        'packed_engine_factory.cc',
-      ],
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../data_manager/packed/packed_data_manager_base.gyp:packed_data_manager',
-        '../prediction/prediction.gyp:prediction',
-        'engine',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'mock_data_engine_factory',
@@ -132,17 +102,9 @@
         'mock_data_engine_factory.cc',
       ],
       'dependencies': [
-        '../base/base.gyp:base',
         '../data_manager/testing/mock_data_manager.gyp:mock_data_manager',
-        '../prediction/prediction.gyp:prediction',
-        '../session/session_base.gyp:session_protocol',
         'engine',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'engine_factory',
@@ -153,20 +115,22 @@
       'dependencies': [
         'oss_engine_factory',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'conditions': [
-        ['use_packed_dictionary==1', {
-          'dependencies': [
-            'packed_engine_factory'
-          ],
-          'dependencies!': [
-            'oss_engine_factory',
-          ]
-        }],
+      ],
+    },
+    {
+      'target_name': 'minimal_engine',
+      'type': 'static_library',
+      'sources': [
+        'minimal_engine.cc',
+      ],
+      'dependencies': [
+        '../composer/composer.gyp:composer',
+        '../converter/converter.gyp:converter',
+        '../data_manager/data_manager_base.gyp:data_manager',
+        '../dictionary/dictionary_base.gyp:suppression_dictionary',
+        '../protocol/protocol.gyp:config_proto',
+        '../request/request.gyp:conversion_request',
       ],
     },
   ],

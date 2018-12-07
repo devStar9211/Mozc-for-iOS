@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,22 +30,22 @@
 #include "rewriter/symbol_rewriter.h"
 
 #include <algorithm>
+#include <cstring>
+#include <set>
 #include <string>
 #include <vector>
-#include <set>
 
 #include "base/logging.h"
 #include "base/singleton.h"
 #include "base/util.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
-#include "converter/conversion_request.h"
 #include "converter/converter_interface.h"
 #include "converter/segments.h"
 #include "data_manager/data_manager_interface.h"
-#include "rewriter/embedded_dictionary.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
+#include "request/conversion_request.h"
 #include "rewriter/rewriter_interface.h"
-#include "session/commands.pb.h"
 
 // SymbolRewriter:
 // When updating the rule
@@ -71,17 +71,17 @@ const size_t kMaxInsertToMedium = 15;
 // static function
 const string SymbolRewriter::GetDescription(
     const string &value,
-    const char *description,
-    const char *additional_description) {
-  if (description == NULL) {
+    StringPiece description,
+    StringPiece additional_description) {
+  if (description.empty()) {
     return "";
   }
-  string result = description;
+  string result = description.as_string();
   // Merge description
-  if (additional_description != NULL) {
-    result.append("(");
-    result.append(additional_description);
-    result.append(")");
+  if (!additional_description.empty()) {
+    result.append(1, '(');
+    result.append(additional_description.data(), additional_description.size());
+    result.append(1, ')');
   }
   return result;
 }
@@ -104,16 +104,18 @@ void SymbolRewriter::ExpandSpace(Segment *segment) {
     if (segment->candidate(i).value == " ") {
       Segment::Candidate *c = segment->insert_candidate(i + 1);
       *c = segment->candidate(i);
-      // "　"
-      c->value = "\xe3\x80\x80";
-      c->content_value = "\xe3\x80\x80";
+      c->value = "　";  // Full-width space
+      c->content_value = "　";  // Full-width space
+      // Boundary is invalidated and unnecessary for space.
+      c->inner_segment_boundary.clear();
       return;
-    // "　"
-    } else if (segment->candidate(i).value == "\xe3\x80\x80") {
+    } else if (segment->candidate(i).value == "　") {  // Full-width space
       Segment::Candidate *c = segment->insert_candidate(i + 1);
       *c = segment->candidate(i);
       c->value = " ";
       c->content_value = " ";
+      // Boundary is invalidated and unnecessary for space.
+      c->inner_segment_boundary.clear();
       return;
     }
   }
@@ -121,36 +123,36 @@ void SymbolRewriter::ExpandSpace(Segment *segment) {
 
 // TODO(toshiyuki): Should we move this under Util module?
 bool SymbolRewriter::IsPlatformDependent(
-    const EmbeddedDictionary::Value &value) {
-  if (value.value == NULL) {
+    SerializedDictionary::const_iterator iter) {
+  if (iter.value().empty()) {
     return false;
   }
-  const Util::CharacterSet cset = Util::GetCharacterSet(value.value);
+  const Util::CharacterSet cset = Util::GetCharacterSet(iter.value());
   return (cset >= Util::JISX0212);
 }
 
 // Return true if two symbols are in same group
 // static function
-bool SymbolRewriter::InSameSymbolGroup(const EmbeddedDictionary::Value &lhs,
-                                       const EmbeddedDictionary::Value &rhs) {
+bool SymbolRewriter::InSameSymbolGroup(
+    SerializedDictionary::const_iterator lhs,
+    SerializedDictionary::const_iterator rhs) {
   // "矢印記号", "矢印記号"
   // "ギリシャ(大文字)", "ギリシャ(小文字)"
-  if (lhs.description == NULL || rhs.description == NULL) {
+  if (lhs.description().empty() || rhs.description().empty()) {
     return false;
   }
-  const int cmp_len = max(strlen(lhs.description), strlen(rhs.description));
-  if (strncmp(lhs.description, rhs.description, cmp_len) == 0) {
-    return true;
-  }
-  return false;
+  const size_t cmp_len =
+      std::max(lhs.description().size(), rhs.description().size());
+  return std::strncmp(lhs.description().data(),
+                      rhs.description().data(), cmp_len) == 0;
 }
 
 // Insert Symbol into segment.
 // static function
-void SymbolRewriter::InsertCandidates(const EmbeddedDictionary::Value *value,
-                                      size_t size,
-                                      bool context_sensitive,
-                                      Segment *segment) {
+void SymbolRewriter::InsertCandidates(
+    const SerializedDictionary::IterRange &range,
+    bool context_sensitive,
+    Segment *segment) {
   if (segment->candidates_size() == 0) {
     LOG(WARNING) << "candiadtes_size is 0";
     return;
@@ -165,7 +167,7 @@ void SymbolRewriter::InsertCandidates(const EmbeddedDictionary::Value *value,
 
   // If the original candidates given by ImmutableConveter already
   // include the target symbols, do assign description to these candidates.
-  AddDescForCurrentCandidates(value, size, segment);
+  AddDescForCurrentCandidates(range, segment);
 
   const string &candidate_key = ((!segment->key().empty()) ?
                                  segment->key() :
@@ -174,14 +176,13 @@ void SymbolRewriter::InsertCandidates(const EmbeddedDictionary::Value *value,
 
   // If the key is "かおもじ", set the insert position at the bottom,
   // giving priority to emoticons inserted by EmoticonRewriter.
-  // "かおもじ"
-  if (candidate_key == "\xE3\x81\x8B\xE3\x81\x8A\xE3\x82\x82\xE3\x81\x98") {
+  if (candidate_key == "かおもじ") {
     offset = segment->candidates_size();
   } else {
     // Find the position wehere we start to insert the symbols
     // We want to skip the single-kanji we inserted by single-kanji rewriter.
     // We also skip transliterated key candidates.
-    offset = min(kOffsetSize, segment->candidates_size());
+    offset = std::min(kOffsetSize, segment->candidates_size());
     for (size_t i = offset; i < segment->candidates_size(); ++i) {
       const string &target_value = segment->candidate(i).value;
       if ((Util::CharsLen(target_value) == 1 &&
@@ -195,20 +196,21 @@ void SymbolRewriter::InsertCandidates(const EmbeddedDictionary::Value *value,
     }
   }
 
+  const size_t range_size = range.second - range.first;
   size_t inserted_count = 0;
   bool finish_first_part = false;
   const Segment::Candidate &base_candidate = segment->candidate(0);
-  for (size_t i = 0; i < size; ++i) {
+  for (auto iter = range.first; iter != range.second; ++iter) {
     Segment::Candidate *candidate = segment->insert_candidate(offset);
     DCHECK(candidate);
 
     candidate->Init();
-    candidate->lid = value[i].lid;
-    candidate->rid = value[i].rid;
+    candidate->lid = iter.lid();
+    candidate->rid = iter.rid();
     candidate->cost = base_candidate.cost;
     candidate->structure_cost = base_candidate.structure_cost;
-    candidate->value = value[i].value;
-    candidate->content_value = value[i].value;
+    candidate->value.assign(iter.value().data(), iter.value().size());
+    candidate->content_value.assign(iter.value().data(), iter.value().size());
     candidate->key = candidate_key;
     candidate->content_key = candidate_key;
 
@@ -216,29 +218,29 @@ void SymbolRewriter::InsertCandidates(const EmbeddedDictionary::Value *value,
       candidate->attributes |= Segment::Candidate::CONTEXT_SENSITIVE;
     }
 
-    // they have two characters and the one of characters doesn't have
-    // alternative character.
-    if (candidate->value == "\xE2\x80\x9C\xE2\x80\x9D" ||  // "“”"
-        candidate->value == "\xE2\x80\x98\xE2\x80\x99") {  // "‘’"
+    // The first two consist of two characters but the one of characters doesn't
+    // have alternative character.
+    if (candidate->value == "“”" || candidate->value == "‘’" ||
+        candidate->value == "w" || candidate->value == "www") {
       candidate->attributes |= Segment::Candidate::NO_VARIANTS_EXPANSION;
     }
 
     candidate->description = GetDescription(candidate->value,
-                                            value[i].description,
-                                            value[i].additional_description);
+                                            iter.description(),
+                                            iter.additional_description());
     ++offset;
     ++inserted_count;
 
     // Insert to latter position
     // If number of rest symbols is small, insert current position.
-    if (i + 1 < size &&
+    const auto next = iter + 1;
+    if (next != range.second &&
         !finish_first_part &&
         inserted_count >= kMaxInsertToMedium &&
-        size - inserted_count >= 5 &&
+        range_size - inserted_count >= 5 &&
         // Do not divide symbols which seem to be in the same group
         // providing that they are not platform dependent characters.
-        (!InSameSymbolGroup(value[i], value[i + 1]) ||
-         IsPlatformDependent(value[i + 1]))) {
+        (!InSameSymbolGroup(iter, next) || IsPlatformDependent(next))) {
       offset = segment->candidates_size();
       finish_first_part = true;
     }
@@ -247,21 +249,21 @@ void SymbolRewriter::InsertCandidates(const EmbeddedDictionary::Value *value,
 
 // static
 void SymbolRewriter::AddDescForCurrentCandidates(
-    const EmbeddedDictionary::Value *value, size_t size, Segment *segment) {
+    const SerializedDictionary::IterRange &range, Segment *segment) {
   for (size_t i = 0; i < segment->candidates_size(); ++i) {
     Segment::Candidate *candidate = segment->mutable_candidate(i);
     string full_width_value, half_width_value;
     Util::HalfWidthToFullWidth(candidate->value, &full_width_value);
     Util::FullWidthToHalfWidth(candidate->value, &half_width_value);
 
-    for (size_t j = 0; j < size; ++j) {
-      if (candidate->value == value[j].value ||
-          full_width_value == value[j].value ||
-          half_width_value == value[j].value) {
+    for (auto iter = range.first; iter != range.second; ++iter) {
+      if (candidate->value == iter.value() ||
+          full_width_value == iter.value() ||
+          half_width_value == iter.value()) {
         candidate->description =
             GetDescription(candidate->value,
-                           value[j].description,
-                           value[j].additional_description);
+                           iter.description(),
+                           iter.additional_description());
         break;
       }
     }
@@ -272,16 +274,15 @@ bool SymbolRewriter::RewriteEachCandidate(Segments *segments) const {
   bool modified = false;
   for (size_t i = 0; i < segments->conversion_segments_size(); ++i) {
     const string &key = segments->conversion_segment(i).key();
-    const EmbeddedDictionary::Token *token = dictionary_->Lookup(key);
-    if (token == NULL) {
+    const SerializedDictionary::IterRange range = dictionary_->equal_range(key);
+    if (range.first == range.second) {
       continue;
     }
 
     // if key is symbol, no need to see the context
     const bool context_sensitive = !IsSymbol(key);
 
-    InsertCandidates(token->value, token->value_size,
-                     context_sensitive,
+    InsertCandidates(range, context_sensitive,
                      segments->mutable_conversion_segment(i));
 
     modified = true;
@@ -297,8 +298,8 @@ bool SymbolRewriter::RewriteEntireCandidate(const ConversionRequest &request,
     key += segments->conversion_segment(i).key();
   }
 
-  const EmbeddedDictionary::Token *token = dictionary_->Lookup(key);
-  if (token == NULL) {
+  const SerializedDictionary::IterRange range = dictionary_->equal_range(key);
+  if (range.first == range.second) {
     return false;
   }
 
@@ -317,7 +318,7 @@ bool SymbolRewriter::RewriteEntireCandidate(const ConversionRequest &request,
       parent_converter_->ResizeSegment(segments, request, 0, diff);
     }
   } else {
-    InsertCandidates(token->value, token->value_size,
+    InsertCandidates(range,
                      false,   // not context sensitive
                      segments->mutable_conversion_segment(0));
   }
@@ -329,12 +330,11 @@ SymbolRewriter::SymbolRewriter(const ConverterInterface *parent_converter,
                                const DataManagerInterface *data_manager)
     : parent_converter_(parent_converter) {
   DCHECK(parent_converter_);
-  const EmbeddedDictionary::Token *data;
-  size_t size;
-  data_manager->GetSymbolRewriterData(&data, &size);
-  DCHECK(data);
-  DCHECK(size);
-  dictionary_.reset(new EmbeddedDictionary(data, size));
+  StringPiece token_array_data, string_array_data;
+  data_manager->GetSymbolRewriterData(&token_array_data, &string_array_data);
+  DCHECK(SerializedDictionary::VerifyData(token_array_data, string_array_data));
+  dictionary_.reset(new SerializedDictionary(token_array_data,
+                                             string_array_data));
 }
 
 SymbolRewriter::~SymbolRewriter() {}
@@ -348,7 +348,7 @@ int SymbolRewriter::capability(const ConversionRequest &request) const {
 
 bool SymbolRewriter::Rewrite(const ConversionRequest &request,
                              Segments *segments) const {
-  if (!GET_CONFIG(use_symbol_conversion)) {
+  if (!request.config().use_symbol_conversion()) {
     VLOG(2) << "no use_symbol_conversion";
     return false;
   }
@@ -359,4 +359,5 @@ bool SymbolRewriter::Rewrite(const ConversionRequest &request,
   return (RewriteEntireCandidate(request, segments) ||
           RewriteEachCandidate(segments));
 }
+
 }  // namespace mozc

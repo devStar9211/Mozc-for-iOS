@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,8 +31,7 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlcom.h>
 #include <ctffunc.h>
 
@@ -74,7 +73,7 @@ class MockCallbackResult {
     candidate_.clear();
   }
 
-  void OnFinalize(size_t index, const wstring &candidate) {
+  void OnFinalize(size_t index, const std::wstring &candidate) {
     on_finalize_called_ = true;
     index_ = index;
     candidate_ = candidate;
@@ -88,14 +87,14 @@ class MockCallbackResult {
     return index_;
   }
 
-  const wstring &candidate() const {
+  const std::wstring &candidate() const {
     return candidate_;
   }
 
  private:
   bool on_finalize_called_;
   size_t index_;
-  wstring candidate_;
+  std::wstring candidate_;
   DISALLOW_COPY_AND_ASSIGN(MockCallbackResult);
 };
 
@@ -108,7 +107,7 @@ class MockCallback : public TipCandidateListCallback {
 
  private:
   // TipCandidateListCallback overrides:
-  virtual void OnFinalize(size_t index, const wstring &candidate) {
+  virtual void OnFinalize(size_t index, const std::wstring &candidate) {
     result_->OnFinalize(index, candidate);
   }
 
@@ -116,12 +115,12 @@ class MockCallback : public TipCandidateListCallback {
   DISALLOW_COPY_AND_ASSIGN(MockCallback);
 };
 
-wstring ToWStr(const CComBSTR &bstr) {
-  return wstring(static_cast<const wchar_t *>(bstr), bstr.Length());
+std::wstring ToWStr(const CComBSTR &bstr) {
+  return std::wstring(static_cast<const wchar_t *>(bstr), bstr.Length());
 }
 
 AssertionResult ExpectCandidateString(ULONG expected_index,
-                                      const wstring &expected_text,
+                                      const std::wstring &expected_text,
                                       CComPtr<ITfCandidateString> candiate) {
   if (candiate == nullptr) {
     return AssertionFailure() << "|actual| should be non-null";
@@ -146,7 +145,7 @@ AssertionResult ExpectCandidateString(ULONG expected_index,
       return AssertionFailure() << "ITfCandidateString::GetString failed."
                                 << " hr = " << hr;
     }
-    const wstring wstr(ToWStr(str));
+    const std::wstring wstr(ToWStr(str));
     if (expected_text != wstr) {
       return AssertionFailure() << "expected: " << expected_text
                                 << ", actual: " << wstr;
@@ -161,7 +160,7 @@ AssertionResult ExpectCandidateString(ULONG expected_index,
 TEST(TipCandidateListTest, EmptyCandiate) {
   MockCallbackResult result;
 
-  vector<wstring> empty;
+  std::vector<std::wstring> empty;
   CComPtr<ITfCandidateList> candidate_list(
       TipCandidateList::New(empty, new MockCallback(&result)));
   ASSERT_NE(nullptr, candidate_list);
@@ -195,9 +194,9 @@ TEST(TipCandidateListTest, EmptyCandiate) {
 TEST(TipCandidateListTest, NonEmptyCandiates) {
   MockCallbackResult result;
 
-  vector<wstring> source;
+  std::vector<std::wstring> source;
   for (wchar_t c = L'A'; c < L'Z'; ++c) {
-    source.push_back(wstring(c, 1));
+    source.push_back(std::wstring(c, 1));
   }
   CComPtr<ITfCandidateList> candidate_list(
       TipCandidateList::New(source, new MockCallback(&result)));

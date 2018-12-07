@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,15 +30,20 @@
 #include "gui/config_dialog/roman_table_editor.h"
 
 #include <QtGui/QtGui>
+#include <QtWidgets/QMenu>
+#include <QtWidgets/QMessageBox>
+
 #include <cctype>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
+
 #include "base/config_file_stream.h"
 #include "base/logging.h"
 #include "base/util.h"
 #include "gui/base/table_util.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 
 namespace mozc {
 namespace gui {
@@ -84,10 +89,11 @@ RomanTableEditorDialog::RomanTableEditorDialog(QWidget *parent)
 RomanTableEditorDialog::~RomanTableEditorDialog() {}
 
 string RomanTableEditorDialog::GetDefaultRomanTable() {
-  scoped_ptr<istream> ifs(ConfigFileStream::LegacyOpen(kRomanTableFile));
+  std::unique_ptr<std::istream> ifs(
+      ConfigFileStream::LegacyOpen(kRomanTableFile));
   CHECK(ifs.get() != NULL);  // should never happen
   string line, result;
-  vector<string> fields;
+  std::vector<string> fields;
   while (getline(*ifs.get(), line)) {
     if (line.empty()) {
       continue;
@@ -111,10 +117,10 @@ string RomanTableEditorDialog::GetDefaultRomanTable() {
   return result;
 }
 
-bool RomanTableEditorDialog::LoadFromStream(istream *is) {
+bool RomanTableEditorDialog::LoadFromStream(std::istream *is) {
   CHECK(is);
   string line;
-  vector<string> fields;
+  std::vector<string> fields;
   mutable_table_widget()->setRowCount(0);
   mutable_table_widget()->verticalHeader()->hide();
 
@@ -164,7 +170,8 @@ bool RomanTableEditorDialog::LoadFromStream(istream *is) {
 }
 
 bool RomanTableEditorDialog::LoadDefaultRomanTable() {
-  scoped_ptr<istream> ifs(ConfigFileStream::LegacyOpen(kRomanTableFile));
+  std::unique_ptr<std::istream>
+      ifs(ConfigFileStream::LegacyOpen(kRomanTableFile));
   CHECK(ifs.get() != NULL);  // should never happen
   CHECK(LoadFromStream(ifs.get()));
   return true;

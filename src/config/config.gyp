@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -42,49 +42,8 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:config_file_stream',
-        'config_protocol',
+        '../protocol/protocol.gyp:config_proto',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {
-      'target_name': 'genproto_config',
-      'type': 'none',
-      'toolsets': ['host'],
-      'sources': [
-        'config.proto',
-      ],
-      'includes': [
-        '../protobuf/genproto.gypi',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {
-      'target_name': 'config_protocol',
-      'type': 'static_library',
-      'hard_dependency': 1,
-      'sources': [
-        '<(proto_out_dir)/<(relative_dir)/config.pb.cc',
-      ],
-      'dependencies': [
-        '../protobuf/protobuf.gyp:protobuf',
-        'genproto_config#host',
-      ],
-      'export_dependent_settings': [
-        'genproto_config#host',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'stats_config_util',
@@ -95,17 +54,12 @@
       'dependencies': [
         'config_handler',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'conditions': [
         ['(target_platform=="Android") or '
          '(target_platform=="NaCl" and _toolset=="target")', {
           'dependencies': [
             'config_handler',
-            'config_protocol',
+            '../protocol/protocol.gyp:config_proto',
           ],
         }],
       ],
@@ -118,18 +72,13 @@
       ],
       'dependencies': [
         'config_handler',
-        'config_protocol',
         '../base/base.gyp:base',
         '../base/base.gyp:config_file_stream',
+        '../protocol/protocol.gyp:config_proto',
         # storage.gyp:storage is depended by character_form_manager.
         # TODO(komatsu): delete this line.
         '../storage/storage.gyp:storage',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
+      ]
     },
   ],
 }

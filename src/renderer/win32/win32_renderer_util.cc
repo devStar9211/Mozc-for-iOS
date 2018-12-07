@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,31 +31,23 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlapp.h>
 #include <atlgdi.h>
 #include <atlmisc.h>
+#include <winuser.h>
 
-// undef min macro, which conflicts with std::numeric_limits<int>::min().
-#if defined(min)
-#undef min
-#endif  // min
-
-// undef max macro, which conflicts with std::numeric_limits<int>::max().
-#if defined(max)
-#undef max
-#endif  // max
-
+#include <algorithm>
 #include <limits>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "base/logging.h"
+#include "base/system_util.h"
 #include "base/util.h"
 #include "base/win_util.h"
-#include "renderer/renderer_command.pb.h"
+#include "protocol/renderer_command.pb.h"
 #include "renderer/win32/win32_font_util.h"
 
 namespace mozc {
@@ -181,6 +173,15 @@ CPoint GetBasePositionFromExcludeRect(const CRect &exclude_rect,
   return CPoint(exclude_rect.left, exclude_rect.bottom);
 }
 
+CPoint GetBasePositionFromIMECHARPOSITION(const IMECHARPOSITION &char_pos,
+                                          bool is_vertical) {
+  if (is_vertical) {
+    return CPoint(char_pos.pt.x - char_pos.cLineHeight, char_pos.pt.y);
+  }
+  // Horizontal
+  return CPoint(char_pos.pt.x, char_pos.pt.y + char_pos.cLineHeight);
+}
+
 // Returns false if given |form| should be ignored for some compatibility
 // reason.  Otherwise, returns true.
 bool IsCompatibleCompositionForm(const CompositionForm &form,
@@ -192,13 +193,8 @@ bool IsCompatibleCompositionForm(const CompositionForm &form,
     return true;
   }
 
-  // TODO(yukawa): Stop supporting |deprecated_style()|.
-  const uint32 style_bits =
-      (form.has_deprecated_style() ? form.deprecated_style()
-                                   : form.style_bits());
-
   // Note that CompositionForm::DEFAULT is defined as 0.
-  if (style_bits != CompositionForm::DEFAULT) {
+  if (form.style_bits() != CompositionForm::DEFAULT) {
     return true;
   }
 
@@ -242,7 +238,7 @@ bool ExtractParams(
   if (!app_info.has_target_window_handle()) {
     return false;
   }
-  const HWND target_window = reinterpret_cast<HWND>(
+  const HWND target_window = WinUtil::DecodeWindowHandle(
       app_info.target_window_handle());
 
   *params->window_handle.mutable_value() = target_window;
@@ -288,10 +284,7 @@ bool ExtractParams(
     const commands::RendererCommand::CandidateForm &form =
         app_info.candidate_form();
 
-    // TODO(yukawa): Stop supporting |deprecated_style()|.
-    const uint32 candidate_style_bits =
-        (form.has_deprecated_style() ? form.deprecated_style()
-                                     : form.style_bits());
+    const uint32 candidate_style_bits = form.style_bits();
 
     const bool has_candidate_pos_style_bit =
         ((candidate_style_bits & CandidateForm::CANDIDATEPOS) ==
@@ -368,7 +361,7 @@ bool ExtractParams(
         caret_info.has_caret_rect() &&
         IsValidRect(caret_info.caret_rect()) &&
         caret_info.has_target_window_handle()) {
-      const HWND caret_window = reinterpret_cast<HWND>(
+      const HWND caret_window = WinUtil::DecodeWindowHandle(
           caret_info.target_window_handle());
       const CRect caret_rect_in_client_coord(ToRect(caret_info.caret_rect()));
       // It seems (0, 0, 0, 0) represents that the application does not have a
@@ -419,10 +412,30 @@ bool ExtractParams(
   return true;
 }
 
-wstring ComposePreeditText(const commands::Preedit &preedit,
+bool CanUseExcludeRegionInCandidateFrom(
+    const CandidateWindowLayoutParams &params,
+    int compatibility_mode,
+    bool for_suggestion) {
+  if (for_suggestion &&
+      ((compatibility_mode & CAN_USE_CANDIDATE_FORM_FOR_SUGGEST) !=
+       CAN_USE_CANDIDATE_FORM_FOR_SUGGEST)) {
+    // This is suggestion and |CAN_USE_CANDIDATE_FORM_FOR_SUGGEST| is not
+    // specified.  We cannot assume that |CANDIDATEFORM| is valid in this case.
+    return false;
+  }
+  if (!params.candidate_form.has_value()) {
+    return false;
+  }
+  if (!params.candidate_form.value().has_exclude_region()) {
+    return false;
+  }
+  return true;
+}
+
+std::wstring ComposePreeditText(const commands::Preedit &preedit,
                            string *preedit_utf8,
-                           vector<int> *segment_indices,
-                           vector<CharacterRange> *segment_ranges) {
+                          std::vector<int> *segment_indices,
+                          std::vector<CharacterRange> *segment_ranges) {
   if (preedit_utf8 != NULL) {
     preedit_utf8->clear();
   }
@@ -432,12 +445,12 @@ wstring ComposePreeditText(const commands::Preedit &preedit,
   if (segment_ranges != NULL) {
     segment_ranges->clear();
   }
-  wstring value;
+  std::wstring value;
   int total_characters = 0;
   for (size_t segment_index = 0; segment_index < preedit.segment_size();
        ++segment_index) {
     const commands::Preedit::Segment &segment = preedit.segment(segment_index);
-    wstring segment_value;
+    std::wstring segment_value;
     mozc::Util::UTF8ToWide(segment.value(), &segment_value);
     value.append(segment_value);
     if (preedit_utf8 != NULL) {
@@ -462,10 +475,10 @@ wstring ComposePreeditText(const commands::Preedit &preedit,
 
 bool CalcLayoutWithTextWrappingInternal(
     CDCHandle dc,
-    const wstring &str,
+    const std::wstring &str,
     const int maximum_line_length,
     const int initial_offset,
-    vector<LineLayout> *line_layouts) {
+   std::vector<LineLayout> *line_layouts) {
   DCHECK(line_layouts != NULL);
   if (initial_offset < 0 || maximum_line_length <= 0 ||
       maximum_line_length < initial_offset) {
@@ -545,7 +558,7 @@ bool CalcLayoutWithTextWrappingInternal(
       } else {
         CSize line_size;
         int allowable_chars_for_confirmation = 0;
-        unique_ptr<int[]> size_buffer(new int[allowable_chars]);
+        std::unique_ptr<int[]> size_buffer(new int[allowable_chars]);
         result = dc.GetTextExtentExPoint(
             layout.text.c_str(),
             layout.text.size(),
@@ -650,7 +663,8 @@ class NativeWorkingAreaAPI : public WorkingAreaInterface {
 class NativeWindowPositionAPI : public WindowPositionInterface {
  public:
   NativeWindowPositionAPI()
-    : logical_to_physical_point_(GetLogicalToPhysicalPoint()) {
+      : logical_to_physical_point_for_per_monitor_dpi_(
+            GetLogicalToPhysicalPointForPerMonitorDPI()) {
   }
 
   virtual ~NativeWindowPositionAPI() {}
@@ -665,13 +679,7 @@ class NativeWindowPositionAPI : public WindowPositionInterface {
     if (!::IsWindow(window_handle)) {
       return false;
     }
-    if (logical_to_physical_point_ == NULL) {
-      // In Windows XP, LogicalToPhysicalPoint API is not available.
-      // In this case, we simply returns the specified coordinate and returns
-      // true.
-      *physical_coordinate = logical_coordinate;
-      return true;
-    }
+
     // The attached window is likely to be a child window but only root
     // windows are fully supported by LogicalToPhysicalPoint API.  Using
     // root window handle instead of target window handle is likely to make
@@ -689,8 +697,21 @@ class NativeWindowPositionAPI : public WindowPositionInterface {
     // coordinates to a DPI-aware process and convert them to physical screen
     // coordinates by LogicalToPhysicalPoint API.
     *physical_coordinate = logical_coordinate;
-    return logical_to_physical_point_(root_window_handle,
-                                      physical_coordinate) != FALSE;
+
+    // Despite its name, LogicalToPhysicalPoint API no longer converts
+    // coordinates on Windows 8.1 and later. We must use
+    // LogicalToPhysicalPointForPerMonitorDPI API instead when it is available.
+    // See http://go.microsoft.com/fwlink/?LinkID=307061
+    if (SystemUtil::IsWindows8_1OrLater()) {
+      if (logical_to_physical_point_for_per_monitor_dpi_ == nullptr) {
+        return false;
+      }
+      return logical_to_physical_point_for_per_monitor_dpi_(
+          root_window_handle, physical_coordinate) != FALSE;
+    }
+    // On Windows 8 and prior, it's OK to rely on LogicalToPhysicalPoint API.
+    return ::LogicalToPhysicalPoint(
+        root_window_handle, physical_coordinate) != FALSE;
   }
 
   // This method is not const to implement Win32WindowInterface.
@@ -721,7 +742,8 @@ class NativeWindowPositionAPI : public WindowPositionInterface {
   }
 
   // This method is not const to implement Win32WindowInterface.
-  virtual bool GetWindowClassName(HWND window_handle, wstring *class_name) {
+  virtual bool GetWindowClassName(HWND window_handle,
+                                  std::wstring *class_name) {
     if (class_name == NULL) {
       return false;
     }
@@ -738,39 +760,32 @@ class NativeWindowPositionAPI : public WindowPositionInterface {
   }
 
  private:
-  typedef BOOL (WINAPI *FPLogicalToPhysicalPoint)(HWND window_handle,
-                                                  POINT *point);
-  static FPLogicalToPhysicalPoint GetLogicalToPhysicalPoint() {
-    // LogicalToPhysicalPoint API is available in Vista or later.
+  typedef BOOL (WINAPI *LogicalToPhysicalPointForPerMonitorDPIFunc)(
+      HWND window_handle, POINT *point);
+  static LogicalToPhysicalPointForPerMonitorDPIFunc
+  GetLogicalToPhysicalPointForPerMonitorDPI() {
+    // LogicalToPhysicalPointForPerMonitorDPI API is available on Windows 8.1
+    // and later.
+    if (!SystemUtil::IsWindows8_1OrLater()) {
+      return nullptr;
+    }
+
     const HMODULE module = WinUtil::GetSystemModuleHandle(L"user32.dll");
     if (module == nullptr) {
       return nullptr;
     }
-    // Despite its name, LogicalToPhysicalPoint API no longer converts
-    // coordinates on Windows 8.1 and later. We must use
-    // LogicalToPhysicalPointForPerMonitorDPI API instead when it is available.
-    // See http://go.microsoft.com/fwlink/?LinkID=307061
-    void *function = ::GetProcAddress(
-        module, "LogicalToPhysicalPointForPerMonitorDPI");
-    if (function == nullptr) {
-      // When LogicalToPhysicalPointForPerMonitorDPI API does not exist but
-      // LogicalToPhysicalPoint API exists, LogicalToPhysicalPoint works fine.
-      // This is the case on Windows Vista, Windows 7 and Windows 8.
-      function = ::GetProcAddress(module, "LogicalToPhysicalPoint");
-      if (function == nullptr) {
-        return nullptr;
-      }
-    }
-    return reinterpret_cast<FPLogicalToPhysicalPoint>(function);
+    return reinterpret_cast<LogicalToPhysicalPointForPerMonitorDPIFunc>(
+        ::GetProcAddress(module, "LogicalToPhysicalPointForPerMonitorDPI"));
   }
 
-  FPLogicalToPhysicalPoint logical_to_physical_point_;
+  const LogicalToPhysicalPointForPerMonitorDPIFunc
+  logical_to_physical_point_for_per_monitor_dpi_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeWindowPositionAPI);
 };
 
 struct WindowInfo {
-  wstring class_name;
+  std::wstring class_name;
   CRect window_rect;
   CPoint client_area_offset;
   CSize client_area_size;
@@ -871,7 +886,8 @@ class WindowPositionEmulatorImpl : public WindowPositionEmulator {
 
   // This method wraps API call of GetAncestor/GA_ROOT.
   virtual HWND GetRootWindow(HWND window_handle) {
-    const map<HWND, HWND>::const_iterator it = root_map_.find(window_handle);
+    const std::map<HWND, HWND>::const_iterator it =
+        root_map_.find(window_handle);
     if (it == root_map_.end()) {
       return window_handle;
     }
@@ -879,7 +895,8 @@ class WindowPositionEmulatorImpl : public WindowPositionEmulator {
   }
 
   // This method is not const to implement Win32WindowInterface.
-  virtual bool GetWindowClassName(HWND window_handle, wstring *class_name) {
+  virtual bool GetWindowClassName(HWND window_handle,
+                                  std::wstring *class_name) {
     if (class_name == NULL) {
       return false;
     }
@@ -921,7 +938,7 @@ class WindowPositionEmulatorImpl : public WindowPositionEmulator {
   }
 
   virtual HWND RegisterWindow(
-      const wstring &class_name, const RECT &window_rect,
+      const std::wstring &class_name, const RECT &window_rect,
       const POINT &client_area_offset, const SIZE &client_area_size,
       double scale_factor) {
     const HWND hwnd = GetNextWindowHandle();
@@ -941,10 +958,10 @@ class WindowPositionEmulatorImpl : public WindowPositionEmulator {
   HWND GetNextWindowHandle() const {
     if (window_map_.size() > 0) {
       const HWND last_hwnd = window_map_.rbegin()->first;
-      return reinterpret_cast<HWND>(
-          reinterpret_cast<BYTE *>(last_hwnd) + sizeof(last_hwnd));
+      return WinUtil::DecodeWindowHandle(
+          WinUtil::EncodeWindowHandle(last_hwnd) + 7);
     }
-    return reinterpret_cast<HWND>(0x12345678);
+    return WinUtil::DecodeWindowHandle(0x12345678);
   }
 
   // This method is not const to implement Win32WindowInterface.
@@ -955,8 +972,8 @@ class WindowPositionEmulatorImpl : public WindowPositionEmulator {
     return &(window_map_.find(hwnd)->second);
   }
 
-  map<HWND, WindowInfo> window_map_;
-  map<HWND, HWND> root_map_;
+  std::map<HWND, WindowInfo> window_map_;
+  std::map<HWND, HWND> root_map_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowPositionEmulatorImpl);
 };
@@ -1109,6 +1126,7 @@ bool LayoutCandidateWindowByCandidateForm(
 bool LayoutCandidateWindowByCompositionTarget(
     const CandidateWindowLayoutParams &params,
     int compatibility_mode,
+    bool for_suggestion,
     LayoutManager *layout_manager,
     CandidateWindowLayout *candidate_layout) {
   DCHECK(candidate_layout);
@@ -1150,9 +1168,15 @@ bool LayoutCandidateWindowByCompositionTarget(
   //    v
   //   (Base Line)
 
+  const bool can_use_candidate_form_exclude_region =
+      CanUseExcludeRegionInCandidateFrom(
+          params, compatibility_mode, for_suggestion);
   const bool is_vertical = IsVerticalWriting(params);
   CRect exclude_region_in_logical_coord;
-  if (is_vertical) {
+  if (can_use_candidate_form_exclude_region) {
+    exclude_region_in_logical_coord =
+        params.candidate_form.value().exclude_region();
+  } else if (is_vertical) {
     // Vertical
     exclude_region_in_logical_coord.left =
         char_pos.pt.x - char_pos.cLineHeight;
@@ -1169,8 +1193,7 @@ bool LayoutCandidateWindowByCompositionTarget(
   }
 
   const CPoint base_pos_in_logical_coord =
-      GetBasePositionFromExcludeRect(exclude_region_in_logical_coord,
-                                     is_vertical);
+      GetBasePositionFromIMECHARPOSITION(char_pos, is_vertical);
 
   CPoint base_pos_in_physical_coord;
   layout_manager->GetPointInPhysicalCoords(
@@ -1646,10 +1669,10 @@ void IndicatorWindowLayout::Clear() {
 
 bool LayoutManager::CalcLayoutWithTextWrapping(
     const LOGFONTW &font,
-    const wstring &text,
+    const std::wstring &text,
     int maximum_line_length,
     int initial_offset,
-    vector<LineLayout> *line_layouts) {
+   std::vector<LineLayout> *line_layouts) {
   if (line_layouts == NULL) {
     return false;
   }
@@ -1742,7 +1765,7 @@ LayoutManager::~LayoutManager() {}
 //   more easily.
 bool LayoutManager::LayoutCompositionWindow(
     const commands::RendererCommand &command,
-    vector<CompositionWindowLayout> *composition_window_layouts,
+   std::vector<CompositionWindowLayout> *composition_window_layouts,
     CandidateWindowLayout *candidate_layout) const {
   if (composition_window_layouts != NULL) {
     composition_window_layouts->clear();
@@ -1761,7 +1784,7 @@ bool LayoutManager::LayoutCompositionWindow(
     return true;
   }
   const mozc::commands::Output &output = command.output();
-  const HWND target_window_handle = reinterpret_cast<HWND>(
+  const HWND target_window_handle = WinUtil::DecodeWindowHandle(
       command.application_info().target_window_handle());
 
   const mozc::commands::RendererCommand::ApplicationInfo &app =
@@ -1811,11 +1834,7 @@ bool LayoutManager::LayoutCompositionWindow(
     }
   }
 
-  // TODO(yukawa): Stop supporting |deprecated_style()|.
-  const uint32 style_bits =
-      (composition_form.has_deprecated_style()
-          ? composition_form.deprecated_style()
-          : composition_form.style_bits());
+  const uint32 style_bits = composition_form.style_bits();
 
   // Check the availability of optional fields.
   // Note that currently we always use |current_position| field even when
@@ -1914,13 +1933,13 @@ bool LayoutManager::LayoutCompositionWindow(
   }
 
   string preedit_utf8;
-  vector<int> segment_indices;
-  vector<CharacterRange> segment_lengths;
-  const wstring composition_text = ComposePreeditText(
+  std::vector<int> segment_indices;
+  std::vector<CharacterRange> segment_lengths;
+  const std::wstring composition_text = ComposePreeditText(
       preedit, &preedit_utf8, &segment_indices, &segment_lengths);
   DCHECK_EQ(composition_text.size(), segment_indices.size());
   DCHECK_EQ(preedit.segment_size(), segment_lengths.size());
-  vector<mozc::renderer::win32::LineLayout> layouts;
+  std::vector<mozc::renderer::win32::LineLayout> layouts;
   bool result = false;
   {
     const int offset = is_vertical
@@ -2118,10 +2137,10 @@ bool LayoutManager::LayoutCompositionWindow(
         continue;
       }
       const int segment_begin =
-          max(segment_lengths[segment_index].begin, total_characters) -
+          std::max(segment_lengths[segment_index].begin, total_characters) -
           total_characters;
       const int segment_end =
-          min(segment_lengths[segment_index].begin +
+          std::min(segment_lengths[segment_index].begin +
               segment_lengths[segment_index].length,
               next_total_characters) - total_characters;
       if (segment_begin >= segment_end) {
@@ -2185,12 +2204,12 @@ bool LayoutManager::LayoutCompositionWindow(
     // Initialize the |exclusion_area| with invalid data. These values will
     // be updated to be valid at the first turn of the next for-loop.
     // For example, |exclusion_area.left| will be updated as follows.
-    //   exclusion_area.left = min(exclusion_area.left,
-    //                             numeric_limits<int>::max());
-    CRect exclusion_area(numeric_limits<int>::max(),
-                         numeric_limits<int>::max(),
-                         numeric_limits<int>::min(),
-                         numeric_limits<int>::min());
+    //   exclusion_area.left = std::min(exclusion_area.left,
+    //                             std::numeric_limits<int>::max());
+    CRect exclusion_area(std::numeric_limits<int>::max(),
+                         std::numeric_limits<int>::max(),
+                         std::numeric_limits<int>::min(),
+                         std::numeric_limits<int>::min());
 
     for (size_t i = 0; i < composition_window_layouts->size(); ++i) {
       const CompositionWindowLayout &layout = composition_window_layouts->at(i);
@@ -2198,14 +2217,14 @@ bool LayoutManager::LayoutCompositionWindow(
       text_area_in_screen_coord.OffsetRect(
           layout.window_position_in_screen_coordinate.left,
           layout.window_position_in_screen_coordinate.top);
-      exclusion_area.left = min(exclusion_area.left,
-                                text_area_in_screen_coord.left);
-      exclusion_area.top = min(exclusion_area.top,
-                               text_area_in_screen_coord.top);
-      exclusion_area.right = max(exclusion_area.right,
-                                 text_area_in_screen_coord.right);
-      exclusion_area.bottom = max(exclusion_area.bottom,
-                                  text_area_in_screen_coord.bottom);
+      exclusion_area.left = std::min(exclusion_area.left,
+                                     text_area_in_screen_coord.left);
+      exclusion_area.top = std::min(exclusion_area.top,
+                                    text_area_in_screen_coord.top);
+      exclusion_area.right = std::max(exclusion_area.right,
+                                      text_area_in_screen_coord.right);
+      exclusion_area.bottom = std::max(exclusion_area.bottom,
+                                       text_area_in_screen_coord.bottom);
     }
 
     CPoint cursor_pos;
@@ -2429,8 +2448,9 @@ bool LayoutManager::LayoutCandidateWindowForSuggestion(
     return false;
   }
 
+  const bool is_suggestion = true;
   if (LayoutCandidateWindowByCompositionTarget(
-          params, compatibility_mode, this, candidate_layout)) {
+          params, compatibility_mode, is_suggestion, this, candidate_layout)) {
     DCHECK(candidate_layout->initialized());
     return true;
   }
@@ -2475,8 +2495,9 @@ bool LayoutManager::LayoutCandidateWindowForConversion(
     return false;
   }
 
+  const bool is_suggestion = false;
   if (LayoutCandidateWindowByCompositionTarget(
-          params, compatibility_mode, this, candidate_layout)) {
+          params, compatibility_mode, is_suggestion, this, candidate_layout)) {
     DCHECK(candidate_layout->initialized());
     return true;
   }
@@ -2513,14 +2534,14 @@ int LayoutManager::GetCompatibilityMode(
   if (!app_info.has_target_window_handle()) {
     return COMPATIBILITY_MODE_NONE;
   }
-  const HWND target_window = reinterpret_cast<HWND>(
+  const HWND target_window = WinUtil::DecodeWindowHandle(
       app_info.target_window_handle());
 
   if (!window_position_->IsWindow(target_window)) {
     return COMPATIBILITY_MODE_NONE;
   }
 
-  wstring class_name;
+  std::wstring class_name;
   if (!window_position_->GetWindowClassName(target_window, &class_name)) {
     return COMPATIBILITY_MODE_NONE;
   }
@@ -2531,6 +2552,7 @@ int LayoutManager::GetCompatibilityMode(
       const wchar_t *kUseCandidateFormForSuggest[] = {
           L"Chrome_RenderWidgetHostHWND",
           L"JsTaroCtrl",
+          L"MozillaWindowClass",
           L"OperaWindowClass",
           L"QWidget",
       };

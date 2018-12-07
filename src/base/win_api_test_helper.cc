@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,6 +37,7 @@
 #include <memory>
 #include <vector>
 
+#include "base/logging.h"
 #include "base/util.h"
 
 namespace mozc {
@@ -98,7 +99,7 @@ class ThunkRewriter {
 class HookTargetInfo {
  public:
   explicit HookTargetInfo(
-      const vector<WinAPITestHelper::HookRequest> &requests) {
+      const std::vector<WinAPITestHelper::HookRequest> &requests) {
     for (size_t i = 0; i < requests.size(); ++i) {
       const auto &request = requests[i];
       HMODULE module_handle = nullptr;
@@ -147,7 +148,7 @@ class HookTargetInfo {
   }
 
  private:
-  map<string, map<FunctionPointer, FunctionPointer>> info_;
+  std::map<string, std::map<FunctionPointer, FunctionPointer>> info_;
 };
 
 class PortableExecutableImage {
@@ -285,7 +286,7 @@ class ImageThunkDataIterator {
 
 class WinAPITestHelper::RestoreInfo {
  public:
-  vector<ThunkRewriter> rewrites;
+  std::vector<ThunkRewriter> rewrites;
 };
 
 WinAPITestHelper::HookRequest::HookRequest(
@@ -299,7 +300,7 @@ WinAPITestHelper::HookRequest::HookRequest(
 // static
 WinAPITestHelper::RestoreInfoHandle WinAPITestHelper::DoHook(
     HMODULE target_module,
-    const vector<WinAPITestHelper::HookRequest> &requests) {
+    const std::vector<WinAPITestHelper::HookRequest> &requests) {
   const HookTargetInfo target_info(requests);
 
   // Following code skips some data validations as this code is only used in

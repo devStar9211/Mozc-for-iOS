@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -52,7 +52,7 @@ class CompositionWindowList {
   virtual void Destroy() = 0;
   virtual void Hide() = 0;
   virtual void UpdateLayout(
-      const vector<CompositionWindowLayout> &layouts) = 0;
+      const std::vector<CompositionWindowLayout> &layouts) = 0;
 
   static CompositionWindowList *CreateInstance();
 

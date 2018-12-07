@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,13 +31,10 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlapp.h>
 #include <atlmisc.h>
 #include <atlgdi.h>
-
-#include <shlwapi.h>
 
 #include "base/logging.h"
 #include "base/mmap.h"
@@ -168,8 +165,7 @@ TEST_F(TextIconTest, CreateMonochromeIcon) {
   }
 
   {
-    // "あ"
-    const char kText[] = "\xE3\x81\x82";
+    const char kText[] = "あ";
     const size_t kIconSize = 20;
     CIcon icon = TextIcon::CreateMonochromeIcon(
         kIconSize, kIconSize, kText, GetGothicFontName(),

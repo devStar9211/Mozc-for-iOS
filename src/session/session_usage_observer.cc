@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,19 +34,19 @@
 #include <string>
 #include <vector>
 
+#include "base/clock.h"
 #include "base/logging.h"
 #include "base/mutex.h"
 #include "base/number_util.h"
 #include "base/port.h"
 #include "base/scheduler.h"
-#include "base/singleton.h"
-#include "base/util.h"
 #include "config/stats_config_util.h"
-#include "session/commands.pb.h"
-#include "session/state.pb.h"
+#include "protocol/commands.pb.h"
+#include "protocol/state.pb.h"
 #include "usage_stats/usage_stats.h"
 #include "usage_stats/usage_stats.pb.h"
 
+using mozc::protocol::SessionState;
 using mozc::usage_stats::UsageStats;
 
 namespace mozc {
@@ -55,7 +55,12 @@ namespace session {
 namespace {
 Mutex g_stats_cache_mutex;  // NOLINT
 const char kStatsJobName[] = "SaveCachedStats";
+#ifndef OS_ANDROID
 const uint32 kSaveCacheStatsInterval = 10 * 60 * 1000;  // 10 min
+#else  // !OS_ANDROID
+// Reduce the frequency to save battery.
+const uint32 kSaveCacheStatsInterval = 2 * 60 * 60 * 1000;  // 2 hours
+#endif  // !OS_ANDROID
 
 const size_t kMaxSession = 64;
 
@@ -73,7 +78,7 @@ void AddToDoubleValueStats(
 uint64 GetTimeInMilliSecond() {
   uint64 second = 0;
   uint32 micro_second = 0;
-  Util::GetTimeOfDay(&second, &micro_second);
+  Clock::GetTimeOfDay(&second, &micro_second);
   return second * 1000 + micro_second / 1000;
 }
 
@@ -155,14 +160,14 @@ bool SessionUsageObserver::SaveCachedStats(void *data) {
 
 void SessionUsageObserver::EvalCreateSession(
     const commands::Input &input, const commands::Output &output,
-    map<uint64, SessionState> *states) {
+    std::map<uint64, SessionState> *states) {
   // Number of create session
   SessionState state;
   state.set_id(output.id());
   state.set_created_time(GetTimeInMilliSecond());
   // TODO(toshiyuki): LRU?
   if (states->size() <= kMaxSession) {
-    states->insert(make_pair(output.id(), state));
+    states->insert(std::make_pair(output.id(), state));
   }
 }
 
@@ -328,8 +333,79 @@ void SessionUsageObserver::UpdateClientSideStats(const commands::Input &input,
       UsageStats::SetInteger("SoftwareKeyboardLayoutPortrait",
                              input.command().usage_stats_event_int_value());
       break;
+    case commands::SessionCommand::SUBMITTED_CANDIDATE_ROW_0:
+      UsageStats::IncrementCount("SubmittedCandidateRow0");
+      break;
+    case commands::SessionCommand::SUBMITTED_CANDIDATE_ROW_1:
+      UsageStats::IncrementCount("SubmittedCandidateRow1");
+      break;
+    case commands::SessionCommand::SUBMITTED_CANDIDATE_ROW_2:
+      UsageStats::IncrementCount("SubmittedCandidateRow2");
+      break;
+    case commands::SessionCommand::SUBMITTED_CANDIDATE_ROW_3:
+      UsageStats::IncrementCount("SubmittedCandidateRow3");
+      break;
+    case commands::SessionCommand::SUBMITTED_CANDIDATE_ROW_4:
+      UsageStats::IncrementCount("SubmittedCandidateRow4");
+      break;
+    case commands::SessionCommand::SUBMITTED_CANDIDATE_ROW_5:
+      UsageStats::IncrementCount("SubmittedCandidateRow5");
+      break;
+    case commands::SessionCommand::SUBMITTED_CANDIDATE_ROW_6:
+      UsageStats::IncrementCount("SubmittedCandidateRow6");
+      break;
+    case commands::SessionCommand::SUBMITTED_CANDIDATE_ROW_7:
+      UsageStats::IncrementCount("SubmittedCandidateRow7");
+      break;
+    case commands::SessionCommand::SUBMITTED_CANDIDATE_ROW_8:
+      UsageStats::IncrementCount("SubmittedCandidateRow8");
+      break;
+    case commands::SessionCommand::SUBMITTED_CANDIDATE_ROW_9:
+      UsageStats::IncrementCount("SubmittedCandidateRow9");
+      break;
+    case commands::SessionCommand::SUBMITTED_CANDIDATE_ROW_GE10:
+      UsageStats::IncrementCount("SubmittedCandidateRowGE10");
+      break;
+    case commands::SessionCommand::KEYBOARD_FOLD_EVENT:
+      UsageStats::IncrementCount("KeyboardFoldEvent");
+      break;
+    case commands::SessionCommand::KEYBOARD_EXPAND_EVENT:
+      UsageStats::IncrementCount("KeyboardExpandEvent");
+      break;
+    case commands::SessionCommand::MUSHROOM_SELECTION_DIALOG_OPEN_EVENT:
+      UsageStats::IncrementCount("MushroomSelectionDialogOpen");
+      break;
+    case commands::SessionCommand::SOFTWARE_KEYBOARD_HEIGHT_DIP_LANDSCAPE:
+      LOG_IF(DFATAL, !input.command().has_usage_stats_event_int_value())
+          << "SOFTWARE_KEYBOARD_HEIGHT_DIP_LANDSCAPE stats"
+          << " must have int value.";
+      UsageStats::SetInteger("SoftwareKeyboardHeightDipLandscape",
+                             input.command().usage_stats_event_int_value());
+      break;
+    case commands::SessionCommand::SOFTWARE_KEYBOARD_HEIGHT_DIP_PORTRAIT:
+      LOG_IF(DFATAL, !input.command().has_usage_stats_event_int_value())
+          << "SOFTWARE_KEYBOARD_HEIGHT_DIP_PORTRAIT stats must have int value.";
+      UsageStats::SetInteger("SoftwareKeyboardHeightDipPortrait",
+                             input.command().usage_stats_event_int_value());
+      break;
+    case commands::SessionCommand
+        ::SOFTWARE_KEYBOARD_LAYOUT_ADJUSTMENT_ENABLED_LANDSCAPE:
+      LOG_IF(DFATAL, !input.command().has_usage_stats_event_int_value())
+          << "SOFTWARE_KEYBOARD_LAYOUT_ADJUSTMENT_ENABLED_LANDSCAPE stats"
+          << " must have int value.";
+      UsageStats::SetBoolean("SoftwareKeyboardLayoutAdjustmentEnabledLandscape",
+                             input.command().usage_stats_event_int_value() > 0);
+      break;
+    case commands::SessionCommand
+        ::SOFTWARE_KEYBOARD_LAYOUT_ADJUSTMENT_ENABLED_PORTRAIT:
+      LOG_IF(DFATAL, !input.command().has_usage_stats_event_int_value())
+          << "SOFTWARE_KEYBOARD_LAYOUT_ADJUSTMENT_ENABLED_PORTRAIT stats"
+          << " must have int value.";
+      UsageStats::SetBoolean("SoftwareKeyboardLayoutAdjustmentEnabledPortrait",
+                             input.command().usage_stats_event_int_value() > 0);
+      break;
     default:
-      LOG(WARNING) << "client side usage stats event has invalid category";
+      LOG(DFATAL) << "client side usage stats event has invalid category";
       break;
   }
 }
@@ -453,7 +529,7 @@ void SessionUsageObserver::EvalCommandHandler(
     return;
   }
 
-  map<uint64, SessionState>::iterator iter = states_.find(input.id());
+  std::map<uint64, SessionState>::iterator iter = states_.find(input.id());
   if (iter == states_.end()) {
     LOG(WARNING) << "unknown session";
     // Unknown session
@@ -519,9 +595,6 @@ void SessionUsageObserver::EvalCommandHandler(
       (input.context().has_input_field_type())) {
     state->set_input_field_type(input.context().input_field_type());
   }
-}
-
-void SessionUsageObserver::Reload() {
 }
 
 }  // namespace session

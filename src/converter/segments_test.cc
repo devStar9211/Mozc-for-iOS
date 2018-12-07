@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,57 +35,12 @@
 #include "base/number_util.h"
 #include "base/system_util.h"
 #include "base/util.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
 #include "testing/base/public/gunit.h"
 
-DECLARE_string(test_tmpdir);
-
 namespace mozc {
 
-class SegmentsTest : public testing::Test {
- protected:
-  virtual void SetUp() {
-    SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
-    config::ConfigHandler::GetDefaultConfig(&default_config_);
-    config::ConfigHandler::SetConfig(default_config_);
-  }
-
-  virtual void TearDown() {
-    config::ConfigHandler::SetConfig(default_config_);
-  }
- private:
-  config::Config default_config_;
-};
-
-class CandidateTest : public testing::Test {
- protected:
-  virtual void SetUp() {
-    SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
-    config::ConfigHandler::GetDefaultConfig(&default_config_);
-    config::ConfigHandler::SetConfig(default_config_);
-  }
-
- private:
-  config::Config default_config_;
-};
-
-class SegmentTest : public testing::Test {
- protected:
-  virtual void SetUp() {
-    SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
-    config::ConfigHandler::GetDefaultConfig(&default_config_);
-    config::ConfigHandler::SetConfig(default_config_);
-  }
-
-  virtual void TearDown() {
-    config::ConfigHandler::SetConfig(default_config_);
-  }
- private:
-  config::Config default_config_;
-};
-
-TEST_F(SegmentsTest, BasicTest) {
+TEST(SegmentsTest, BasicTest) {
   Segments segments;
 
   // flags
@@ -195,7 +150,7 @@ TEST_F(SegmentsTest, BasicTest) {
   EXPECT_EQ(0, segments.segments_size());
 }
 
-TEST_F(CandidateTest, BasicTest) {
+TEST(CandidateTest, BasicTest) {
   Segment segment;
 
   const char str[] = "this is a test";
@@ -269,7 +224,7 @@ TEST_F(CandidateTest, BasicTest) {
   EXPECT_EQ(cand[1], segment.mutable_candidate(2));
 }
 
-TEST_F(CandidateTest, CopyFrom) {
+TEST(CandidateTest, CopyFrom) {
   Segment::Candidate src, dest;
   src.Init();
 
@@ -290,7 +245,7 @@ TEST_F(CandidateTest, CopyFrom) {
   src.attributes = 6;
   src.style = NumberUtil::NumberString::NUMBER_CIRCLED;
   src.command = Segment::Candidate::DISABLE_PRESENTATION_MODE;
-  src.inner_segment_boundary.push_back(pair<int, int>(1, 3));
+  src.PushBackInnerSegmentBoundary(1, 3, 5, 7);
 
   dest.CopyFrom(src);
 
@@ -314,7 +269,7 @@ TEST_F(CandidateTest, CopyFrom) {
   EXPECT_EQ(src.inner_segment_boundary, dest.inner_segment_boundary);
 }
 
-TEST_F(CandidateTest, IsValid) {
+TEST(CandidateTest, IsValid) {
   Segment::Candidate c;
   c.Init();
   EXPECT_TRUE(c.IsValid());
@@ -339,26 +294,31 @@ TEST_F(CandidateTest, IsValid) {
   EXPECT_TRUE(c.IsValid());  // Empty inner_segment_boundary
 
   // Valid inner_segment_boundary.
-  c.inner_segment_boundary.push_back(pair<int, int>(1, 3));
-  c.inner_segment_boundary.push_back(pair<int, int>(2, 2));
+  c.inner_segment_boundary.push_back(
+      Segment::Candidate::EncodeLengths(1, 3, 8, 8));
+  c.inner_segment_boundary.push_back(
+      Segment::Candidate::EncodeLengths(2, 2, 3, 5));
   EXPECT_TRUE(c.IsValid());
 
   // Invalid inner_segment_boundary.
   c.inner_segment_boundary.clear();
-  c.inner_segment_boundary.push_back(pair<int, int>(1, 1));
-  c.inner_segment_boundary.push_back(pair<int, int>(2, 2));
-  c.inner_segment_boundary.push_back(pair<int, int>(3, 3));
+  c.inner_segment_boundary.push_back(
+      Segment::Candidate::EncodeLengths(1, 1, 2, 2));
+  c.inner_segment_boundary.push_back(
+      Segment::Candidate::EncodeLengths(2, 2, 3, 3));
+  c.inner_segment_boundary.push_back(
+      Segment::Candidate::EncodeLengths(3, 3, 4, 4));
   EXPECT_FALSE(c.IsValid());
 }
 
-TEST_F(SegmentsTest, RevertEntryTest) {
+TEST(SegmentsTest, RevertEntryTest) {
   Segments segments;
   EXPECT_EQ(0, segments.revert_entries_size());
 
   const int kSize = 10;
   for (int i = 0; i < kSize; ++i) {
     Segments::RevertEntry *e = segments.push_back_revert_entry();
-    e->key = "test" + NumberUtil::SimpleItoa(i);
+    e->key = "test" + std::to_string(i);
     e->id = i;
   }
 
@@ -367,12 +327,12 @@ TEST_F(SegmentsTest, RevertEntryTest) {
   for (int i = 0; i < kSize; ++i) {
     {
       const Segments::RevertEntry &e = segments.revert_entry(i);
-      EXPECT_EQ(string("test") + NumberUtil::SimpleItoa(i), e.key);
+      EXPECT_EQ(string("test") + std::to_string(i), e.key);
       EXPECT_EQ(i, e.id);
     }
     {
       Segments::RevertEntry *e = segments.mutable_revert_entry(i);
-      EXPECT_EQ(string("test") + NumberUtil::SimpleItoa(i), e->key);
+      EXPECT_EQ(string("test") + std::to_string(i), e->key);
       EXPECT_EQ(i, e->id);
     }
   }
@@ -380,12 +340,12 @@ TEST_F(SegmentsTest, RevertEntryTest) {
   for (int i = 0; i < kSize; ++i) {
     Segments::RevertEntry *e = segments.mutable_revert_entry(i);
     e->id = kSize - i;
-    e->key = "test2" + NumberUtil::SimpleItoa(i);
+    e->key = "test2" + std::to_string(i);
   }
 
   for (int i = 0; i < kSize; ++i) {
     const Segments::RevertEntry &e = segments.revert_entry(i);
-    EXPECT_EQ(string("test2") + NumberUtil::SimpleItoa(i), e.key);
+    EXPECT_EQ(string("test2") + std::to_string(i), e.key);
     EXPECT_EQ(kSize - i, e.id);
   }
 
@@ -403,7 +363,7 @@ TEST_F(SegmentsTest, RevertEntryTest) {
   EXPECT_EQ(0, segments.revert_entries_size());
 }
 
-TEST_F(SegmentsTest, CopyFromTest) {
+TEST(SegmentsTest, CopyFromTest) {
   Segments src;
 
   src.set_max_history_segments_size(1);
@@ -450,7 +410,7 @@ TEST_F(SegmentsTest, CopyFromTest) {
   }
 }
 
-TEST_F(CandidateTest, functional_key) {
+TEST(CandidateTest, functional_key) {
   Segment::Candidate candidate;
   candidate.Init();
 
@@ -481,7 +441,7 @@ TEST_F(CandidateTest, functional_key) {
   EXPECT_EQ("", candidate.functional_key());
 }
 
-TEST_F(CandidateTest, functional_value) {
+TEST(CandidateTest, functional_value) {
   Segment::Candidate candidate;
   candidate.Init();
 
@@ -512,7 +472,55 @@ TEST_F(CandidateTest, functional_value) {
   EXPECT_EQ("", candidate.functional_value());
 }
 
-TEST_F(SegmentTest, CopyFrom) {
+TEST(CandidateTest, InnerSegmentIterator) {
+  {
+    // For empty inner_segment_boundary, the initial state is done.
+    Segment::Candidate candidate;
+    candidate.Init();
+    candidate.key = "testfoobar";
+    candidate.value = "redgreenblue";
+    Segment::Candidate::InnerSegmentIterator iter(&candidate);
+    EXPECT_TRUE(iter.Done());
+  }
+  {
+    //           key: test | foobar
+    //         value:  red | greenblue
+    //   content key: test | foo
+    // content value:  red | green
+    Segment::Candidate candidate;
+    candidate.Init();
+    candidate.key = "testfoobar";
+    candidate.value = "redgreenblue";
+    candidate.PushBackInnerSegmentBoundary(4, 3, 4, 3);
+    candidate.PushBackInnerSegmentBoundary(6, 9, 3, 5);
+    std::vector<StringPiece> keys, values, content_keys, content_values;
+    for (Segment::Candidate::InnerSegmentIterator iter(&candidate);
+         !iter.Done(); iter.Next()) {
+      keys.push_back(iter.GetKey());
+      values.push_back(iter.GetValue());
+      content_keys.push_back(iter.GetContentKey());
+      content_values.push_back(iter.GetContentValue());
+    }
+
+    ASSERT_EQ(2, keys.size());
+    EXPECT_EQ("test", keys[0]);
+    EXPECT_EQ("foobar", keys[1]);
+
+    ASSERT_EQ(2, values.size());
+    EXPECT_EQ("red", values[0]);
+    EXPECT_EQ("greenblue", values[1]);
+
+    ASSERT_EQ(2, content_keys.size());
+    EXPECT_EQ("test", content_keys[0]);
+    EXPECT_EQ("foo", content_keys[1]);
+
+    ASSERT_EQ(2, content_values.size());
+    EXPECT_EQ("red", content_values[0]);
+    EXPECT_EQ("green", content_values[1]);
+  }
+}
+
+TEST(SegmentTest, CopyFrom) {
   Segment src, dest;
 
   src.set_key("key");
@@ -533,15 +541,15 @@ TEST_F(SegmentTest, CopyFrom) {
   EXPECT_EQ(src.meta_candidate(0).key, dest.meta_candidate(0).key);
 }
 
-TEST_F(SegmentTest, MetaCandidateTest) {
+TEST(SegmentTest, MetaCandidateTest) {
   Segment segment;
 
   EXPECT_EQ(0, segment.meta_candidates_size());
 
   const int kCandidatesSize = 5;
-  vector<string> values;
+  std::vector<string> values;
   for (size_t i = 0; i < kCandidatesSize; ++i) {
-    values.push_back(string('a' + i, 1));
+    values.push_back(string(1, 'a' + i));
   }
 
   // add_meta_candidate()
@@ -589,7 +597,7 @@ TEST_F(SegmentTest, MetaCandidateTest) {
 
   // mutable_meta_candidates
   {
-    vector<Segment::Candidate> *meta_candidates =
+    std::vector<Segment::Candidate> *meta_candidates =
         segment.mutable_meta_candidates();
     EXPECT_EQ(kCandidatesSize, meta_candidates->size());
     Segment::Candidate cand;
@@ -600,7 +608,7 @@ TEST_F(SegmentTest, MetaCandidateTest) {
 
   // meta_candidates
   {
-    const vector<Segment::Candidate> &meta_candidates =
+    const std::vector<Segment::Candidate> &meta_candidates =
         segment.meta_candidates();
     EXPECT_EQ(kCandidatesSize + 1, meta_candidates.size());
     for (size_t i = 0; i < kCandidatesSize; ++i) {

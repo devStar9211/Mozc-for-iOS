@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,10 +30,12 @@
 #ifndef MOZC_COMPOSER_INTERNAL_TYPING_MODEL_H_
 #define MOZC_COMPOSER_INTERNAL_TYPING_MODEL_H_
 
+#include <memory>
+
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "base/string_piece.h"
-#include "session/commands.pb.h"
+#include "data_manager/data_manager_interface.h"
+#include "protocol/commands.pb.h"
 // for FRIEND_TEST()
 #include "testing/base/public/gunit_prod.h"
 
@@ -52,17 +54,17 @@ class TypingModel {
               const uint8 *cost_table, size_t cost_table_size,
               const int32 *mapping_table);
 
-  virtual ~TypingModel() {}
+  virtual ~TypingModel();
 
   // Gets cost value from key.
   // virtual for mocking.
   virtual int GetCost(StringPiece key) const;
 
-  // Gets a TypingModel based on SpecialRomanjiTable.
-  // NULL if no corresponding model is available.
-  static const TypingModel *GetTypingModel(
-      const mozc::commands::Request::SpecialRomanjiTable
-          &special_romanji_table);
+  // Creates a TypingModel based on SpecialRomanjiTable.
+  // nullptr if no corresponding model is available.
+  static std::unique_ptr<const TypingModel> CreateTypingModel(
+      const mozc::commands::Request::SpecialRomanjiTable &special_romanji_table,
+      const DataManagerInterface& data_manager);
 
   // No data means its const is infinity.
   static const int kInfinity;
@@ -82,7 +84,7 @@ class TypingModel {
   size_t GetIndex(StringPiece key) const;
 
   // Radix table, needed by GetIndex.
-  scoped_ptr<unsigned char[]> character_to_radix_table_;
+  std::unique_ptr<unsigned char[]> character_to_radix_table_;
   const size_t characters_size_;
   const uint8 *cost_table_;
   const size_t cost_table_size_;

@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -42,76 +42,8 @@
       'dependencies': [
         '../dictionary/dictionary_base.gyp:pos_util',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'toolsets': ['host'],
-      'actions': [
-        {
-          'action_name': 'gen_single_kanji_rewriter_data',
-          'variables': {
-            'single_kanji_file': '../data/single_kanji/single_kanji.tsv',
-            'variant_file': '../data/single_kanji/variant_rule.txt',
-            'output_file': '<(gen_out_dir)/single_kanji_rewriter_data.h',
-          },
-          'inputs': [
-            'embedded_dictionary_compiler.py',
-            'gen_single_kanji_rewriter_data.py',
-            '<(single_kanji_file)',
-            '<(variant_file)',
-          ],
-          'outputs': [
-            '<(output_file)'
-          ],
-          'action': [
-            'python', 'gen_single_kanji_rewriter_data.py',
-            '--single_kanji_file=<(single_kanji_file)',
-            '--variant_file=<(variant_file)',
-            '--output=<(output_file)',
-          ],
-        },
-        {
-          'action_name': 'gen_emoticon_rewriter_data',
-          'variables': {
-            'input_file': '../data/emoticon/emoticon.tsv',
-            'output_file': '<(gen_out_dir)/emoticon_rewriter_data.h',
-          },
-          'inputs': [
-            'embedded_dictionary_compiler.py',
-            'gen_emoticon_rewriter_data.py',
-            '<(input_file)',
-          ],
-          'outputs': [
-            '<(output_file)'
-          ],
-          'action': [
-            'python', 'gen_emoticon_rewriter_data.py',
-            '--input=<(input_file)',
-            '--output=<(output_file)',
-          ],
-        },
-        {
-          'action_name': 'gen_emoji_rewriter_data',
-          'variables': {
-            'input_file': '../data/emoji/emoji_data.tsv',
-            'output_file': '<(gen_out_dir)/emoji_rewriter_data.h',
-          },
-          'inputs': [
-            'gen_emoji_rewriter_data.py',
-            '<(input_file)',
-          ],
-          'outputs': [
-            '<(output_file)'
-          ],
-          'action': [
-            'python', 'gen_emoji_rewriter_data.py',
-            '--input=<(input_file)',
-            '--output=<(output_file)',
-          ],
-        },
-      ],
+      'actions': [],
       'conditions': [
         ['target_platform!="Android"', {
           'dependencies': [
@@ -135,13 +67,21 @@
                 '<@(cforms_file)',
               ],
               'outputs': [
-                '<(gen_out_dir)/usage_rewriter_data.h',
+                '<(gen_out_dir)/usage_base_conj_suffix.data',
+                '<(gen_out_dir)/usage_conj_index.data',
+                '<(gen_out_dir)/usage_conj_suffix.data',
+                '<(gen_out_dir)/usage_item_array.data',
+                '<(gen_out_dir)/usage_string_array.data',
               ],
               'action': [
                 '<(generator)',
                 '--usage_data_file=<@(usage_data_file)',
                 '--cforms_file=<@(cforms_file)',
-                '--output=<(gen_out_dir)/usage_rewriter_data.h',
+                '--output_base_conjugation_suffix=<(gen_out_dir)/usage_base_conj_suffix.data',
+                '--output_conjugation_suffix=<(gen_out_dir)/usage_conj_suffix.data',
+                '--output_conjugation_index=<(gen_out_dir)/usage_conj_index.data',
+                '--output_usage_item_array=<(gen_out_dir)/usage_item_array.data',
+                '--output_string_array=<(gen_out_dir)/usage_string_array.data',
               ],
             },
           ],
@@ -159,15 +99,10 @@
         '../storage/storage.gyp:storage#host',
         '../base/base.gyp:codegen_bytearray_stream#host',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'gen_collocation_data_main',
-      'type': 'none',
+      'type': 'executable',
       'toolsets': ['host'],
       'sources': [
         'gen_collocation_data_main.cc',
@@ -178,7 +113,7 @@
     },
     {
       'target_name': 'gen_collocation_suppression_data_main',
-      'type': 'none',
+      'type': 'executable',
       'toolsets': ['host'],
       'sources': [
         'gen_collocation_suppression_data_main.cc',
@@ -189,29 +124,55 @@
     },
     {
       'target_name': 'gen_symbol_rewriter_dictionary_main',
-      'type': 'none',
+      'type': 'executable',
       'toolsets': ['host'],
       'sources': [
         'dictionary_generator.cc',
-        'embedded_dictionary.cc',
         'gen_symbol_rewriter_dictionary_main.cc',
       ],
       'dependencies': [
         '../base/base.gyp:base',
-        '../data_manager/data_manager.gyp:user_pos_manager',
+        '../base/base.gyp:serialized_string_array',
+        '../data_manager/data_manager_base.gyp:data_manager',
+        '../data_manager/data_manager_base.gyp:serialized_dictionary',
         '../dictionary/dictionary_base.gyp:pos_matcher',
         '../dictionary/dictionary_base.gyp:user_pos',
       ],
     },
     {
       'target_name': 'gen_usage_rewriter_dictionary_main',
-      'type': 'none',
+      'type': 'executable',
       'toolsets': ['host'],
       'sources': [
         'gen_usage_rewriter_dictionary_main.cc',
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base.gyp:serialized_string_array',
+      ],
+    },
+    {
+      'target_name': 'gen_emoticon_rewriter_data_main',
+      'type': 'executable',
+      'toolsets': ['host'],
+      'sources': [
+        'gen_emoticon_rewriter_data.cc',
+      ],
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../data_manager/data_manager_base.gyp:serialized_dictionary',
+      ],
+    },
+    {
+      'target_name': 'gen_single_kanji_noun_prefix_data_main',
+      'type': 'executable',
+      'toolsets': ['host'],
+      'sources': [
+        'gen_single_kanji_noun_prefix_data.cc',
+      ],
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../data_manager/data_manager_base.gyp:serialized_dictionary',
       ],
     },
   ],

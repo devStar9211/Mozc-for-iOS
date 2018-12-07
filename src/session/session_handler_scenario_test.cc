@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,30 +27,32 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifndef OS_NACL
+// Disabled on NaCl since it uses a mock file system.
+
+#include <memory>
+
 #include "base/file_stream.h"
 #include "base/file_util.h"
 #include "base/number_util.h"
 #include "base/protobuf/descriptor.h"
 #include "base/protobuf/message.h"
 #include "base/protobuf/text_format.h"
-#include "base/scoped_ptr.h"
 #include "base/string_piece.h"
 #include "base/util.h"
-#include "config/config.pb.h"
+#include "composer/key_parser.h"
 #include "config/config_handler.h"
 #include "converter/converter_interface.h"
 #include "engine/mock_data_engine_factory.h"
 #include "engine/user_data_manager_interface.h"
-#include "session/commands.pb.h"
-#include "session/key_parser.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 #include "session/request_test_util.h"
 #include "session/session_handler_test_util.h"
 #include "testing/base/public/gunit.h"
+#include "testing/base/public/mozctest.h"
 #include "usage_stats/usage_stats.h"
 #include "usage_stats/usage_stats_testing_util.h"
-
-DECLARE_string(test_srcdir);
-DECLARE_string(test_tmpdir);
 
 namespace {
 
@@ -83,18 +85,28 @@ using testing::WithParamInterface;
 class SessionHandlerScenarioTest : public SessionHandlerTestBase,
                                    public WithParamInterface<const char *> {
  protected:
-  virtual void SetUp() {
+  void SetUp() final {
     // Note that singleton Config instance is backed up and restored
     // by SessionHandlerTestBase's SetUp and TearDown methods.
     SessionHandlerTestBase::SetUp();
 
-    engine_.reset(MockDataEngineFactory::Create());
-    client_.reset(new TestSessionClient(engine_.get()));
+    std::unique_ptr<mozc::Engine> engine(MockDataEngineFactory::Create());
+    engine_ = engine.get();
+
+    client_.reset(new TestSessionClient(std::move(engine)));
     config_.reset(new Config);
     last_output_.reset(new Output);
     request_.reset(new Request);
 
     ConfigHandler::GetConfig(config_.get());
+  }
+
+  void TearDown() final {
+    request_.reset();
+    last_output_.reset();
+    config_.reset();
+    client_.reset();
+    SessionHandlerTestBase::TearDown();
   }
 
   void ClearAll() {
@@ -108,33 +120,38 @@ class SessionHandlerScenarioTest : public SessionHandlerTestBase,
     last_output_->Clear();
   }
 
+  void SyncDataToStorage() {
+    EXPECT_TRUE(engine_->GetUserDataManager()->Wait());
+  }
+
   void ClearUserPrediction() {
     EXPECT_TRUE(client_->ClearUserPrediction());
-    EXPECT_TRUE(engine_->GetUserDataManager()->WaitForSyncerForTest());
+    SyncDataToStorage();
   }
 
   void ClearUsageStats() {
     mozc::usage_stats::UsageStats::ClearAllStatsForTest();
   }
 
-  scoped_ptr<EngineInterface> engine_;
-  scoped_ptr<TestSessionClient> client_;
-  scoped_ptr<Config> config_;
-  scoped_ptr<Output> last_output_;
-  scoped_ptr<Request> request_;
+  EngineInterface *engine_ = nullptr;
+  std::unique_ptr<TestSessionClient> client_;
+  std::unique_ptr<Config> config_;
+  std::unique_ptr<Output> last_output_;
+  std::unique_ptr<Request> request_;
 };
 
 // Tests should be passed.
 const char *kScenarioFileList[] = {
 #define DATA_DIR "data/test/session/scenario/"
   DATA_DIR "auto_partial_suggestion.txt",
+  DATA_DIR "b12751061_scenario.txt",
+  DATA_DIR "b16123009_scenario.txt",
+  DATA_DIR "b18112966_scenario.txt",
   DATA_DIR "b7132535_scenario.txt",
   DATA_DIR "b7321313_scenario.txt",
   DATA_DIR "b7548679_scenario.txt",
   DATA_DIR "b8690065_scenario.txt",
   DATA_DIR "b8703702_scenario.txt",
-  DATA_DIR "b12751061_scenario.txt",
-  DATA_DIR "b16123009_scenario.txt",
   DATA_DIR "change_request.txt",
   DATA_DIR "clear_user_prediction.txt",
   DATA_DIR "commit.txt",
@@ -167,6 +184,7 @@ const char *kScenarioFileList[] = {
   DATA_DIR "segment_focus.txt",
   DATA_DIR "segment_width.txt",
   DATA_DIR "twelvekeys_switch_inputmode_scenario.txt",
+  DATA_DIR "twelvekeys_toggle_flick_alphabet_scenario.txt",
   DATA_DIR "twelvekeys_toggle_hiragana_preedit_scenario.txt",
   DATA_DIR "undo.txt",
 #undef DATA_DIR
@@ -198,11 +216,11 @@ const char *kUsageStatsScenarioFileList[] = {
   DATA_DIR "select_minor_prediction.txt",
   DATA_DIR "select_prediction.txt",
   DATA_DIR "select_t13n_by_key.txt",
-#ifndef OS_LINUX
+#if !defined(OS_LINUX) && !defined(OS_ANDROID)
   // This test requires cascading window.
   // TODO(hsumita): Removes this ifndef block.
   DATA_DIR "select_t13n_on_cascading_window.txt",
-#endif  // OS_LINUX
+#endif  // !OS_LINUX && !OS_ANDROID
   DATA_DIR "suggestion.txt",
   DATA_DIR "switch_kana_type.txt",
   DATA_DIR "zero_query_suggestion.txt",
@@ -267,7 +285,7 @@ bool ParseProtobufFromString(const string &text, Message *message) {
   const size_t separator_pos = text.find('=');
   const string full_name = text.substr(0, separator_pos);
   const string value = text.substr(separator_pos + 1);
-  vector<string> names;
+  std::vector<string> names;
   Util::SplitStringUsing(full_name, ".", &names);
 
   Message *msg = message;
@@ -328,11 +346,7 @@ bool IsInAllCandidateWords(
 
 TEST_P(SessionHandlerScenarioTest, TestImpl) {
   // Open the scenario file.
-  string scenario_file = GetParam();
-  const string &scenario_path =
-      FileUtil::JoinPath(FLAGS_test_srcdir, scenario_file);
-  ASSERT_TRUE(FileUtil::FileExists(scenario_path))
-      << "Scenario file is not found: " << scenario_path;
+  const string &scenario_path = mozc::testing::GetSourceFileOrDie({GetParam()});
   InputFileStream input_stream(scenario_path.c_str());
 
   // Set up session.
@@ -340,18 +354,20 @@ TEST_P(SessionHandlerScenarioTest, TestImpl) {
 
   string line_text;
   int line_number = 0;
-  vector<string> columns;
+  std::vector<string> columns;
   while (getline(input_stream, line_text)) {
     ++line_number;
     SCOPED_TRACE(Util::StringPrintf("Scenario: %s [%s:%d]",
                                     line_text.c_str(),
-                                    scenario_file.c_str(),
+                                    scenario_path.c_str(),
                                     line_number));
 
     if (line_text.empty() || line_text[0] == '#') {
       // Skip an empty or comment line.
       continue;
     }
+
+    SyncDataToStorage();
 
     columns.clear();
     Util::SplitStringUsing(line_text, "\t", &columns);
@@ -459,8 +475,7 @@ TEST_P(SessionHandlerScenarioTest, TestImpl) {
       ASSERT_EQ(3, columns.size());
       ASSERT_TRUE(SetOrAddFieldValueFromString(columns[1], columns[2],
                                                config_.get()));
-      ASSERT_TRUE(ConfigHandler::SetConfig(*config_));
-      ASSERT_TRUE(client_->Reload());
+      ASSERT_TRUE(client_->SetConfig(*config_, last_output_.get()));
     } else if (command == "SET_SELECTION_TEXT") {
       ASSERT_EQ(2, columns.size());
       client_->SetCallbackText(columns[1]);
@@ -602,3 +617,5 @@ TEST_P(SessionHandlerScenarioTest, TestImpl) {
 #undef EXPECT_NOT_IN_ALL_CANDIDATE_WORDS
 
 }  // namespace
+
+#endif  // !OS_NACL

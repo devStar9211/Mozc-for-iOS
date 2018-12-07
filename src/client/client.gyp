@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -42,9 +42,12 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
-        '../config/config.gyp:config_protocol',
         '../ipc/ipc.gyp:ipc',
-        '../session/session_base.gyp:session_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
+      ],
+      'export_dependent_settings': [
+        '../protocol/protocol.gyp:commands_proto',
       ],
     },
     {
@@ -55,8 +58,8 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
-        '../config/config.gyp:config_protocol',
-        '../session/session_base.gyp:session_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
       ],
     },
   ],

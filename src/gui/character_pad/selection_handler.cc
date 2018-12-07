@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,9 +29,10 @@
 
 #include "gui/character_pad/selection_handler.h"
 
-#include <QtGui/QApplication>
+#include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
-#include <QtGui/QMessageBox>
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QMessageBox>
 
 #include "base/singleton.h"
 

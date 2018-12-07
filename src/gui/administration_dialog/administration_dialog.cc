@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,9 +29,9 @@
 
 #include "gui/administration_dialog/administration_dialog.h"
 
-#include <QtGui/QMessageBox>
+#include <QtWidgets/QMessageBox>
+
 #include "base/run_level.h"
-#include "base/system_util.h"
 #include "config/stats_config_util.h"
 #include "server/cache_service_manager.h"
 
@@ -43,6 +43,7 @@ using mozc::config::StatsConfigUtil;
 AdministrationDialog::AdministrationDialog() {
   setupUi(this);
   setWindowFlags(Qt::WindowSystemMenuHint |
+                 Qt::WindowCloseButtonHint |
                  Qt::MSWindowsFixedSizeDialogHint |
                  Qt::WindowStaysOnTopHint);
   setWindowModality(Qt::NonModal);
@@ -67,12 +68,8 @@ AdministrationDialog::AdministrationDialog() {
 
   usageStatsCheckBox->setChecked(StatsConfigUtil::IsEnabled());
 
-  if (SystemUtil::IsVistaOrLater()) {
-    ElevatedProcessDisabledcheckBox->setChecked
-        (RunLevel::GetElevatedProcessDisabled());
-  } else {
-    ElevatedProcessDisabledcheckBox->setVisible(false);
-  }
+  ElevatedProcessDisabledcheckBox->setChecked(
+      RunLevel::GetElevatedProcessDisabled());
 
   CacheServiceEnabledcheckBox->setChecked(
       CacheServiceManager::IsEnabled() || CacheServiceManager::IsRunning());

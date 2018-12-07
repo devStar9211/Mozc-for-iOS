@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
 #include "gui/dictionary_tool/zero_width_splitter.h"
 
 #include <QtGui/QtGui>
-#include <QtGui/QSplitter>
+#include <QtWidgets/QSplitter>
 
 void ZeroWidthSplitterHandle::paintEvent(QPaintEvent *event) {
 #ifdef OS_MACOSX

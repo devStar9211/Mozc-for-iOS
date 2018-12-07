@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,8 +27,8 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef MOZC_IPC_PROCESS_MUTEX_H_
-#define MOZC_IPC_PROCESS_MUTEX_H_
+#ifndef MOZC_BASE_PROCESS_MUTEX_H_
+#define MOZC_BASE_PROCESS_MUTEX_H_
 
 #include <string>
 
@@ -98,4 +98,4 @@ class ProcessMutex {
 
 }  // namespace mozc
 
-#endif  // MOZC_IPC_PROCESS_MUTEX_H_
+#endif  // MOZC_BASE_PROCESS_MUTEX_H_

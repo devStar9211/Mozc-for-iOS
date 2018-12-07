@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -40,22 +40,17 @@ class MacUtil {
   // Returns the label commonly used in the project for specified suffix.
   static string GetLabelForSuffix(const string &suffix);
 
-  // Returns (basicaly) "~/Library/Application Support".
+  // Returns (basically) "~/Library/Application Support".
   static string GetApplicationSupportDirectory();
+
+  // Returns (basically) "~/Library/Caches".
+  static string GetCachesDirectory();
 
   // Returns (basically) ~/Library/Logs
   static string GetLoggingDirectory();
 
   // Returns OS version string like, "Version 10.x (Build xXxxx)".
   static string GetOSVersionString();
-
-  // Gets the OS major, minor and fix version.
-  // Returns false if it fails to obtain the OS version from the system.
-  static bool GetOSVersion(int32 *major, int32 *minor, int32 *fix);
-
-  // Returns true if OS version is greater or equal to the specified version.
-  // Returns false if it fails to obtain the OS version from the system.
-  static bool OSVersionIsGreaterOrEqual(int32 major, int32 minor, int32 fix);
 
   // Returns server directory using OS-specific API.
   static string GetServerDirectory();

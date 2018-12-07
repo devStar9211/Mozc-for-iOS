@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,6 +29,7 @@
 
 #include "rewriter/rewriter.h"
 
+#include "base/flags.h"
 #include "base/logging.h"
 #include "converter/converter_interface.h"
 #include "data_manager/data_manager_interface.h"
@@ -40,12 +41,12 @@
 #include "rewriter/correction_rewriter.h"
 #include "rewriter/date_rewriter.h"
 #include "rewriter/dice_rewriter.h"
-#include "rewriter/embedded_dictionary.h"
 #include "rewriter/emoji_rewriter.h"
 #include "rewriter/emoticon_rewriter.h"
 #include "rewriter/english_variants_rewriter.h"
 #include "rewriter/focus_candidate_rewriter.h"
 #include "rewriter/fortune_rewriter.h"
+#include "rewriter/katakana_promotion_rewriter.h"
 #include "rewriter/language_aware_rewriter.h"
 #include "rewriter/merger_rewriter.h"
 #include "rewriter/normalization_rewriter.h"
@@ -68,53 +69,44 @@
 
 DEFINE_bool(use_history_rewriter, true, "Use history rewriter or not.");
 
-namespace {
-// When updating the emoji dictionary,
-// 1. Edit mozc/data/emoji/emoji_data.tsv,
-// 2. Run gen_emoji_rewriter_data.py and make emoji_rewriter_data.h,
-// 3. Make sure generated emoji_rewriter_data.h is correct.
-
-// This generated header file defines |kEmojiDataList|, |kEmojiValueList|
-// and |kEmojiTokenList|.
-#include "rewriter/emoji_rewriter_data.h"
-}  // namespace
-
 namespace mozc {
+namespace {
+
+using dictionary::DictionaryInterface;
+using dictionary::PosGroup;
+
+}  // namespace
 
 RewriterImpl::RewriterImpl(const ConverterInterface *parent_converter,
                            const DataManagerInterface *data_manager,
                            const PosGroup *pos_group,
-                           const DictionaryInterface *dictionary) {
+                           const DictionaryInterface *dictionary)
+    : pos_matcher_(data_manager->GetPOSMatcherData()) {
   DCHECK(parent_converter);
   DCHECK(data_manager);
   DCHECK(pos_group);
-  const POSMatcher *pos_matcher = data_manager->GetPOSMatcher();
-  DCHECK(pos_matcher);
   // |dictionary| can be NULL
 
   AddRewriter(new UserDictionaryRewriter);
   AddRewriter(new FocusCandidateRewriter(data_manager));
-  AddRewriter(new LanguageAwareRewriter(*pos_matcher, dictionary));
-  AddRewriter(new TransliterationRewriter(*pos_matcher));
+  AddRewriter(new LanguageAwareRewriter(pos_matcher_, dictionary));
+  AddRewriter(new TransliterationRewriter(pos_matcher_));
   AddRewriter(new EnglishVariantsRewriter);
   AddRewriter(new NumberRewriter(data_manager));
   AddRewriter(new CollocationRewriter(data_manager));
-  AddRewriter(new SingleKanjiRewriter(*pos_matcher));
-  AddRewriter(new EmojiRewriter(
-      kEmojiDataList, arraysize(kEmojiDataList),
-      kEmojiTokenList, arraysize(kEmojiTokenList),
-      kEmojiValueList));
-  AddRewriter(new EmoticonRewriter);
+  AddRewriter(new SingleKanjiRewriter(*data_manager));
+  AddRewriter(new EmojiRewriter(*data_manager));
+  AddRewriter(EmoticonRewriter::CreateFromDataManager(*data_manager).release());
   AddRewriter(new CalculatorRewriter(parent_converter));
   AddRewriter(new SymbolRewriter(parent_converter, data_manager));
   AddRewriter(new UnicodeRewriter(parent_converter));
-  AddRewriter(new VariantsRewriter(pos_matcher));
-  AddRewriter(new ZipcodeRewriter(pos_matcher));
+  AddRewriter(new VariantsRewriter(pos_matcher_));
+  AddRewriter(new ZipcodeRewriter(&pos_matcher_));
   AddRewriter(new DiceRewriter);
 
   if (FLAGS_use_history_rewriter) {
     AddRewriter(new UserBoundaryHistoryRewriter(parent_converter));
-    AddRewriter(new UserSegmentHistoryRewriter(pos_matcher, pos_group));
+    AddRewriter(new UserSegmentHistoryRewriter(&pos_matcher_, pos_group));
   }
 
   AddRewriter(new DateRewriter);
@@ -124,13 +116,13 @@ RewriterImpl::RewriterImpl(const ConverterInterface *parent_converter,
   // So we temporarily disable it.
   // TODO(yukawa, team): Enable CommandRewriter on Android if necessary.
   AddRewriter(new CommandRewriter);
-#endif  // OS_ANDROID
+#endif  // !OS_ANDROID
 #ifndef NO_USAGE_REWRITER
   AddRewriter(new UsageRewriter(data_manager, dictionary));
 #endif  // NO_USAGE_REWRITER
-
-  AddRewriter(new VersionRewriter);
+  AddRewriter(new VersionRewriter(data_manager->GetDataVersion()));
   AddRewriter(CorrectionRewriter::CreateCorrectionRewriter(data_manager));
+  AddRewriter(new KatakanaPromotionRewriter);
   AddRewriter(new NormalizationRewriter);
   AddRewriter(new RemoveRedundantCandidateRewriter);
 }

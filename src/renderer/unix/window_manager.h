@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,7 +37,7 @@
 #include "base/mutex.h"
 #include "base/port.h"
 #include "client/client_interface.h"
-#include "renderer/renderer_command.pb.h"
+#include "protocol/renderer_command.pb.h"
 #include "renderer/unix/gtk_window_interface.h"
 #include "renderer/unix/gtk_wrapper_interface.h"
 #include "renderer/unix/window_manager_interface.h"

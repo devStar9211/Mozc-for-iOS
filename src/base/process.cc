@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,14 +30,12 @@
 #include "base/process.h"
 
 #ifdef OS_WIN
-#include <windows.h>
-#include <shellapi.h>
-#include <shlobj.h>
+#include <Windows.h>
 #else
 #include <string.h>
 #include <sys/stat.h>
 #include <cerrno>
-#endif  // WINDOWS
+#endif  // OS_WIN
 
 #ifdef OS_MACOSX
 #include <fcntl.h>
@@ -46,29 +44,35 @@
 #include "base/mac_process.h"
 #endif  // OS_MACOSX
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_NACL)
 #include <fcntl.h>
 #include <signal.h>
 #include <spawn.h>  // for posix_spawn().
 #include <sys/types.h>
-#endif
+#endif  // OS_LINUX || OS_ANDROID || OS_NACL
 
 #include <cstdlib>
+#include <memory>
 #include <vector>
 
 #include "base/const.h"
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "base/scoped_ptr.h"
 #include "base/system_util.h"
 #include "base/util.h"
+
+#ifdef OS_WIN
+#include "base/scoped_handle.h"
+#include "base/win_util.h"
+#endif  // OS_WIN
 
 #ifdef OS_MACOSX
 // We do not use the global environ variable because it is unavailable
 // in Mac Framework/dynamic libraries.  Instead call _NSGetEnviron().
 // See the "PROGRAMMING" section of http://goo.gl/4Hq0D for the
 // detailed information.
-extern char **environ;
+#include <crt_externs.h>
+static char **environ = *_NSGetEnviron();
 #elif !defined(OS_WIN)
 // Defined somewhere in libc. We can't pass NULL as the 6th argument of
 // posix_spawn() since Qt applications use (at least) DISPLAY and QT_IM_MODULE
@@ -77,34 +81,6 @@ extern char **environ;
 #endif
 
 namespace mozc {
-
-namespace {
-#ifdef OS_WIN
-// ShellExecute to execute file in system dir.
-// Since Windows does not allow rename or delete a directory which
-// is set to the working directory by existing processes, we should
-// avoid unexpected directory locking by background processes.
-// System dir is expected to be more appropriate than tha directory
-// where the executable exist, because installer can rename the
-// executable to another directory and delete the application directory.
-bool ShellExecuteInSystemDir(const wchar_t *verb,
-                             const wchar_t *file,
-                             const wchar_t *parameters,
-                             INT show_command) {
-  const int result =
-      reinterpret_cast<int>(::ShellExecuteW(0, verb, file, parameters,
-                                            SystemUtil::GetSystemDir(),
-                                            show_command));
-  LOG_IF(ERROR, result <= 32)
-      << "ShellExecute failed."
-      << ", error:" << result
-      << ", verb: " << verb
-      << ", file: " << file
-      << ", parameters: " << parameters;
-  return result > 32;
-}
-#endif  // OS_WIN
-}  // namespace
 
 bool Process::OpenBrowser(const string &url) {
   // url must start with http:// or https:// or file://
@@ -115,17 +91,17 @@ bool Process::OpenBrowser(const string &url) {
   }
 
 #ifdef OS_WIN
-  wstring wurl;
-  Util::UTF8ToWide(url.c_str(), &wurl);
-  return ShellExecuteInSystemDir(L"open", wurl.c_str(), NULL, SW_SHOW);
+  std::wstring wurl;
+  Util::UTF8ToWide(url, &wurl);
+  return WinUtil::ShellExecuteInSystemDir(L"open", wurl.c_str(), nullptr);
 #endif
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_NACL)
   static const char kBrowserCommand[] = "/usr/bin/xdg-open";
   // xdg-open which uses kfmclient or gnome-open internally works both on KDE
   // and GNOME environments.
   return SpawnProcess(kBrowserCommand, url);
-#endif  // LINUX
+#endif  // OS_LINUX || OS_ANDROID || OS_NACL
 
 #ifdef OS_MACOSX
   return MacProcess::OpenBrowserForMac(url);
@@ -136,19 +112,19 @@ bool Process::OpenBrowser(const string &url) {
 bool Process::SpawnProcess(const string &path,
                            const string& arg, size_t *pid) {
 #ifdef OS_WIN
-  wstring wpath;
-  Util::UTF8ToWide(path.c_str(), &wpath);
+  std::wstring wpath;
+  Util::UTF8ToWide(path, &wpath);
   wpath = L"\"" + wpath + L"\"";
   if (!arg.empty()) {
-    wstring warg;
-    Util::UTF8ToWide(arg.c_str(), &warg);
+    std::wstring warg;
+    Util::UTF8ToWide(arg, &warg);
     wpath += L" ";
     wpath += warg;
   }
 
   // The |lpCommandLine| parameter of CreateProcessW should be writable
-  // so that we create a scoped_ptr<wchar_t[]> here.
-  scoped_ptr<wchar_t[]> wpath2(new wchar_t[wpath.size() + 1]);
+  // so that we create a std::unique_ptr<wchar_t[]> here.
+  std::unique_ptr<wchar_t[]> wpath2(new wchar_t[wpath.size() + 1]);
   if (0 != wcscpy_s(wpath2.get(), wpath.size() + 1, wpath.c_str())) {
     return false;
   }
@@ -180,9 +156,9 @@ bool Process::SpawnProcess(const string &path,
   return create_process_succeeded;
 #else
 
-  vector<string> arg_tmp;
+  std::vector<string> arg_tmp;
   Util::SplitStringUsing(arg, " ", &arg_tmp);
-  scoped_ptr<const char * []> argv(new const char *[arg_tmp.size() + 2]);
+  std::unique_ptr<const char * []> argv(new const char *[arg_tmp.size() + 2]);
   argv[0] = path.c_str();
   for (size_t i = 0; i < arg_tmp.size(); ++i) {
     argv[i + 1] = arg_tmp[i].c_str();
@@ -204,7 +180,7 @@ bool Process::SpawnProcess(const string &path,
   }
 #endif
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_NACL)
   // Do not call posix_spawn() for obviously bad path.
   if (!S_ISREG(statbuf.st_mode)) {
     LOG(ERROR) << "Not a regular file: " << path;
@@ -227,7 +203,7 @@ bool Process::SpawnProcess(const string &path,
   // (www.gnu.org/software/libc/manual/html_node/Heap-Consistency-Checking.html)
   const int kOverwrite = 0;  // Do not overwrite.
   ::setenv("MALLOC_CHECK_", "2", kOverwrite);
-#endif  // OS_LINUX
+#endif  // OS_LINUX || OS_ANDROID || OS_NACL
   pid_t tmp_pid = 0;
 
   // Spawn new process.
@@ -398,7 +374,7 @@ bool Process::LaunchErrorMessageDialog(const string &error_type) {
   }
 #endif  // OS_WIN
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_NACL)
   const char kMozcTool[] = "mozc_tool";
   const string arg = "--mode=error_message_dialog --error_type=" + error_type;
   size_t pid = 0;
@@ -406,7 +382,7 @@ bool Process::LaunchErrorMessageDialog(const string &error_type) {
     LOG(ERROR) << "cannot launch " << kMozcTool;
     return false;
   }
-#endif  // OS_LINUX
+#endif  // OS_LINUX || OS_ANDROID || OS_NACL
 
   return true;
 }

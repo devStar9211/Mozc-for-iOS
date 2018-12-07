@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -68,6 +68,6 @@ class RendererInterface {
   virtual void SetSendCommandInterface(
       client::SendCommandInterface *send_command_interface) {}
 };
-}  // renderer
-}  // mozc
+}  // namespace renderer
+}  // namespace mozc
 #endif  // MOZC_RENDERER_RENDERER_INTERFACE_H_

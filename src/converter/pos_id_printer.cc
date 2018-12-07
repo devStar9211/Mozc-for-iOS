@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "base/file_stream.h"
+#include "base/logging.h"
 #include "base/number_util.h"
 #include "base/port.h"
 #include "base/util.h"
@@ -42,13 +43,13 @@
 namespace mozc {
 namespace internal {
 
-PosIdPrinter::PosIdPrinter(istream *id_def) {
+PosIdPrinter::PosIdPrinter(std::istream *id_def) {
   if (id_def == NULL) {
     return;
   }
 
   string line;
-  vector<string> columns;
+  std::vector<string> columns;
   while (getline(*id_def, line)) {
     columns.clear();
     Util::SplitStringUsing(line, " ", &columns);
@@ -61,7 +62,7 @@ PosIdPrinter::PosIdPrinter(istream *id_def) {
 PosIdPrinter::~PosIdPrinter() {}
 
 string PosIdPrinter::IdToString(int id) const {
-  map<int, string>::const_iterator iter = id_to_pos_map_.find(id);
+  std::map<int, string>::const_iterator iter = id_to_pos_map_.find(id);
   if (iter == id_to_pos_map_.end()) {
     return "";
   }

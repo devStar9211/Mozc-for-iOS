@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,15 +31,16 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlcom.h>
 #include <msctf.h>
 #include <CommCtrl.h>  // for CCSIZEOF_STRUCT
 
 #include "base/logging.h"
 #include "base/util.h"
-#include "renderer/renderer_command.pb.h"
+#include "base/win_util.h"
+#include "protocol/commands.pb.h"
+#include "protocol/renderer_command.pb.h"
 #include "renderer/win32/win32_renderer_client.h"
 #include "win32/base/conversion_mode_util.h"
 #include "win32/base/indicator_visibility_tracker.h"
@@ -181,7 +182,7 @@ bool FillCaretInfo(ApplicationInfo *app_info) {
   rect->set_right(thread_info.rcCaret.right);
   rect->set_bottom(thread_info.rcCaret.bottom);
 
-  caret->set_target_window_handle(reinterpret_cast<uint32>(
+  caret->set_target_window_handle(WinUtil::EncodeWindowHandle(
       thread_info.hwndCaret));
 
   return true;
@@ -197,7 +198,8 @@ bool FillWindowHandle(ITfContext *context, ApplicationInfo *app_info) {
   if (FAILED(context_view->GetWnd(&window_handle))) {
     return false;
   }
-  app_info->set_target_window_handle(reinterpret_cast<uint32>(window_handle));
+  app_info->set_target_window_handle(
+      WinUtil::EncodeWindowHandle(window_handle));
   return true;
 }
 
@@ -251,7 +253,7 @@ bool FillCharPosition(TipPrivateContext *private_context,
   }
 
   const HWND window_handle =
-      reinterpret_cast<HWND>(app_info->target_window_handle());
+      WinUtil::DecodeWindowHandle(app_info->target_window_handle());
 
   CComPtr<ITfRange> range =
       has_composition ? GetCompositionRange(context, read_cookie)
@@ -306,7 +308,7 @@ bool FillCharPosition(TipPrivateContext *private_context,
     return false;
   }
 
-  RendererCommand::Point *top_left=
+  RendererCommand::Point *top_left =
       app_info->mutable_composition_target()->mutable_top_left();
   top_left->set_x(text_rect.left);
   top_left->set_y(text_rect.top);
@@ -314,7 +316,7 @@ bool FillCharPosition(TipPrivateContext *private_context,
   app_info->mutable_composition_target()->set_line_height(
       text_rect.bottom - text_rect.top);
 
-  RendererCommand::Rectangle *area=
+  RendererCommand::Rectangle *area =
       app_info->mutable_composition_target()->mutable_document_area();
   area->set_left(document_rect.left);
   area->set_top(document_rect.top);
@@ -342,8 +344,8 @@ void UpdateCommand(TipTextService *text_service,
   app_info->set_input_framework(ApplicationInfo::TSF);
   app_info->set_process_id(::GetCurrentProcessId());
   app_info->set_thread_id(::GetCurrentThreadId());
-  app_info->set_receiver_handle(
-      reinterpret_cast<int32>(text_service->renderer_callback_window_handle()));
+  app_info->set_receiver_handle(WinUtil::EncodeWindowHandle(
+      text_service->renderer_callback_window_handle()));
 
   CComQIPtr<ITfUIElementMgr> ui_element_manager(
       text_service->GetThreadManager());
@@ -458,42 +460,6 @@ class UpdateUiEditSessionImpl : public ITfEditSession {
   DISALLOW_COPY_AND_ASSIGN(UpdateUiEditSessionImpl);
 };
 
-HRESULT OnUpdateLanguageBar(TipTextService *text_service,
-                            ITfDocumentMgr *document_manager) {
-  HRESULT result = S_OK;
-  ITfThreadMgr *thread_manager = text_service->GetThreadManager();
-
-  if (thread_manager == nullptr) {
-    return E_FAIL;
-  }
-
-  bool disabled = false;
-  {
-    if (document_manager == nullptr) {
-      // When |document_manager| is null, we should disable an IME like we
-      // disable it when ImmAssociateContext(window_handle, nullptr) is
-      // called.
-      disabled = true;
-    } else {
-      CComPtr<ITfContext> context;
-      result = document_manager->GetTop(&context);
-      if (SUCCEEDED(result)) {
-        disabled = TipStatus::IsDisabledContext(context);
-      }
-    }
-  }
-
-  const TipInputModeManager *input_mode_manager =
-      text_service->GetThreadContext()->GetInputModeManager();
-  const bool open = input_mode_manager->GetEffectiveOpenClose();
-  const CompositionMode mozc_mode =
-      open ? static_cast<CompositionMode>(
-                input_mode_manager->GetEffectiveConversionMode())
-           : commands::DIRECT;
-  text_service->UpdateLangbar(!disabled, static_cast<uint32>(mozc_mode));
-  return S_OK;
-}
-
 }  // namespace
 
 ITfUIElement *TipUiHandlerConventional::CreateUI(TipUiHandler::UiType type,
@@ -547,8 +513,6 @@ void TipUiHandlerConventional::OnFocusChange(
     command.set_type(RendererCommand::UPDATE);
     command.set_visible(false);
     Win32RendererClient::OnUpdated(command);
-    // Update the langbar.
-    OnUpdateLanguageBar(text_service, focused_document_manager);
     return;
   }
 
@@ -559,7 +523,6 @@ void TipUiHandlerConventional::OnFocusChange(
   if (!context) {
     return;
   }
-  OnUpdateLanguageBar(text_service, focused_document_manager);
   UpdateUiEditSessionImpl::BeginRequest(text_service, context);
 }
 
@@ -567,20 +530,10 @@ bool TipUiHandlerConventional::Update(TipTextService *text_service,
                                       ITfContext *context,
                                       TfEditCookie read_cookie) {
   RendererCommand command;
-  const TipInputModeManager *input_mode_manager =
-      text_service->GetThreadContext()->GetInputModeManager();
-  const bool open = input_mode_manager->GetEffectiveOpenClose();
-  const CompositionMode mozc_mode = static_cast<CompositionMode>(
-      input_mode_manager->GetEffectiveConversionMode());
   bool no_layout = false;
   UpdateCommand(text_service, context, read_cookie, &command, &no_layout);
   if (!no_layout || !command.visible()) {
     Win32RendererClient::OnUpdated(command);
-  }
-  if (open) {
-    text_service->UpdateLangbar(true, mozc_mode);
-  } else {
-    text_service->UpdateLangbar(true, commands::DIRECT);
   }
   return true;
 }

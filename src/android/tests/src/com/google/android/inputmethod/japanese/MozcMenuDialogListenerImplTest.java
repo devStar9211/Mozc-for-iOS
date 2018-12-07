@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -59,7 +59,7 @@ import org.easymock.Capture;
 public class MozcMenuDialogListenerImplTest extends InstrumentationTestCaseWithMock {
   private Context context;
   private InputMethodService inputMethodService;
-  private ImeSwitcher imeSwitcher;
+  private ViewEventListener eventListener;
   private MenuDialogListener listener;
 
   @Override
@@ -67,8 +67,8 @@ public class MozcMenuDialogListenerImplTest extends InstrumentationTestCaseWithM
     super.setUp();
     context = createMock(MockContext.class);
     inputMethodService = createMock(InputMethodService.class);
-    imeSwitcher = createMock(ImeSwitcher.class);
-    listener = new MozcMenuDialogListenerImpl(inputMethodService, imeSwitcher);
+    eventListener = createMock(ViewEventListener.class);
+    listener = new MozcMenuDialogListenerImpl(inputMethodService, eventListener);
   }
 
   @Override
@@ -77,6 +77,7 @@ public class MozcMenuDialogListenerImplTest extends InstrumentationTestCaseWithM
     MozcUtil.cancelShowInputMethodPicker(context);
 
     listener = null;
+    eventListener = null;
     inputMethodService = null;
     context = null;
     super.tearDown();
@@ -111,9 +112,8 @@ public class MozcMenuDialogListenerImplTest extends InstrumentationTestCaseWithM
   public void testLaunchPreferenceActivitySelected() {
     final ViewManagerInterface stubViewManager = createNiceMock(ViewManagerInterface.class);
     final Activity stubPreferenceActivity = createNiceMock(Activity.class);
-    final Activity stubSoftwareKeyboardAdvancedSettingActivity = createNiceMock(Activity.class);
 
-    Context context = createNiceMock(Context.class);
+    Context context = createNiceMock(MockContext.class);
     String packageName = "test.package.name";
 
     try {
@@ -130,13 +130,6 @@ public class MozcMenuDialogListenerImplTest extends InstrumentationTestCaseWithM
             @Override
             public Class<? extends Activity> getPreferenceActivityClass() {
               return stubPreferenceActivity.getClass();
-            }
-
-            @Override
-            public Optional<Class<? extends Activity>>
-                getSoftwareKeyboardAdvancedSettingActivityClass() {
-              return Optional.<Class<? extends Activity>>of(
-                  stubSoftwareKeyboardAdvancedSettingActivity.getClass());
             }
 
             @Override
@@ -176,6 +169,7 @@ public class MozcMenuDialogListenerImplTest extends InstrumentationTestCaseWithM
     editorInfo.fieldId = 10;
     expect(inputMethodService.getCurrentInputEditorInfo()).andStubReturn(editorInfo);
     expect(context.getPackageName()).andStubReturn("org.mozc.android.inputmethod.japanese");
+    eventListener.onShowMushroomSelectionDialog();
     Capture<Intent> intentCapture = new Capture<Intent>();
     context.startActivity(capture(intentCapture));
     replayAll();

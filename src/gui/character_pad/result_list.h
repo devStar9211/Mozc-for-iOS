@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,8 +31,8 @@
 #define MOZC_GUI_CHARACTER_PAD_RESULT_LIST_H_
 
 #include <QtCore/QStringList>
-#include <QtGui/QWidget>
-#include <QtGui/QListWidget>
+#include <QtWidgets/QWidget>
+#include <QtWidgets/QListWidget>
 
 namespace mozc {
 namespace gui {

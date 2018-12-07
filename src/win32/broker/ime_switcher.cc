@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,23 +33,19 @@
 #include <vector>
 
 #include "base/const.h"
+#include "base/flags.h"
 #include "base/logging.h"
 #include "base/process_mutex.h"
 #include "base/scoped_handle.h"
 #include "base/system_util.h"
 #include "base/win_util.h"
 #include "client/client.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
+#include "protocol/config.pb.h"
 #include "win32/base/imm_registrar.h"
 #include "win32/base/imm_util.h"
 #include "win32/base/migration_util.h"
 
-DEFINE_int32(ime_switcher_target_process_id, 0,
-             "The broker send messages to the process specified with this ID");
-DEFINE_uint64(ime_switcher_target_process_creation_time, 0,
-              "The process creation time to specify the actual process with"
-              " process ID.");
 DEFINE_bool(set_default_do_not_ask_again, false,
               "Set true if SetDefaultDialog should not be displayed again.");
 
@@ -77,7 +73,7 @@ void NotifyFatalMessageImpl(const string &msg) {
 }
 
 void NotifyFatalMessage(const string &msg, int line) {
-  ostringstream ostr;
+  std::ostringstream ostr;
   ostr << msg << " (line: " << line << ")";
   NotifyFatalMessageImpl(ostr.str());
 }

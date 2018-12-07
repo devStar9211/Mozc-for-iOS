@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,7 @@
 #include "session/generic_storage_manager.h"
 
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -37,7 +38,6 @@
 #include "base/logging.h"
 #include "base/mutex.h"
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "base/singleton.h"
 #include "storage/lru_storage.h"
 
@@ -144,7 +144,7 @@ bool GenericLruStorage::EnsureStorage() {
     // We already have prepared storage.
     return true;
   }
-  scoped_ptr<LRUStorage> new_storage;
+  std::unique_ptr<LRUStorage> new_storage;
   new_storage.reset(new LRUStorage());
   const string &filename =
       ConfigFileStream::GetFileName(file_name_);
@@ -177,7 +177,7 @@ const char *GenericLruStorage::Lookup(const string &key) {
   return lru_storage_->Lookup(key);
 }
 
-bool GenericLruStorage::GetAllValues(vector<string> *values) {
+bool GenericLruStorage::GetAllValues(std::vector<string> *values) {
   if (!EnsureStorage()) {
     return false;
   }

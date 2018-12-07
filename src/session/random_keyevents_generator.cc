@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,7 +36,7 @@
 #include "base/mutex.h"
 #include "base/port.h"
 #include "base/util.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 
 namespace mozc {
 namespace session {
@@ -129,7 +129,7 @@ void RandomKeyEventsGenerator::PrepareForMemoryLeakTest() {
 
 // Generates KeyEvent instances based on |romaji| and stores into |keys|.
 void TypeRawKeys(StringPiece romaji, bool create_probable_key_events,
-                 vector<commands::KeyEvent> *keys) {
+                 std::vector<commands::KeyEvent> *keys) {
   for (ConstChar32Iterator iter(romaji); !iter.Done(); iter.Next()) {
     const uint32 ucs4 = iter.Get();
     if (ucs4 < 0x20 || ucs4 > 0x7F) {
@@ -172,7 +172,7 @@ void RandomKeyEventsGenerator::InitSeed(uint32 seed) {
 // The instances have ProbableKeyEvent if |create_probable_key_events| is set.
 void GenerateMobileSequenceInternal(
     StringPiece sentence, bool create_probable_key_events,
-    vector<commands::KeyEvent> *keys) {
+    std::vector<commands::KeyEvent> *keys) {
   const string input = ToRomaji(sentence);
   VLOG(1) << input;
 
@@ -185,7 +185,7 @@ void GenerateMobileSequenceInternal(
 }
 
 void RandomKeyEventsGenerator::GenerateMobileSequence(
-    bool create_probable_key_events, vector<commands::KeyEvent> *keys) {
+    bool create_probable_key_events, std::vector<commands::KeyEvent> *keys) {
   CHECK(keys);
   keys->clear();
 
@@ -199,14 +199,14 @@ void RandomKeyEventsGenerator::GenerateMobileSequence(
     // To simulate mobile key events, split given sentence into smaller parts.
     // Average 5, Min 1, Max 15
     const size_t len = Util::Random(5) + Util::Random(5) + Util::Random(5);
-    GenerateMobileSequenceInternal(sentence.substr(i, len),
+    GenerateMobileSequenceInternal(ClippedSubstr(sentence, i, len),
                                    create_probable_key_events, keys);
     i += len;
   }
 }
 
 void RandomKeyEventsGenerator::GenerateSequence(
-    vector<commands::KeyEvent> *keys) {
+    std::vector<commands::KeyEvent> *keys) {
   CHECK(keys);
   keys->clear();
 
@@ -228,7 +228,7 @@ void RandomKeyEventsGenerator::GenerateSequence(
     keys->push_back(key);
   }
 
-  vector<commands::KeyEvent> basic_keys;
+  std::vector<commands::KeyEvent> basic_keys;
 
   // generate basic input
   TypeRawKeys(input, false, &basic_keys);

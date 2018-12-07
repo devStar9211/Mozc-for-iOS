@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,14 +27,14 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "net/http_client.h"
-
 #include <iostream>  // NOLINT
 #include <string>
 
 #include "base/file_stream.h"
 #include "base/flags.h"
+#include "base/init_mozc.h"
 #include "base/port.h"
+#include "net/http_client.h"
 #include "net/proxy_manager.h"
 
 DEFINE_string(url, "", "url");
@@ -48,7 +48,7 @@ DEFINE_bool(include_header, false, "include header in output");
 DEFINE_bool(use_proxy, true, "use the proxy or not");
 
 int main(int argc, char **argv) {
-  InitGoogle(argv[0], &argc, &argv, false);
+  mozc::InitMozc(argv[0], &argc, &argv, false);
 
   mozc::HTTPClient::Option option;
   option.include_header = FLAGS_include_header;
@@ -63,7 +63,7 @@ int main(int argc, char **argv) {
   if (!FLAGS_post_data_file.empty()) {
     char buffer[2048];
     mozc::InputFileStream ifs(FLAGS_post_data_file.c_str(),
-                              ios::in | ios::binary);
+                              std::ios::in | std::ios::binary);
     FLAGS_post_data = "";
     do {
       ifs.read(buffer, sizeof(buffer));
@@ -88,7 +88,8 @@ int main(int argc, char **argv) {
       std::cout << output << std::endl;
     }
   } else {
-    mozc::OutputFileStream ofs(FLAGS_output.c_str(), ios::out | ios::binary);
+    mozc::OutputFileStream ofs(FLAGS_output.c_str(),
+                               std::ios::out | std::ios::binary);
     // Output even if the request failed.
     ofs << output << std::endl;
   }

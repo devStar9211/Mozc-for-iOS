@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -42,13 +42,7 @@ namespace mozc {
 // Arabic numbers, Roman numbers, Kanji numbers, and so on.
 class NumberUtil {
  public:
-  // Convert the number to a string and append it to output.
-  static string SimpleItoa(int32 number);
-  static string SimpleItoa(uint32 number);
-  static string SimpleItoa(int64 number);
-  static string SimpleItoa(uint64 number);
-
-  // Convert the string to a number and return it.
+  // Converts the string to a number and return it.
   static int SimpleAtoi(StringPiece str);
 
   // Returns true if the given input_string contains only number characters
@@ -121,37 +115,39 @@ class NumberUtil {
   // value, desc and style are stored same size and same order.
   // if invalid string is set, this function do nothing.
   static bool ArabicToKanji(StringPiece input_num,
-                            vector<NumberString> *output);
+                            std::vector<NumberString> *output);
 
   // Converts half-width Arabic number string to Separated Arabic string.
   // (e.g. 1234567890 are converted to 1,234,567,890)
   // Arguments are same as ArabicToKanji (above).
   static bool ArabicToSeparatedArabic(StringPiece input_num,
-                                      vector<NumberString> *output);
+                                      std::vector<NumberString> *output);
 
   // Converts half-width Arabic number string to full-width Arabic number
   // string.
   // Arguments are same as ArabicToKanji (above).
   static bool ArabicToWideArabic(StringPiece input_num,
-                                 vector<NumberString> *output);
+                                 std::vector<NumberString> *output);
 
   // Converts half-width Arabic number to various styles.
   // Arguments are same as ArabicToKanji (above).
   //   - Roman style (i) (ii) ...
   static bool ArabicToOtherForms(StringPiece input_num,
-                                 vector<NumberString> *output);
+                                 std::vector<NumberString> *output);
 
   // Converts half-width Arabic number to various radices (2,8,16).
   // Arguments are same as ArabicToKanji (above).
   // Excepted number of input digits is smaller than 20, but it can be
   // converted only if it can be stored in an unsigned 64-bit integer.
   static bool ArabicToOtherRadixes(StringPiece input_num,
-                                   vector<NumberString> *output);
+                                   std::vector<NumberString> *output);
 
   // Converts the string to a 32-/64-bit signed/unsigned int.  Returns true if
   // success or false if the string is in the wrong format.
+  static bool SafeStrToInt16(StringPiece str, int16 *value);
   static bool SafeStrToInt32(StringPiece str, int32 *value);
   static bool SafeStrToInt64(StringPiece str, int64 *value);
+  static bool SafeStrToUInt16(StringPiece str, uint16 *value);
   static bool SafeStrToUInt32(StringPiece str, uint32 *value);
   static bool SafeStrToUInt64(StringPiece str, uint64 *value);
   static bool SafeHexStrToUInt32(StringPiece str, uint32 *value);
@@ -163,16 +159,6 @@ class NumberUtil {
   // compiler.  It returns false when compiled by VisualC++.  On the other hand
   // it returns true and sets correct value when compiled by gcc.
   static bool SafeStrToDouble(StringPiece str, double *value);
-
-  // Converts the string to a float. Returns true if success or false if the
-  // string is in the wrong format.
-  static bool SafeStrToFloat(StringPiece str, float *value);
-  // Converts the string to a float.
-  static float StrToFloat(StringPiece str) {
-    float value;
-    SafeStrToFloat(str, &value);
-    return value;
-  }
 
   // Convert Kanji numeric into Arabic numeric.
   // When the trim_leading_zeros is true, leading zeros for arabic_output

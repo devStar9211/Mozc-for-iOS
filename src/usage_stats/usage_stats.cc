@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -174,8 +174,8 @@ void UsageStats::UpdateTiming(const string &name, uint32 val) {
     stats.set_num_timings(stats.num_timings() + 1);
     stats.set_total_time(stats.total_time() + val);
     stats.set_avg_time(stats.total_time() / stats.num_timings());
-    stats.set_min_time(min(stats.min_time(), val));
-    stats.set_max_time(max(stats.max_time(), val));
+    stats.set_min_time(std::min(stats.min_time(), val));
+    stats.set_max_time(std::max(stats.max_time(), val));
   } else {
     stats.set_name(name);
     stats.set_type(Stats::TIMING);
@@ -320,14 +320,15 @@ bool UsageStats::GetStatsForTest(const string &name, Stats *stats) {
 }
 
 void UsageStats::StoreTouchEventStats(
-    const string &name, const map<string, TouchEventStatsMap> &touch_stats) {
+    const string &name,
+    const std::map<string, TouchEventStatsMap> &touch_stats) {
   DCHECK(IsListed(name)) << name << " is not in the list";
   if (touch_stats.empty()) {
     return;
   }
 
   Stats stats;
-  map<string, TouchEventStatsMap> tmp_stats(touch_stats);
+  std::map<string, TouchEventStatsMap> tmp_stats(touch_stats);
   if (GetterInternal(name, Stats::VIRTUAL_KEYBOARD, &stats)) {
     for (size_t i = 0; i < stats.virtual_keyboard_stats_size(); ++i) {
       const Stats::VirtualKeyboardStats &virtual_keyboard_stats =
@@ -349,7 +350,7 @@ void UsageStats::StoreTouchEventStats(
   }
 
   stats.clear_virtual_keyboard_stats();
-  for (map<string, TouchEventStatsMap>::const_iterator iter =
+  for (std::map<string, TouchEventStatsMap>::const_iterator iter =
            tmp_stats.begin();
        iter != tmp_stats.end(); ++iter) {
     Stats::VirtualKeyboardStats *virtual_keyboard_stats =

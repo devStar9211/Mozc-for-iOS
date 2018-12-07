@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,22 +30,27 @@
 #ifndef MOZC_REWRITER_REWRITER_H_
 #define MOZC_REWRITER_REWRITER_H_
 
+#include "base/port.h"
+#include "dictionary/dictionary_interface.h"
+#include "dictionary/pos_group.h"
+#include "dictionary/pos_matcher.h"
 #include "rewriter/merger_rewriter.h"
 
 namespace mozc {
 
 class ConverterInterface;
 class DataManagerInterface;
-class DictionaryInterface;
-class POSMatcher;
-class PosGroup;
 
 class RewriterImpl : public MergerRewriter {
  public:
   RewriterImpl(const ConverterInterface *parent_converter,
                const DataManagerInterface *data_manager,
-               const PosGroup *pos_group,
-               const DictionaryInterface *dictionary);
+               const dictionary::PosGroup *pos_group,
+               const dictionary::DictionaryInterface *dictionary);
+
+ private:
+  const dictionary::POSMatcher pos_matcher_;
+  DISALLOW_COPY_AND_ASSIGN(RewriterImpl);
 };
 
 }  // namespace mozc

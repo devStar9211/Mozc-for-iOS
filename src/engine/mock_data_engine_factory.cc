@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,19 +29,14 @@
 
 #include "engine/mock_data_engine_factory.h"
 
-#include "base/logging.h"
 #include "data_manager/testing/mock_data_manager.h"
 #include "engine/engine.h"
-#include "prediction/predictor.h"
 
 namespace mozc {
 
-EngineInterface *MockDataEngineFactory::Create() {
-  Engine *engine = new Engine;
-  DCHECK(engine);
-  const testing::MockDataManager data_manager;
-  engine->Init(&data_manager, DefaultPredictor::CreateDefaultPredictor);
-  return engine;
+Engine *MockDataEngineFactory::Create() {
+  return Engine::CreateDesktopEngineHelper<mozc::testing::MockDataManager>()
+      .release();
 }
 
 }  // namespace mozc

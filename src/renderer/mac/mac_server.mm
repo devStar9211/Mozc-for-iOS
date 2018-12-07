@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,7 +37,7 @@
 #include "base/logging.h"
 #include "base/mutex.h"
 #include "base/util.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "renderer/mac/mac_server_send_command.h"
 #include "renderer/mac/CandidateController.h"
 
@@ -56,14 +56,13 @@ OSStatus EventHandler(EventHandlerCallRef handlerCallRef,
 }
 
 MacServer::MacServer(int argc, const char **argv)
-    : controller_(NULL),
-      argc_(argc),
+    : argc_(argc),
       argv_(argv) {
-  pthread_cond_init(&event_, NULL);
+  pthread_cond_init(&event_, nullptr);
   EventHandlerUPP handler = ::NewEventHandlerUPP(EventHandler);
   EventTypeSpec spec[] = { { kEventClassApplication, 0 } };
   ::InstallEventHandler(GetApplicationEventTarget(), handler,
-                        arraysize(spec), spec, this, NULL);
+                        arraysize(spec), spec, this, nullptr);
 }
 
 bool MacServer::AsyncExecCommand(string *proto_message) {
@@ -74,8 +73,8 @@ bool MacServer::AsyncExecCommand(string *proto_message) {
   }
   delete proto_message;
 
-  EventRef event_ref = NULL;
-  ::CreateEvent(NULL, kEventClassApplication, 0, 0,
+  EventRef event_ref = nullptr;
+  ::CreateEvent(nullptr, kEventClassApplication, 0, 0,
               kEventAttributeNone, &event_ref);
   ::PostEventToQueue(::GetMainEventQueue(), event_ref, kEventPriorityHigh);
   ::ReleaseEvent(event_ref);

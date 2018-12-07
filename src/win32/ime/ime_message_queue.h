@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -59,12 +59,12 @@ class MessageQueue {
   // Send the messages to context if not attached to a message list.
   bool Send();
 
-  const vector<TRANSMSG> &messages() const;
+  const std::vector<TRANSMSG> &messages() const;
 
  private:
   HIMC himc_;
   LPTRANSMSGLIST transmsg_;
-  vector<TRANSMSG> messages_;
+  std::vector<TRANSMSG> messages_;
   int transmsg_count_;
 
   DISALLOW_COPY_AND_ASSIGN(MessageQueue);

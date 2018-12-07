@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -39,10 +39,11 @@
 #include <vector>
 
 #include "base/bitarray.h"
-#include "base/codegen_bytearray_stream.h"
 #include "base/file_stream.h"
 #include "base/logging.h"
 #include "base/port.h"
+#include "base/util.h"
+#include "protocol/segmenter_data.pb.h"
 
 namespace mozc {
 
@@ -62,14 +63,14 @@ class StateTable {
   void Build() {
     compressed_table_.resize(idarray_.size());
     uint16 id = 0;
-    map<string, uint16> dup;
+    std::map<string, uint16> dup;
     for (size_t i = 0; i < idarray_.size(); ++i) {
-      map<string, uint16>::const_iterator it = dup.find(idarray_[i]);
+      std::map<string, uint16>::const_iterator it = dup.find(idarray_[i]);
       if (it != dup.end()) {
         compressed_table_[i] = it->second;
       } else {
         compressed_table_[i] = id;
-        dup.insert(make_pair(idarray_[i], id));
+        dup.insert(std::make_pair(idarray_[i], id));
         ++id;
       }
     }
@@ -90,49 +91,29 @@ class StateTable {
     return compressed_table_[id];
   }
 
-  size_t compressed_size() const {
-    return compressed_size_;
-  }
+  size_t compressed_size() const { return compressed_size_; }
 
-  void Output(const string &name, ostream *os) {
-    // Disable following compression for simplifying the implementation.
-    // As CompressedTable have <3000 entries, this affects at most
-    // (16-8)(bit) * 3000 (entries) * 2 (L and R) = 6KB
-    //
-    // TODO(toshiyuki): Enable this compression again if possible or needed
-    //
-    // if (compressed_size_ < 256) {
-    //   // trivial compression -- use uint8 if possible
-    //   *os << "const uint8 " << name << "[] = {" << endl;
-    // } else {
-    //   *os << "const uint16 " << name << "[] = {" << endl;
-    // }
-
-    *os << "const uint16 " << name << "[] = {" << endl;
-    for (size_t i = 0; i < compressed_table_.size(); ++i) {
-      *os << compressed_table_[i];
-      if (i < compressed_table_.size() - 1) {
-        *os << ",";
-      }
-      *os << endl;
-    }
-    *os << "};" << endl;
+  void Output(std::ostream *os) {
+    const char* data = reinterpret_cast<const char*>(compressed_table_.data());
+    const size_t bytelen = compressed_table_.size() * sizeof(uint16);
+    os->write(data, bytelen);
   }
 
  private:
-  vector<string> idarray_;
-  vector<uint16> compressed_table_;
+  std::vector<string> idarray_;
+  std::vector<uint16> compressed_table_;
   size_t compressed_size_;
 
   DISALLOW_COPY_AND_ASSIGN(StateTable);
 };
 }  // namespace
 
-void SegmenterBitarrayGenerator::GenerateBitarray(int lsize, int rsize,
-                                                  IsBoundaryFunc func,
-                                                  const string &output_file) {
+void SegmenterBitarrayGenerator::GenerateBitarray(
+    int lsize, int rsize, IsBoundaryFunc func, const string &output_size_info,
+    const string &output_ltable, const string &output_rtable,
+    const string &output_bitarray) {
   // Load the original matrix into an array
-  vector<uint8> array((lsize  + 1) * (rsize + 1));
+  std::vector<uint8> array((lsize + 1) * (rsize + 1));
 
   for (size_t rid = 0; rid <= lsize; ++rid) {
     for (size_t lid = 0; lid <= rsize; ++lid) {
@@ -199,7 +180,7 @@ void SegmenterBitarrayGenerator::GenerateBitarray(int lsize, int rsize,
   // verify the table
   for (size_t rid = 0; rid <= lsize; ++rid) {
     for (size_t lid = 0; lid <= rsize; ++lid) {
-      const int index= rid + lsize * lid;
+      const int index = rid + lsize * lid;
       const uint32 cindex = ltable.id(rid) + kCompressedLSize * rtable.id(lid);
       CHECK_EQ(barray.get(cindex), (array[index] != 0));
     }
@@ -208,19 +189,39 @@ void SegmenterBitarrayGenerator::GenerateBitarray(int lsize, int rsize,
   CHECK(barray.array());
   CHECK_GT(barray.size(), 0);
 
-  mozc::OutputFileStream ofs(output_file.c_str());
-  CHECK(ofs);
-
-  ofs << "const size_t kCompressedLSize = " << kCompressedLSize << ";" << endl;
-  ofs << "const size_t kCompressedRSize = " << kCompressedRSize << ";" << endl;
-  ltable.Output("kCompressedLIDTable", &ofs);
-  rtable.Output("kCompressedRIDTable", &ofs);
-
-  mozc::CodeGenByteArrayOutputStream codegen_stream(
-      &ofs, mozc::codegenstream::NOT_OWN_STREAM);
-  codegen_stream.OpenVarDef("SegmenterBitArrayData");
-  codegen_stream.write(barray.array(), barray.array_size());
-  codegen_stream.CloseVarDef();
+  CHECK(Util::IsLittleEndian())
+      << "Architecture must be little endian";
+  {
+    mozc::converter::SegmenterDataSizeInfo pb;
+    pb.set_compressed_lsize(kCompressedLSize);
+    pb.set_compressed_rsize(kCompressedRSize);
+    mozc::OutputFileStream ofs(output_size_info.c_str(),
+                               std::ios_base::out | std::ios_base::binary);
+    CHECK(ofs);
+    CHECK(pb.SerializeToOstream(&ofs));
+    ofs.close();
+  }
+  {
+    mozc::OutputFileStream ofs(output_ltable.c_str(),
+                               std::ios_base::out | std::ios_base::binary);
+    CHECK(ofs);
+    ltable.Output(&ofs);
+    ofs.close();
+  }
+  {
+    mozc::OutputFileStream ofs(output_rtable.c_str(),
+                               std::ios_base::out | std::ios_base::binary);
+    CHECK(ofs);
+    rtable.Output(&ofs);
+    ofs.close();
+  }
+  {
+    mozc::OutputFileStream ofs(output_bitarray.c_str(),
+                               std::ios_base::out | std::ios_base::binary);
+    CHECK(ofs);
+    ofs.write(barray.array(), barray.array_size());
+    ofs.close();
+  }
 }
 
 }  // namespace mozc

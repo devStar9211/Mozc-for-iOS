@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,7 +33,6 @@
 #include <sstream>  // For DebugString()
 #include <string>
 
-#include "base/freelist.h"
 #include "base/logging.h"
 #include "base/util.h"
 
@@ -43,20 +42,16 @@ const size_t kMaxHistorySize = 32;
 const size_t kMaxConversionCandidatesSize = 200;
 }
 
-string Segment::Candidate::functional_key() const {
-  if (key.size() <= content_key.size()) {
-    return "";
-  }
-  return key.substr(content_key.size(),
-                    key.size() - content_key.size());
+StringPiece Segment::Candidate::functional_key() const {
+  return key.size() <= content_key.size() ?
+      StringPiece() : StringPiece(key.data() + content_key.size(),
+                                  key.size() - content_key.size());
 }
 
-string Segment::Candidate::functional_value() const {
-  if (value.size() <= content_value.size()) {
-    return "";
-  }
-  return value.substr(content_value.size(),
-                      value.size() - content_value.size());
+StringPiece Segment::Candidate::functional_value() const {
+  return value.size() <= content_value.size() ?
+      StringPiece() : StringPiece(value.data() + content_value.size(),
+                                  value.size() - content_value.size());
 }
 
 void Segment::Candidate::CopyFrom(const Candidate &src) {
@@ -91,24 +86,57 @@ void Segment::Candidate::CopyFrom(const Candidate &src) {
 }
 
 bool Segment::Candidate::IsValid() const {
-  if (!inner_segment_boundary.empty()) {
-    // The sums of the lengths of key and value components must coincide with
-    // those of key and value, respectively.
-    size_t sum_key_len = 0, sum_value_len = 0;
-    for (size_t i = 0; i < inner_segment_boundary.size(); ++i) {
-      sum_key_len += inner_segment_boundary[i].first;
-      sum_value_len += inner_segment_boundary[i].second;
-    }
-    if (sum_key_len != Util::CharsLen(key) ||
-        sum_value_len != Util::CharsLen(value)) {
-      return false;
-    }
+  if (inner_segment_boundary.empty()) {
+    return true;
+  }
+  // The sums of the lengths of key, value, content key and content value
+  // components must coincide with those of key, value, content_key and
+  // content_value, respectively.
+  size_t sum_key_len = 0, sum_value_len = 0;
+  size_t sum_content_key_len = 0, sum_content_value_len = 0;
+  for (InnerSegmentIterator iter(this); !iter.Done(); iter.Next()) {
+    sum_key_len += iter.GetKey().size();
+    sum_value_len += iter.GetValue().size();
+    sum_content_key_len += iter.GetContentKey().size();
+    sum_content_value_len += iter.GetContentValue().size();
+  }
+  if (sum_key_len != key.size() ||
+      sum_value_len != value.size() ||
+      sum_content_key_len != content_key.size() ||
+      sum_content_value_len != content_value.size()) {
+    return false;
   }
   return true;
 }
 
+bool Segment::Candidate::EncodeLengths(
+    size_t key_len, size_t value_len,
+    size_t content_key_len, size_t content_value_len, uint32 *result) {
+  if (key_len > kuint8max || value_len > kuint8max ||
+      content_key_len > kuint8max || content_value_len > kuint8max) {
+    return false;
+  }
+  *result = (static_cast<uint32>(key_len) << 24) |
+            (static_cast<uint32>(value_len) << 16) |
+            (static_cast<uint32>(content_key_len) << 8) |
+            static_cast<uint32>(content_value_len);
+  return true;
+}
+
+bool Segment::Candidate::PushBackInnerSegmentBoundary(
+    size_t key_len, size_t value_len,
+    size_t content_key_len, size_t content_value_len) {
+  uint32 encoded;
+  if (EncodeLengths(key_len, value_len, content_key_len, content_value_len,
+                    &encoded)) {
+    inner_segment_boundary.push_back(encoded);
+    return true;
+  }
+  return false;
+}
+
 string Segment::Candidate::DebugString() const {
-  stringstream os;
+  std::stringstream os;
   os << "(key=" << key
      << " ckey=" << content_key
      << " val=" << value
@@ -132,13 +160,48 @@ string Segment::Candidate::DebugString() const {
   if (!inner_segment_boundary.empty()) {
     os << " segbdd=";
     for (size_t i = 0; i < inner_segment_boundary.size(); ++i) {
-      os << Util::StringPrintf("<%d,%d>",
-                               inner_segment_boundary[i].first,
-                               inner_segment_boundary[i].second);
+      const uint32 encoded_lengths = inner_segment_boundary[i];
+      const int key_len = encoded_lengths >> 24;
+      const int value_len = (encoded_lengths >> 16) & 0xff;
+      const int content_key_len = (encoded_lengths >> 8) & 0xff;
+      const int content_value_len = encoded_lengths & 0xff;
+      os << Util::StringPrintf("<%d,%d,%d,%d>", key_len, value_len,
+                               content_key_len, content_value_len);
     }
   }
-  os << ")" << endl;
+  os << ")" << std::endl;
   return os.str();
+}
+
+void Segment::Candidate::InnerSegmentIterator::Next() {
+  DCHECK_LT(index_, candidate_->inner_segment_boundary.size());
+  const uint32 encoded_lengths = candidate_->inner_segment_boundary[index_++];
+  key_offset_ += encoded_lengths >> 24;
+  value_offset_ += (encoded_lengths >> 16) & 0xff;
+}
+
+StringPiece Segment::Candidate::InnerSegmentIterator::GetKey() const {
+  DCHECK_LT(index_, candidate_->inner_segment_boundary.size());
+  const uint32 encoded_lengths = candidate_->inner_segment_boundary[index_];
+  return StringPiece(key_offset_, encoded_lengths >> 24);
+}
+
+StringPiece Segment::Candidate::InnerSegmentIterator::GetValue() const {
+  DCHECK_LT(index_, candidate_->inner_segment_boundary.size());
+  const uint32 encoded_lengths = candidate_->inner_segment_boundary[index_];
+  return StringPiece(value_offset_, (encoded_lengths >> 16) & 0xff);
+}
+
+StringPiece Segment::Candidate::InnerSegmentIterator::GetContentKey() const {
+  DCHECK_LT(index_, candidate_->inner_segment_boundary.size());
+  const uint32 encoded_lengths = candidate_->inner_segment_boundary[index_];
+  return StringPiece(key_offset_, (encoded_lengths >> 8) & 0xff);
+}
+
+StringPiece Segment::Candidate::InnerSegmentIterator::GetContentValue() const {
+  DCHECK_LT(index_, candidate_->inner_segment_boundary.size());
+  const uint32 encoded_lengths = candidate_->inner_segment_boundary[index_];
+  return StringPiece(value_offset_, encoded_lengths & 0xff);
 }
 
 Segment::Segment()
@@ -230,9 +293,15 @@ Segment::Candidate *Segment::add_candidate() {
 }
 
 Segment::Candidate *Segment::insert_candidate(int i) {
-  if (i < 0 || i > static_cast<int>(candidates_.size())) {
-    LOG(WARNING) << "invalid index";
-    return NULL;
+  if (i < 0) {
+    LOG(WARNING) << "Invalid insert position [negative]: "
+                 << i << " / " << candidates_.size();
+    return nullptr;
+  }
+  if (i > static_cast<int>(candidates_.size())) {
+    LOG(DFATAL) << "Invalid insert position [out of bounds]: "
+                << i << " / " << candidates_.size();
+    i = static_cast<int>(candidates_.size());
   }
   Candidate *candidate = pool_->Alloc();
   candidate->Init();
@@ -288,11 +357,11 @@ void Segment::clear_meta_candidates() {
   meta_candidates_.clear();
 }
 
-const vector<Segment::Candidate> &Segment::meta_candidates() const {
+const std::vector<Segment::Candidate> &Segment::meta_candidates() const {
   return meta_candidates_;
 }
 
-vector<Segment::Candidate> *Segment::mutable_meta_candidates() {
+std::vector<Segment::Candidate> *Segment::mutable_meta_candidates() {
   return &meta_candidates_;
 }
 
@@ -375,9 +444,8 @@ void Segment::CopyFrom(const Segment &src) {
 }
 
 string Segment::DebugString() const {
-  stringstream os;
-  os << "[segtype=" << segment_type()
-     << " key=" << key() << endl;
+  std::stringstream os;
+  os << "[segtype=" << segment_type() << " key=" << key() << std::endl;
   const int size =
       static_cast<int>(candidates_size() + meta_candidates_size());
   for (int l = 0; l < size; ++l) {
@@ -389,7 +457,7 @@ string Segment::DebugString() const {
     }
     os << "    cand " << j << " " << candidate(j).DebugString();
   }
-  os << "]" << endl;
+  os << "]" << std::endl;
   return os.str();
 }
 
@@ -591,8 +659,8 @@ size_t Segments::max_history_segments_size() const {
 
 void Segments::set_max_history_segments_size(size_t max_history_segments_size) {
   max_history_segments_size_ =
-      max(static_cast<size_t>(0),
-          min(max_history_segments_size, kMaxHistorySize));
+      std::max(static_cast<size_t>(0),
+               std::min(max_history_segments_size, kMaxHistorySize));
 }
 
 void Segments::set_resized(bool resized) {
@@ -650,12 +718,12 @@ Lattice *Segments::mutable_cached_lattice() {
 }
 
 string Segments::DebugString() const {
-  stringstream os;
-  os << "{" << endl;
+  std::stringstream os;
+  os << "{" << std::endl;
   for (size_t i = 0; i < segments_size(); ++i) {
     os << "  seg " << i << " " << segment(i).DebugString();
   }
-  os << "}" << endl;
+  os << "}" << std::endl;
   return os.str();
 }
 

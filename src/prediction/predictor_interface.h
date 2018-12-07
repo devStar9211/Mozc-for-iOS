@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,6 +32,8 @@
 
 #include <string>
 
+#include "base/port_string.h"
+
 namespace mozc {
 
 class ConversionRequest;
@@ -39,7 +41,7 @@ class Segments;
 
 class PredictorInterface {
  public:
-  virtual ~PredictorInterface() {}
+  virtual ~PredictorInterface() = default;
 
   // Returns suggestions.
   // You may need to change the behavior according to the
@@ -51,7 +53,7 @@ class PredictorInterface {
                                  Segments *segments) const = 0;
 
   // Hook(s) for all mutable operations.
-  virtual void Finish(Segments *segments) {}
+  virtual void Finish(const ConversionRequest &request, Segments *segments) {}
 
   // Reverts the last Finish operation.
   virtual void Revert(Segments *segments) {}
@@ -73,13 +75,13 @@ class PredictorInterface {
   virtual bool Reload() { return true; }
 
   // Waits for syncer thread to complete.
-  virtual bool WaitForSyncerForTest() { return true; }
+  virtual bool Wait() { return true; }
 
   virtual const string &GetPredictorName() const = 0;
 
  protected:
   // Disable the construction.
-  PredictorInterface() {}
+  PredictorInterface() = default;
 };
 
 }  // namespace mozc

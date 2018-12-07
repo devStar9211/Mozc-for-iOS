@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,7 +37,6 @@ import org.mozc.android.inputmethod.japanese.protobuf.ProtoUserDictionaryStorage
 import org.mozc.android.inputmethod.japanese.resources.R;
 import org.mozc.android.inputmethod.japanese.session.SessionExecutor;
 import org.mozc.android.inputmethod.japanese.session.SessionHandlerFactory;
-import org.mozc.android.inputmethod.japanese.userdictionary.UserDictionaryActionBarHelperFactory.ActionBarHelper;
 import org.mozc.android.inputmethod.japanese.userdictionary.UserDictionaryUtil.DictionaryNameDialog;
 import org.mozc.android.inputmethod.japanese.userdictionary.UserDictionaryUtil.DictionaryNameDialogListener;
 import org.mozc.android.inputmethod.japanese.userdictionary.UserDictionaryUtil.WordRegisterDialog;
@@ -49,10 +48,8 @@ import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.content.DialogInterface.OnDismissListener;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.SparseBooleanArray;
@@ -77,9 +74,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Enumeration;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -158,21 +153,11 @@ public class UserDictionaryToolActivity extends Activity {
   private static final int IMPORT_DICTIONARY_SELECTION_DIALOG_ID = 5;
 
   private UserDictionaryToolModel model;
-  private final ActionBarHelper actionBarHelper =
-      UserDictionaryActionBarHelperFactory.newInstance(this);
   private ToastManager toastManager;
-  private final Set<Dialog> visibleDialogSet = new HashSet<Dialog>();
-  private final OnDismissListener dialogDismissListener = new OnDismissListener() {
-    @Override
-    public void onDismiss(DialogInterface dialog) {
-      visibleDialogSet.remove(dialog);
-    }
-  };
 
   @Override
   protected void onCreate(Bundle savedInstance) {
     super.onCreate(savedInstance);
-    actionBarHelper.onCreate(savedInstance);
     toastManager = new ToastManager(this);
 
     // Initialize model.
@@ -222,31 +207,6 @@ public class UserDictionaryToolActivity extends Activity {
   }
 
   @Override
-  protected void onPostCreate(Bundle savedInstance) {
-    super.onPostCreate(savedInstance);
-    actionBarHelper.onPostCreate(
-        savedInstance,
-        new OnClickListener() {
-          @Override
-          public void onClick(View v) {
-            maybeShowAddEntryDialog();
-          }
-        },
-        new OnClickListener() {
-          @Override
-          public void onClick(View v) {
-            maybeDeleteEntry();
-          }
-        },
-        new OnClickListener() {
-          @Override
-          public void onClick(View v) {
-            runUndo();
-          }
-        });
-  }
-
-  @Override
   protected void onDestroy() {
     // To release pending resources.
     model.resetImportState();
@@ -263,7 +223,6 @@ public class UserDictionaryToolActivity extends Activity {
     toastManager.maybeShowMessageShortly(model.resumeSession(defaultDictionaryName));
     updateDictionaryNameSpinner();
     updateEntryList();
-    updateDialogWindowSize();
   }
 
   @Override
@@ -288,7 +247,7 @@ public class UserDictionaryToolActivity extends Activity {
       return;
     }
 
-    if (!importUri.getScheme().equals("file")) {
+    if (!"file".equals(importUri.getScheme())) {
       // Not a file.
       toastManager.showMessageShortly(
           R.string.user_dictionary_tool_error_import_source_invalid_scheme);
@@ -296,7 +255,7 @@ public class UserDictionaryToolActivity extends Activity {
     }
 
     // Need to read data from the file.
-    if (getIntent().getType().equals("application/zip")) {
+    if ("application/zip".equals(getIntent().getType())) {
       handleZipImportData(importUri.getPath());
     } else {
       handleTextImportData(importUri.getPath());
@@ -349,6 +308,11 @@ public class UserDictionaryToolActivity extends Activity {
       toastManager.showMessageShortly(
           R.string.user_dictionary_tool_error_import_cannot_read_import_source);
       model.resetImportState();
+    } catch (OutOfMemoryError e) {
+      // The zip file being imported is too large. Recovering (if possible).
+      toastManager.showMessageShortly(
+              R.string.user_dictionary_tool_error_import_too_large_zip_entry);
+      model.resetImportState();
     } finally {
       if (zipFile != null) {
         MozcUtil.closeIgnoringIOException(zipFile);
@@ -375,19 +339,11 @@ public class UserDictionaryToolActivity extends Activity {
     super.onPause();
   }
 
-  @Override
-  public void onConfigurationChanged(Configuration configuration) {
-    super.onConfigurationChanged(configuration);
-    actionBarHelper.onConfigurationChanged(configuration);
-    updateDialogWindowSize();
-  }
-
   // Menu implementation.
   @Override
   public boolean onCreateOptionsMenu(Menu menu) {
     MenuInflater inflater = getMenuInflater();
     inflater.inflate(R.menu.user_dictionary_tool_menu, menu);
-    actionBarHelper.onCreateOptionsMenu(menu);
     return true;
   }
 
@@ -558,8 +514,7 @@ public class UserDictionaryToolActivity extends Activity {
                 }
                 return status;
               }
-            },
-            dialogDismissListener, toastManager);
+            }, toastManager);
 
       case EDIT_ENTRY_DIALOG_ID:
         return UserDictionaryUtil.createWordRegisterDialog(
@@ -574,8 +529,7 @@ public class UserDictionaryToolActivity extends Activity {
                 }
                 return status;
               }
-            },
-            dialogDismissListener, toastManager);
+            }, toastManager);
 
       case CREATE_DICTIONARY_DIALOG_ID:
         return UserDictionaryUtil.createDictionaryNameDialog(
@@ -591,8 +545,7 @@ public class UserDictionaryToolActivity extends Activity {
                 }
                 return status;
               }
-            },
-            dialogDismissListener, toastManager);
+            }, toastManager);
 
       case RENAME_DICTIONARY_DIALOG_ID:
         return UserDictionaryUtil.createDictionaryNameDialog(
@@ -607,8 +560,7 @@ public class UserDictionaryToolActivity extends Activity {
                 }
                 return status;
               }
-            },
-            dialogDismissListener, toastManager);
+            }, toastManager);
 
       case ZIP_FILE_SELECTION_DIALOG_ID:
         return UserDictionaryUtil.createZipFileSelectionDialog(
@@ -631,6 +583,11 @@ public class UserDictionaryToolActivity extends Activity {
                       R.string.user_dictionary_tool_error_import_cannot_read_import_source);
                   model.resetImportState();
                   return;
+                } catch (OutOfMemoryError e) {
+                  toastManager.showMessageShortly(
+                      R.string.user_dictionary_tool_error_import_too_large_zip_entry);
+                  model.resetImportState();
+                  return;
                 } finally {
                   MozcUtil.closeIgnoringIOException(zipFile);
                 }
@@ -648,8 +605,7 @@ public class UserDictionaryToolActivity extends Activity {
               public void onCancel(DialogInterface dialog) {
                 model.resetImportState();
               }
-            },
-            dialogDismissListener);
+            });
 
       case IMPORT_DICTIONARY_SELECTION_DIALOG_ID:
         return UserDictionaryUtil.createImportDictionarySelectionDialog(
@@ -684,8 +640,7 @@ public class UserDictionaryToolActivity extends Activity {
               public void onCancel(DialogInterface dialog) {
                 model.resetImportState();
               }
-            },
-            dialogDismissListener);
+            });
     }
 
     MozcLog.e("Unknown Dialog ID: " + id);
@@ -696,11 +651,6 @@ public class UserDictionaryToolActivity extends Activity {
   @Override
   protected void onPrepareDialog(int id, Dialog dialog) {
     super.onPrepareDialog(id, dialog);
-
-    // Set dialog window size based on the display size.
-    UserDictionaryUtil.setDialogWindowSize(dialog);
-    visibleDialogSet.add(dialog);
-
     switch (id) {
       case ADD_ENTRY_DIALOG_ID:
         WordRegisterDialog.class.cast(dialog).setEntry(Entry.newBuilder()
@@ -782,12 +732,6 @@ public class UserDictionaryToolActivity extends Activity {
   private void updateEntryList() {
     ListView entryList = getEntryList();
     ArrayAdapter.class.cast(entryList.getAdapter()).notifyDataSetChanged();
-  }
-
-  private void updateDialogWindowSize() {
-    for (Dialog dialog : visibleDialogSet) {
-      UserDictionaryUtil.setDialogWindowSize(dialog);
-    }
   }
 
   private Spinner getDictionaryNameSpinner() {

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -45,7 +45,7 @@ class TestableWinSandbox : public WinSandbox {
   DISALLOW_IMPLICIT_CONSTRUCTORS(TestableWinSandbox);
 };
 
-void VerifySidContained(const vector<Sid> sids,
+void VerifySidContained(const std::vector<Sid> sids,
                         WELL_KNOWN_SID_TYPE expected_well_known_sid) {
   Sid expected_sid(expected_well_known_sid);
   for (size_t i = 0; i < sids.size(); ++i) {
@@ -64,19 +64,19 @@ TEST(WinSandboxTest, GetSidsToDisable) {
                      &process_token_ret);
   ScopedHandle process_token(process_token_ret);
 
-  const vector<Sid> lockdown = WinSandbox::GetSidsToDisable(
+  const std::vector<Sid> lockdown = WinSandbox::GetSidsToDisable(
       process_token.get(), WinSandbox::USER_LOCKDOWN);
-  const vector<Sid> restricted = WinSandbox::GetSidsToDisable(
+  const std::vector<Sid> restricted = WinSandbox::GetSidsToDisable(
       process_token.get(), WinSandbox::USER_RESTRICTED);
-  const vector<Sid> limited = WinSandbox::GetSidsToDisable(
+  const std::vector<Sid> limited = WinSandbox::GetSidsToDisable(
       process_token.get(), WinSandbox::USER_LIMITED);
-  const vector<Sid> interactive = WinSandbox::GetSidsToDisable(
+  const std::vector<Sid> interactive = WinSandbox::GetSidsToDisable(
       process_token.get(), WinSandbox::USER_INTERACTIVE);
-  const vector<Sid> non_admin = WinSandbox::GetSidsToDisable(
+  const std::vector<Sid> non_admin = WinSandbox::GetSidsToDisable(
       process_token.get(), WinSandbox::USER_NON_ADMIN);
-  const vector<Sid> restricted_same_access = WinSandbox::GetSidsToDisable(
+  const std::vector<Sid> restricted_same_access = WinSandbox::GetSidsToDisable(
       process_token.get(), WinSandbox::USER_RESTRICTED_SAME_ACCESS);
-  const vector<Sid> unprotect = WinSandbox::GetSidsToDisable(
+  const std::vector<Sid> unprotect = WinSandbox::GetSidsToDisable(
       process_token.get(), WinSandbox::USER_UNPROTECTED);
 
   EXPECT_TRUE(restricted.size() == lockdown.size());
@@ -97,20 +97,20 @@ TEST(WinSandboxTest, GetPrivilegesToDisable) {
                      &process_token_ret);
   ScopedHandle process_token(process_token_ret);
 
-  const vector<LUID> lockdown = WinSandbox::GetPrivilegesToDisable(
+  const std::vector<LUID> lockdown = WinSandbox::GetPrivilegesToDisable(
       process_token.get(), WinSandbox::USER_LOCKDOWN);
-  const vector<LUID> restricted = WinSandbox::GetPrivilegesToDisable(
+  const std::vector<LUID> restricted = WinSandbox::GetPrivilegesToDisable(
       process_token.get(), WinSandbox::USER_RESTRICTED);
-  const vector<LUID> limited = WinSandbox::GetPrivilegesToDisable(
+  const std::vector<LUID> limited = WinSandbox::GetPrivilegesToDisable(
       process_token.get(), WinSandbox::USER_LIMITED);
-  const vector<LUID> interactive = WinSandbox::GetPrivilegesToDisable(
+  const std::vector<LUID> interactive = WinSandbox::GetPrivilegesToDisable(
       process_token.get(), WinSandbox::USER_INTERACTIVE);
-  const vector<LUID> non_admin = WinSandbox::GetPrivilegesToDisable(
+  const std::vector<LUID> non_admin = WinSandbox::GetPrivilegesToDisable(
       process_token.get(), WinSandbox::USER_NON_ADMIN);
-  const vector<LUID> restricted_same_access =
+  const std::vector<LUID> restricted_same_access =
       WinSandbox::GetPrivilegesToDisable(
           process_token.get(), WinSandbox::USER_RESTRICTED_SAME_ACCESS);
-  const vector<LUID> unprotect = WinSandbox::GetPrivilegesToDisable(
+  const std::vector<LUID> unprotect = WinSandbox::GetPrivilegesToDisable(
       process_token.get(), WinSandbox::USER_UNPROTECTED);
 
   EXPECT_EQ(0, restricted_same_access.size());
@@ -123,19 +123,19 @@ TEST(WinSandboxTest, GetSidsToRestrict) {
                      &process_token_ret);
   ScopedHandle process_token(process_token_ret);
 
-  const vector<Sid> lockdown = WinSandbox::GetSidsToRestrict(
+  const std::vector<Sid> lockdown = WinSandbox::GetSidsToRestrict(
       process_token.get(), WinSandbox::USER_LOCKDOWN);
-  const vector<Sid> restricted = WinSandbox::GetSidsToRestrict(
+  const std::vector<Sid> restricted = WinSandbox::GetSidsToRestrict(
       process_token.get(), WinSandbox::USER_RESTRICTED);
-  const vector<Sid> limited = WinSandbox::GetSidsToRestrict(
+  const std::vector<Sid> limited = WinSandbox::GetSidsToRestrict(
       process_token.get(), WinSandbox::USER_LIMITED);
-  const vector<Sid> interactive = WinSandbox::GetSidsToRestrict(
+  const std::vector<Sid> interactive = WinSandbox::GetSidsToRestrict(
       process_token.get(), WinSandbox::USER_INTERACTIVE);
-  const vector<Sid> non_admin = WinSandbox::GetSidsToRestrict(
+  const std::vector<Sid> non_admin = WinSandbox::GetSidsToRestrict(
       process_token.get(), WinSandbox::USER_NON_ADMIN);
-  const vector<Sid> restricted_same_access = WinSandbox::GetSidsToRestrict(
+  const std::vector<Sid> restricted_same_access = WinSandbox::GetSidsToRestrict(
           process_token.get(), WinSandbox::USER_RESTRICTED_SAME_ACCESS);
-  const vector<Sid> unprotect = WinSandbox::GetSidsToRestrict(
+  const std::vector<Sid> unprotect = WinSandbox::GetSidsToRestrict(
       process_token.get(), WinSandbox::USER_UNPROTECTED);
 
   EXPECT_EQ(1, lockdown.size());
@@ -149,27 +149,17 @@ TEST(WinSandboxTest, GetSidsToRestrict) {
 const wchar_t kDummyUserSID[] = L"S-8";
 const wchar_t kDummyGroupSID[] = L"S-9";
 
-wstring GetSDDLForXP(WinSandbox::ObjectSecurityType type) {
+std::wstring GetSDDLForVista(WinSandbox::ObjectSecurityType type) {
   return TestableWinSandbox::GetSDDL(
-      type, kDummyUserSID, kDummyGroupSID, false, false);
+      type, kDummyUserSID, kDummyGroupSID, false);
 }
 
-wstring GetSDDLForVista(WinSandbox::ObjectSecurityType type) {
+std::wstring GetSDDLForWin8(WinSandbox::ObjectSecurityType type) {
   return TestableWinSandbox::GetSDDL(
-      type, kDummyUserSID, kDummyGroupSID, true, false);
-}
-
-wstring GetSDDLForWin8(WinSandbox::ObjectSecurityType type) {
-  return TestableWinSandbox::GetSDDL(
-      type, kDummyUserSID, kDummyGroupSID, true, true);
+      type, kDummyUserSID, kDummyGroupSID, true);
 }
 
 TEST(WinSandboxTest, GetSDDLForSharablePipe) {
-  EXPECT_EQ(
-      L"O:S-8"
-      L"G:S-9"
-      L"D:(D;;GA;;;NU)(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;S-8)",
-      GetSDDLForXP(WinSandbox::kSharablePipe));
   EXPECT_EQ(
       L"O:S-8"
       L"G:S-9"
@@ -186,11 +176,6 @@ TEST(WinSandboxTest, GetSDDLForSharablePipe) {
 }
 
 TEST(WinSandboxTest, GetSDDLForLooseSharablePipe) {
-  EXPECT_EQ(
-      L"O:S-8"
-      L"G:S-9"
-      L"D:(D;;GA;;;NU)(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;S-8)(A;;GA;;;RC)",
-      GetSDDLForXP(WinSandbox::kLooseSharablePipe));
   EXPECT_EQ(
       L"O:S-8"
       L"G:S-9"
@@ -211,11 +196,6 @@ TEST(WinSandboxTest, GetSDDLForSharableEvent) {
   EXPECT_EQ(
       L"O:S-8"
       L"G:S-9"
-      L"D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;S-8)(A;;GX;;;RC)",
-      GetSDDLForXP(WinSandbox::kSharableEvent));
-  EXPECT_EQ(
-      L"O:S-8"
-      L"G:S-9"
       L"D:(A;;;;;OW)(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;S-8)(A;;GX;;;RC)"
       L"S:(ML;;NX;;;LW)",
       GetSDDLForVista(WinSandbox::kSharableEvent));
@@ -229,11 +209,6 @@ TEST(WinSandboxTest, GetSDDLForSharableEvent) {
 }
 
 TEST(WinSandboxTest, GetSDDLForSharableMutex) {
-  EXPECT_EQ(
-      L"O:S-8"
-      L"G:S-9"
-      L"D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;S-8)(A;;GX;;;RC)",
-      GetSDDLForXP(WinSandbox::kSharableMutex));
   EXPECT_EQ(
       L"O:S-8"
       L"G:S-9"
@@ -253,11 +228,6 @@ TEST(WinSandboxTest, GetSDDLForSharableFileForRead) {
   EXPECT_EQ(
       L"O:S-8"
       L"G:S-9"
-      L"D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;S-8)(A;;GR;;;RC)",
-      GetSDDLForXP(WinSandbox::kSharableFileForRead));
-  EXPECT_EQ(
-      L"O:S-8"
-      L"G:S-9"
       L"D:(A;;;;;OW)(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;S-8)(A;;GR;;;RC)"
       L"S:(ML;;NWNX;;;LW)",
       GetSDDLForVista(WinSandbox::kSharableFileForRead));
@@ -274,11 +244,6 @@ TEST(WinSandboxTest, GetSDDLForIPCServerProcess) {
   EXPECT_EQ(
       L"O:S-8"
       L"G:S-9"
-      L"D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;S-8)(A;;0x0400;;;RC)",
-      GetSDDLForXP(WinSandbox::kIPCServerProcess));
-  EXPECT_EQ(
-      L"O:S-8"
-      L"G:S-9"
       L"D:(A;;;;;OW)(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;S-8)(A;;0x1000;;;RC)",
       GetSDDLForVista(WinSandbox::kIPCServerProcess));
   EXPECT_EQ(
@@ -290,11 +255,6 @@ TEST(WinSandboxTest, GetSDDLForIPCServerProcess) {
 }
 
 TEST(WinSandboxTest, GetSDDLForPrivateObject) {
-  EXPECT_EQ(
-      L"O:S-8"
-      L"G:S-9"
-      L"D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;S-8)",
-      GetSDDLForXP(WinSandbox::kPrivateObject));
   EXPECT_EQ(
       L"O:S-8"
       L"G:S-9"

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,11 +34,12 @@
 
 #include "base/logging.h"
 #include "base/util.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
-#include "converter/conversion_request.h"
 #include "converter/converter_interface.h"
 #include "converter/segments.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
+#include "request/conversion_request.h"
 #include "rewriter/calculator/calculator_interface.h"
 
 namespace mozc {
@@ -51,6 +52,13 @@ CalculatorRewriter::CalculatorRewriter(
 
 CalculatorRewriter::~CalculatorRewriter() {}
 
+int CalculatorRewriter::capability(const ConversionRequest &request) const {
+  if (request.request().mixed_conversion()) {
+    return RewriterInterface::ALL;
+  }
+  return RewriterInterface::CONVERSION;
+}
+
 // Rewrites candidates when conversion segments of |segments| represents an
 // expression that can be calculated. In such case, if |segments| consists
 // of multiple segments, it merges them by calling ConverterInterface::
@@ -59,7 +67,7 @@ CalculatorRewriter::~CalculatorRewriter() {}
 //            a valid expression.
 bool CalculatorRewriter::Rewrite(const ConversionRequest &request,
                                  Segments *segments) const {
-  if (!GET_CONFIG(use_calculator)) {
+  if (!request.config().use_calculator()) {
     return false;
   }
 
@@ -75,6 +83,9 @@ bool CalculatorRewriter::Rewrite(const ConversionRequest &request,
   if (segments_size == 1) {
     const string &key = segments->conversion_segment(0).key();
     string result;
+    if (key.empty()) {
+      return false;
+    }
     if (!calculator->CalculateString(key, &result)) {
       return false;
     }
@@ -123,12 +134,11 @@ bool CalculatorRewriter::InsertCandidate(const string &value,
   // Normalize the expression, used in description.
   string temp, temp2, expression;
   Util::FullWidthAsciiToHalfWidthAscii(base_candidate.content_key, &temp);
-  // "・"
-  Util::StringReplace(temp, "\xE3\x83\xBB", "/", true, &temp2);
+  Util::StringReplace(temp, "・", "/", true, &temp2);
   // "ー", onbiki
-  Util::StringReplace(temp2, "\xE3\x83\xBC", "-", true, &expression);
+  Util::StringReplace(temp2, "ー", "-", true, &expression);
 
-  size_t offset = min(insert_pos, segment->candidates_size());
+  size_t offset = std::min(insert_pos, segment->candidates_size());
 
   for (int n = 0; n < 2; ++n) {
     int current_offset = offset + n;
@@ -156,16 +166,24 @@ bool CalculatorRewriter::InsertCandidate(const string &value,
     candidate->content_key = base_candidate.content_key;
     candidate->attributes |= Segment::Candidate::NO_VARIANTS_EXPANSION;
     candidate->attributes |= Segment::Candidate::NO_LEARNING;
-    // description "[expression] の計算結果"
-    candidate->description = expression +
-        " \xE3\x81\xAE\xE8\xA8\x88\xE7\xAE\x97\xE7\xB5\x90\xE6\x9E\x9C";
+    candidate->description = "計算結果";
 
     if (n == 0) {   // without expression
       candidate->value = value;
       candidate->content_value = value;
     } else {       // with expression
-      candidate->value = expression + value;
-      candidate->content_value = expression + value;
+      DCHECK(!expression.empty());
+      if (expression.front() == '=') {
+        // Expression starts with '='.
+        // Appends value to the left of expression.
+        candidate->value = value + expression;
+        candidate->content_value = value + expression;
+      } else {
+        // Expression ends with '='.
+        // Appends value to the right of expression.
+        candidate->value = expression + value;
+        candidate->content_value = expression + value;
+      }
     }
   }
 

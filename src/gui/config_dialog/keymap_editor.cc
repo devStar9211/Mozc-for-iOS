@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,25 +29,34 @@
 
 #include "gui/config_dialog/keymap_editor.h"
 
+#if defined(OS_ANDROID) || defined(OS_NACL)
+#error "This platform is not supported."
+#endif  // OS_ANDROID || OS_NACL
+
 #include <QtCore/QFile>
-#include <QtGui/QFileDialog>
 #include <QtGui/QtGui>
+#include <QtWidgets/QFileDialog>
+#include <QtWidgets/QMenu>
+#include <QtWidgets/QMessageBox>
+
 #include <algorithm>  // for unique
 #include <cctype>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <string>
 #include <vector>
+
 #include "base/config_file_stream.h"
 #include "base/logging.h"
 #include "base/singleton.h"
 #include "base/util.h"
+#include "composer/key_parser.h"
 #include "gui/base/table_util.h"
 #include "gui/config_dialog/combobox_delegate.h"
 #include "gui/config_dialog/keybinding_editor_delegate.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "session/internal/keymap.h"
-#include "session/key_parser.h"
 // TODO(komatsu): internal files should not be used from external modules.
 
 namespace mozc {
@@ -70,12 +79,15 @@ const char *kKeyMapStatus[] = {
 };
 
 const char kInsertCharacterCommand[] = "InsertCharacter";
-const char kIMEOnCommand[] = "IMEOn";
-const char kIMEOffCommand[] = "IMEOff";
-const char kReconvertCommand[] = "Reconvert";
+const char kDirectMode[] = "DirectInput";
 const char kReportBugCommand[] = "ReportBug";
 // Old command name
 const char kEditInsertCommand[] = "EditInsert";
+
+#if defined(OS_MACOSX)
+const char kIMEOnCommand[] = "IMEOn";
+const char kIMEOffCommand[] = "IMEOff";
+#endif  // OS_MACOSX
 
 enum {
   NEW_INDEX              = 0,
@@ -148,7 +160,7 @@ class KeyMapValidator {
 
   // Returns true if the key map entry is valid
   // invalid keymaps are not exported/imported.
-  bool IsValidEntry(const vector<string> &fields) {
+  bool IsValidEntry(const std::vector<string> &fields) {
     if (fields.size() < 3) {
       return false;
     }
@@ -163,7 +175,7 @@ class KeyMapValidator {
 
   // Returns true if the key map entry is configurable and
   // we want to show them.
-  bool IsVisibleEntry(const vector<string> &fields) {
+  bool IsVisibleEntry(const std::vector<string> &fields) {
     if (fields.size() < 3) {
       return false;
     }
@@ -180,22 +192,22 @@ class KeyMapValidator {
   }
 
  private:
-  set<uint32> invisible_modifiers_;
-  set<uint32> invisible_key_events_;
-  set<string> invisible_commands_;
+  std::set<uint32> invisible_modifiers_;
+  std::set<uint32> invisible_key_events_;
+  std::set<string> invisible_commands_;
 };
 
 class KeyMapTableLoader {
  public:
   KeyMapTableLoader() {
     string line;
-    vector<string> fields;
-    set<string> status;
-    set<string> commands;
+    std::vector<string> fields;
+    std::set<string> status;
+    std::set<string> commands;
     KeyMapValidator *validator = mozc::Singleton<KeyMapValidator>::get();
 
     // get all command names
-    set<string> command_names;
+    std::set<string> command_names;
     mozc::keymap::KeyMapManager manager;
     manager.GetAvailableCommandNameDirect(&command_names);
     manager.GetAvailableCommandNamePrecomposition(&command_names);
@@ -204,7 +216,7 @@ class KeyMapTableLoader {
     manager.GetAvailableCommandNameZeroQuerySuggestion(&command_names);
     manager.GetAvailableCommandNameSuggestion(&command_names);
     manager.GetAvailableCommandNamePrediction(&command_names);
-    for (set<string>::const_iterator itr = command_names.begin();
+    for (std::set<string>::const_iterator itr = command_names.begin();
          itr != command_names.end(); ++itr) {
       if (validator->IsVisibleCommand(*itr)) {
         commands.insert(*itr);
@@ -215,7 +227,7 @@ class KeyMapTableLoader {
       status_ << QString::fromUtf8(kKeyMapStatus[i]);
     }
 
-    for (set<string>::const_iterator it = commands.begin();
+    for (std::set<string>::const_iterator it = commands.begin();
          it != commands.end(); ++it) {
       commands_ << QString::fromUtf8(it->c_str());
     }
@@ -274,7 +286,7 @@ KeyMapEditorDialog::KeyMapEditorDialog(QWidget *parent)
     const QString i18n_status = tr(statuses[i].toStdString().data());
     i18n_statuses.append(i18n_status);
     normalized_status_map_.insert(
-        make_pair(i18n_status.toStdString(), statuses[i].toStdString()));
+        std::make_pair(i18n_status.toStdString(), statuses[i].toStdString()));
   }
   status_delegate_->SetItemList(i18n_statuses);
 
@@ -285,7 +297,7 @@ KeyMapEditorDialog::KeyMapEditorDialog(QWidget *parent)
     const QString i18n_command = tr(commands[i].toStdString().data());
     i18n_commands.append(i18n_command);
     normalized_command_map_.insert(
-        make_pair(i18n_command.toStdString(), commands[i].toStdString()));
+        std::make_pair(i18n_command.toStdString(), commands[i].toStdString()));
   }
   i18n_commands.sort();
   commands_delegate_->SetItemList(i18n_commands);
@@ -311,7 +323,7 @@ KeyMapEditorDialog::KeyMapEditorDialog(QWidget *parent)
 
 KeyMapEditorDialog::~KeyMapEditorDialog() {}
 
-bool KeyMapEditorDialog::LoadFromStream(istream *is) {
+bool KeyMapEditorDialog::LoadFromStream(std::istream *is) {
   if (is == NULL) {
     return false;
   }
@@ -321,13 +333,13 @@ bool KeyMapEditorDialog::LoadFromStream(istream *is) {
     return false;
   }
 
-  vector<string> fields;
+  std::vector<string> fields;
   int row = 0;
   mutable_table_widget()->setRowCount(0);
   mutable_table_widget()->verticalHeader()->hide();
 
   invisible_keymap_table_.clear();
-  ime_switch_keymap_.clear();
+  direct_mode_commands_.clear();
   while (getline(*is, line)) {
     if (line.empty() || line[0] == '#') {
       continue;
@@ -341,6 +353,10 @@ bool KeyMapEditorDialog::LoadFromStream(istream *is) {
       continue;
     }
 
+    const string &status = fields[0];
+    const string &key = fields[1];
+    const string &command = fields[2];
+
     // don't accept invalid keymap entries.
     if (!Singleton<KeyMapValidator>::get()->IsValidEntry(fields)) {
       VLOG(3) << "invalid entry.";
@@ -350,30 +366,30 @@ bool KeyMapEditorDialog::LoadFromStream(istream *is) {
     // don't show invisible (not configurable) keymap entries.
     if (!Singleton<KeyMapValidator>::get()->IsVisibleEntry(fields)) {
       VLOG(3) << "invalid entry to show. add to invisible_keymap_table_";
-      invisible_keymap_table_ += fields[0];
+      invisible_keymap_table_ += status;
       invisible_keymap_table_ += '\t';
-      invisible_keymap_table_ += fields[1];
+      invisible_keymap_table_ += key;
       invisible_keymap_table_ += '\t';
-      invisible_keymap_table_ += fields[2];
+      invisible_keymap_table_ += command;
       invisible_keymap_table_ += '\n';
       continue;
     }
 
-    if (fields[2] == kIMEOnCommand || fields[2] == kReconvertCommand) {
-      ime_switch_keymap_.insert(line);
+    if (status == kDirectMode) {
+      direct_mode_commands_.insert(key);
     }
 
-    QTableWidgetItem *status
-        = new QTableWidgetItem(tr(fields[0].c_str()));
-    QTableWidgetItem *key
-        = new QTableWidgetItem(QString::fromUtf8(fields[1].c_str()));
-    QTableWidgetItem *command
-        = new QTableWidgetItem(tr(fields[2].c_str()));
+    QTableWidgetItem *status_item
+        = new QTableWidgetItem(tr(status.c_str()));
+    QTableWidgetItem *key_item
+        = new QTableWidgetItem(QString::fromUtf8(key.c_str()));
+    QTableWidgetItem *command_item
+        = new QTableWidgetItem(tr(command.c_str()));
 
     mutable_table_widget()->insertRow(row);
-    mutable_table_widget()->setItem(row, 0, status);
-    mutable_table_widget()->setItem(row, 1, key);
-    mutable_table_widget()->setItem(row, 2, command);
+    mutable_table_widget()->setItem(row, 0, status_item);
+    mutable_table_widget()->setItem(row, 1, key_item);
+    mutable_table_widget()->setItem(row, 2, command_item);
     ++row;
   }
 
@@ -392,7 +408,7 @@ bool KeyMapEditorDialog::Update() {
     return false;
   }
 
-  set<string> new_ime_switch_keymap;
+  std::set<string> new_direct_mode_commands;
 
   KeyMapValidator *validator = Singleton<KeyMapValidator>::get();
   string *keymap_table = mutable_table();
@@ -407,7 +423,7 @@ bool KeyMapEditorDialog::Update() {
     const string &i18n_command =
         TableUtil::SafeGetItemText(mutable_table_widget(), i, 2).toStdString();
 
-    const map<string, string>::const_iterator status_it =
+    const std::map<string, string>::const_iterator status_it =
         normalized_status_map_.find(i18n_status);
     if (status_it == normalized_status_map_.end()) {
       LOG(ERROR) << "Unsupported i18n status name: " << i18n_status;
@@ -415,7 +431,7 @@ bool KeyMapEditorDialog::Update() {
     }
     const string &status = status_it->second;
 
-    const map<string, string>::const_iterator command_it =
+    const std::map<string, string>::const_iterator command_it =
         normalized_command_map_.find(i18n_command);
     if (command_it == normalized_command_map_.end()) {
       LOG(ERROR) << "Unsupported i18n command name:" << i18n_command;
@@ -434,21 +450,22 @@ bool KeyMapEditorDialog::Update() {
     *keymap_table += keymap_line;
     *keymap_table += '\n';
 
-    if (command == kIMEOnCommand || command == kReconvertCommand) {
-      new_ime_switch_keymap.insert(keymap_line);
+    if (status == kDirectMode) {
+      new_direct_mode_commands.insert(key);
     }
   }
   *keymap_table += invisible_keymap_table_;
 
-  if (new_ime_switch_keymap != ime_switch_keymap_) {
+  if (new_direct_mode_commands != direct_mode_commands_) {
 #if defined(OS_WIN) || defined(OS_LINUX)
     QMessageBox::information(
         this,
         windowTitle(),
-        tr("The keymaps for IME ON and Reconversion will be "
-           "applied after new applications."));
+        tr("Changes of keymaps for direct input mode will apply only to "
+           "applications that are launched after making your "
+           "modifications."));
 #endif  // OS_WIN || OS_LINUX
-    ime_switch_keymap_ = new_ime_switch_keymap;
+    direct_mode_commands_ = new_direct_mode_commands;
   }
 
   return true;
@@ -495,7 +512,7 @@ void KeyMapEditorDialog::OnEditMenuAction(QAction *action) {
                import_index < arraysize(kKeyMaps)) {
       const char *keymap_file =
           keymap::KeyMapManager::GetKeyMapFileName(kKeyMaps[import_index]);
-      scoped_ptr<istream> ifs(
+      std::unique_ptr<std::istream> ifs(
           ConfigFileStream::LegacyOpen(keymap_file));
       CHECK(ifs.get() != NULL);  // should never happen
       CHECK(LoadFromStream(ifs.get()));

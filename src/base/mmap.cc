@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -44,7 +44,6 @@
 
 #include "base/port.h"
 #include "base/logging.h"
-#include "base/system_util.h"
 #include "base/util.h"
 
 #ifdef OS_WIN
@@ -82,7 +81,7 @@ bool Mmap::Open(const char *filename, const char *mode) {
     return false;
   }
 
-  wstring filename_wide;
+  std::wstring filename_wide;
   if (Util::UTF8ToWide(filename, &filename_wide) <= 0) {
     return false;
   }
@@ -181,7 +180,7 @@ bool Mmap::Open(const char *filename, const char *mode) {
     return false;
   }
 
-  SystemUtil::MaybeMLock(ptr, size_);
+  MaybeMLock(ptr, size_);
   text_ = reinterpret_cast<char *>(ptr);
   size_ = st.st_size;
   return true;
@@ -189,7 +188,7 @@ bool Mmap::Open(const char *filename, const char *mode) {
 
 void Mmap::Close() {
   if (text_ != NULL) {
-    SystemUtil::MaybeMUnlock(text_, size_);
+    MaybeMUnlock(text_, size_);
     munmap(reinterpret_cast<char *>(text_), size_);
   }
 
@@ -255,5 +254,48 @@ bool Mmap::SyncToFile() {
                                          string(text_.get(), size_));
 }
 #endif  // MOZC_USE_PEPPER_FILE_IO
+
+// Define a macro (MOZC_HAVE_MLOCK) to indicate mlock support.
+#if defined(OS_WIN) || defined(OS_ANDROID) || defined(OS_NACL)
+# define MOZC_HAVE_MLOCK 0
+#else  // defined(OS_WIN) || defined(OS_ANDROID) ||
+       // defined(OS_NACL)
+# define MOZC_HAVE_MLOCK 1
+#endif  // defined(OS_WIN) || defined(OS_ANDROID) ||
+        // defined(OS_NACL)
+
+#ifndef MOZC_HAVE_MLOCK
+#error "MOZC_HAVE_MLOCK is not defined"
+#endif
+
+#if MOZC_HAVE_MLOCK
+bool Mmap::IsMLockSupported() {
+  return true;
+}
+
+int Mmap::MaybeMLock(const void *addr, size_t len) {
+  return mlock(addr, len);
+}
+
+int Mmap::MaybeMUnlock(const void *addr, size_t len) {
+  return munlock(addr, len);
+}
+
+#else  // MOZC_HAVE_MLOCK
+
+bool Mmap::IsMLockSupported() {
+  return false;
+}
+
+int Mmap::MaybeMLock(const void *addr, size_t len) {
+  return -1;
+}
+
+int Mmap::MaybeMUnlock(const void *addr, size_t len) {
+  return -1;
+}
+#endif  // MOZC_HAVE_MLOCK
+
+#undef MOZC_HAVE_MLOCK
 
 }  // namespace mozc

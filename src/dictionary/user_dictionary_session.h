@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,10 +31,10 @@
 #define MOZC_DICTIONARY_USER_DICTIONARY_SESSION_H_
 
 #include <deque>
+#include <memory>
 
-#include "base/scoped_ptr.h"
 #include "base/port.h"
-#include "dictionary/user_dictionary_storage.pb.h"
+#include "protocol/user_dictionary_storage.pb.h"
 
 namespace mozc {
 
@@ -107,7 +107,7 @@ class UserDictionarySession {
 
   // Deletes the entries in the dictionary specified by dictionary_id.
   UserDictionaryCommandStatus::Status DeleteEntry(
-      uint64 dictionary_id, const vector<int> &index_list);
+      uint64 dictionary_id, const std::vector<int> &index_list);
 
   // Imports entries from the text data into the dictionary with dictionary_id.
   UserDictionaryCommandStatus::Status ImportFromString(
@@ -117,6 +117,10 @@ class UserDictionarySession {
   UserDictionaryCommandStatus::Status ImportToNewDictionaryFromString(
       const string &dictionary_name, const string &data,
       uint64 *new_dictionary_id);
+
+  // Clears all the dictionaries and undo history (doesn't save to the file).
+  // This operation is not undoable.
+  void ClearDictionariesAndUndoHistory();
 
   // Returns true if the session has undo-able history.
   bool has_undo_history() const { return !undo_history_.empty(); }
@@ -133,9 +137,9 @@ class UserDictionarySession {
   void ClearUndoHistory();
   void AddUndoCommand(UndoCommand *undo_command);
 
-  scoped_ptr<mozc::UserDictionaryStorage> storage_;
+  std::unique_ptr<mozc::UserDictionaryStorage> storage_;
   string default_dictionary_name_;
-  deque<UndoCommand*> undo_history_;
+  std::deque<UndoCommand*> undo_history_;
 
   DISALLOW_COPY_AND_ASSIGN(UserDictionarySession);
 };

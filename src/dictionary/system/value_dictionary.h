@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,60 +34,42 @@
 #ifndef MOZC_DICTIONARY_SYSTEM_VALUE_DICTIONARY_H_
 #define MOZC_DICTIONARY_SYSTEM_VALUE_DICTIONARY_H_
 
-#include <string>
-
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "base/string_piece.h"
 #include "dictionary/dictionary_interface.h"
+#include "storage/louds/louds_trie.h"
 
 namespace mozc {
-
 namespace dictionary {
-class SystemDictionaryCodecInterface;
-}  // namespace dictionary
 
-namespace storage {
-namespace louds {
-class LoudsTrie;
-}  // namespace louds
-}  // namespace storage
-
-class DictionaryFile;
 class POSMatcher;
-
-namespace dictionary {
+class SystemDictionaryCodecInterface;
 
 class ValueDictionary : public DictionaryInterface {
  public:
+  // This class doesn't take the ownership of |value_trie|.
+  ValueDictionary(const POSMatcher &pos_matcher,
+                  const storage::louds::LoudsTrie *value_trie);
   virtual ~ValueDictionary();
 
-  static ValueDictionary *CreateValueDictionaryFromFile(
-      const POSMatcher& pos_matcher, const string &filename);
-
-  static ValueDictionary *CreateValueDictionaryFromImage(
-      const POSMatcher& pos_matcher, const char *ptr, int len);
-
   // Implementation of DictionaryInterface
+  virtual bool HasKey(StringPiece key) const;
   virtual bool HasValue(StringPiece value) const;
-  virtual void LookupPredictive(
-      StringPiece key, bool use_kana_modifier_insensitive_lookup,
-      Callback *callback) const;
-  virtual void LookupPrefix(
-      StringPiece key, bool use_kana_modifier_insensitive_lookup,
-      Callback *callback) const;
-  virtual void LookupExact(StringPiece key, Callback *callback) const;
-  virtual void LookupReverse(
-      StringPiece str, NodeAllocatorInterface *allocator,
-      Callback *callback) const;
+  virtual void LookupPredictive(StringPiece key,
+                                const ConversionRequest &conversion_request,
+                                Callback *callback) const;
+  virtual void LookupPrefix(StringPiece key,
+                            const ConversionRequest &conversion_request,
+                            Callback *callback) const;
+  virtual void LookupExact(StringPiece key,
+                           const ConversionRequest &conversion_request,
+                           Callback *callback) const;
+  virtual void LookupReverse(StringPiece str,
+                             const ConversionRequest &conversion_request,
+                             Callback *callback) const;
 
  private:
-  explicit ValueDictionary(const POSMatcher& pos_matcher);
-
-  bool OpenDictionaryFile();
-
-  scoped_ptr<mozc::storage::louds::LoudsTrie> value_trie_;
-  scoped_ptr<DictionaryFile> dictionary_file_;
+  const storage::louds::LoudsTrie *value_trie_;
   const SystemDictionaryCodecInterface *codec_;
   const uint16 suggestion_only_word_id_;
 

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -46,8 +46,6 @@ namespace mozc {
 class SystemUtil {
  public:
   // return "~/.mozc" for Unix/Mac
-  // return "%USERPROFILE%\\Local Settings\\Application\\"
-  //        "Google\\Google Japanese Input" for Windows XP.
   // return "%USERPROFILE%\\AppData\\LocalLow\\"
   //        "Google\\Google Japanese Input" for Windows Vista and later.
   static string GetUserProfileDirectory();
@@ -114,7 +112,6 @@ class SystemUtil {
   // EnsureVitalImmutableDataIsAvailable is a simple fail-fast mechanism to
   // this situation.  This function simply returns false instead of making
   // the process crash if any of following functions cannot work as expected.
-  // - IsVistaOrLaterCache
   // - SystemDirectoryCache
   // - ProgramFilesX86Cache
   // - LocalAppDataDirectoryCache
@@ -123,31 +120,6 @@ class SystemUtil {
   //   likely to fail.  See b/3216603.
   static bool EnsureVitalImmutableDataIsAvailable();
 #endif  // OS_WIN
-
-  // Command line arguments
-
-  // Rotate the first argv value to the end of argv.
-  static void CommandLineRotateArguments(int argc, char ***argv);
-
-  // Get a pair of key and value from argv, and returns the number of
-  // arguments used for the pair of key and value.  If the argv
-  // contains invalid format, this function returns false and the
-  // number of checked arguments.  Otherwise returns true.
-  static bool CommandLineGetFlag(int argc,
-                                 char **argv,
-                                 string *key,
-                                 string *value,
-                                 int *used_args);
-
-
-  // Return true if the OS is supported.
-  // [OS_MACOSX] This function never returns false.
-  // [OS_LINUX] This function never returns false.
-  // TODO(yukawa): support Mac and Linux.
-  static bool IsPlatformSupported();
-
-  // returns true if the version of Windows is Vista or later.
-  static bool IsVistaOrLater();
 
   // returns true if the version of Windows is 6.1 or later.
   static bool IsWindows7OrLater();
@@ -176,20 +148,6 @@ class SystemUtil {
   // This function is thread safe.
   static const wchar_t *GetSystemDir();
 
-  // Retrieves version of the specified file.
-  // If the function fails, returns false.
-  static bool GetFileVersion(const wstring &file_fullpath,
-                             int *major,
-                             int *minor,
-                             int *build,
-                             int *revision);
-
-  // Retrieves version string of the specified file.
-  // The version string consists of 4 digits separated by comma
-  // like "X.YY.ZZZ.WWWW".
-  // If the function fails, the return value is an empty string.
-  static string GetFileVersionString(const wstring &file_fullpath);
-
   // Returns "MSCTF.AsmCacheReady.<desktop name><session #>" to work around
   // b/5765783.
   // Returns an empty string if fails.
@@ -203,33 +161,11 @@ class SystemUtil {
   // TODO(toshiyuki): Add unittests.
   static string GetOSVersionString();
 
-  // returns true if platform is MacOSX and the version is acceptable.
-  static bool MacOSVersionIsGreaterOrEqual(int32 major, int32 minor, int32 fix);
-
   // disable IME in the current process/thread
   static void DisableIME();
 
   // retrieve total physical memory. returns 0 if any error occurs.
   static uint64 GetTotalPhysicalMemory();
-
-  // check endian-ness at runtime.
-  static bool IsLittleEndian();
-
-  // Following mlock/munlock related functions work based on target environment.
-  // In the case of Android, Native Client, Windows, we don't want to call
-  // actual functions, so these functions do nothing and return -1. In other
-  // cases, these functions call actual mlock/munlock functions and return it's
-  // result.
-  // On Android, page-out is probably acceptable because
-  // - Smaller RAM on the device.
-  // - The storage is (usually) solid state thus page-in/out is expected to
-  //   be faster.
-  // On Linux, in the kernel version >= 2.6.9, user process can mlock. In older
-  // kernel, it fails if the process is running in user priviledge.
-  // TODO(horo): Check in mac that mlock is really necessary.
-  static int MaybeMLock(const void *addr, size_t len);
-
-  static int MaybeMUnlock(const void *addr, size_t len);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(SystemUtil);

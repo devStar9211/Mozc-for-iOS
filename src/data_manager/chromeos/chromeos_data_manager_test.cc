@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,12 +31,14 @@
 
 #include "data_manager/data_manager_test_base.h"
 #include "testing/base/public/gunit.h"
+#include "testing/base/public/mozctest.h"
 
 namespace mozc {
 namespace chromeos {
-
 namespace {
-#include "data_manager/chromeos/chromeos_segmenter_inl.h"
+
+#include "data_manager/chromeos/segmenter_inl.inc"
+
 }  // namespace
 
 class ChromeOsDataManagerTest : public DataManagerTestBase {
@@ -47,19 +49,26 @@ class ChromeOsDataManagerTest : public DataManagerTestBase {
             kLSize,
             kRSize,
             IsBoundaryInternal,
-            "data_manager/chromeos/connection_single_column.txt",
+            mozc::testing::GetSourceFileOrDie(
+                {"data_manager", "chromeos", "connection_single_column.txt"}),
             1,
-            "data/dictionary_chromeos/dictionary00.txt,"
-            "data/dictionary_chromeos/dictionary01.txt,"
-            "data/dictionary_chromeos/dictionary02.txt,"
-            "data/dictionary_chromeos/dictionary03.txt,"
-            "data/dictionary_chromeos/dictionary04.txt,"
-            "data/dictionary_chromeos/dictionary05.txt,"
-            "data/dictionary_chromeos/dictionary06.txt,"
-            "data/dictionary_chromeos/dictionary07.txt,"
-            "data/dictionary_chromeos/dictionary08.txt,"
-            "data/dictionary_chromeos/dictionary09.txt",
-            "data/dictionary_chromeos/suggestion_filter.txt") {}
+            mozc::testing::GetSourceFilesInDirOrDie(
+                {"data", "dictionary_chromeos"},
+                {"dictionary00.txt",
+                 "dictionary01.txt",
+                 "dictionary02.txt",
+                 "dictionary03.txt",
+                 "dictionary04.txt",
+                 "dictionary05.txt",
+                 "dictionary06.txt",
+                 "dictionary07.txt",
+                 "dictionary08.txt",
+                 "dictionary09.txt"}),
+            mozc::testing::GetSourceFilesInDirOrDie(
+                {"data", "dictionary_chromeos"},
+                {"suggestion_filter.txt"}),
+            // ChromeOS doesn't include typing correction models.
+            {}) {}
 };
 
 TEST_F(ChromeOsDataManagerTest, AllTests) {

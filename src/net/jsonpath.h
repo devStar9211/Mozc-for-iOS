@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -69,7 +69,7 @@ class JsonPath {
   // }
   static bool Parse(const Json::Value &root,
                     const string &jsonpath,
-                    vector<const Json::Value *> *output);
+                    std::vector<const Json::Value *> *output);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JsonPath);

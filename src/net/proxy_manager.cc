@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,7 +32,7 @@
 #include <string>
 
 #ifdef OS_MACOSX
-#include <CoreServices/CoreServices.h>
+#include <CFNetwork/CFNetwork.h>
 #include <SystemConfiguration/SystemConfiguration.h>
 #include "base/scoped_cftyperef.h"
 #include "base/mac_util.h"
@@ -100,7 +100,7 @@ CFDictionaryRef RetainOrExpandPacFile(CFURLRef cfurl, CFDictionaryRef proxy) {
       scoped_cftyperef<CFStringRef> private_runloop_mode(
           CFStringCreateWithBytes(
               NULL, reinterpret_cast<const UInt8 *>(label.data()),
-              label.size(), kCFStringEncodingUTF8, NULL));
+              label.size(), kCFStringEncodingUTF8, false));
       CFRunLoopAddSource(
           CFRunLoopGetCurrent(), runloop_source.get(),
           private_runloop_mode.get());
@@ -133,7 +133,7 @@ CFDictionaryRef RetainOrExpandPacFile(CFURLRef cfurl, CFDictionaryRef proxy) {
 
   return final_proxy;
 }
-}  // anonymous namespace
+}  // namespace
 
 // MacProxyManager is a proxy manager for Mac OSX.  It uses
 // CoreService API and SystemConfiguration API to obtain the current
@@ -247,7 +247,7 @@ ProxyManagerInterface *GetProxyManager() {
     return g_proxy_manager;
   }
 }
-}  // anonymous namespace
+}  // namespace
 
 void ProxyManager::SetProxyManager(
     ProxyManagerInterface *proxy_manager) {

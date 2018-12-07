@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,43 +30,38 @@
 // This is a test with the actual converter.  So the result of the
 // conversion may differ from previous versions.
 
+#include <memory>
 #include <string>
+#include <utility>
 
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/port.h"
 #include "base/system_util.h"
+#include "composer/key_parser.h"
 #include "composer/table.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
 #include "converter/segments.h"
+#include "data_manager/testing/mock_data_manager.h"
 #include "engine/engine_factory.h"
+#include "protocol/candidates.pb.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 #include "rewriter/rewriter_interface.h"
-#include "session/commands.pb.h"
 #include "session/internal/ime_context.h"
 #include "session/internal/keymap.h"
-#include "session/key_parser.h"
-#include "session/candidates.pb.h"
+#include "session/request_test_util.h"
 #include "session/session.h"
 #include "session/session_converter_interface.h"
 #include "session/session_handler.h"
-#include "session/request_test_util.h"
 #include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
 
-#ifdef OS_ANDROID
-#include "base/mmap.h"
-#include "base/singleton.h"
-#include "data_manager/android/android_data_manager.h"
-#endif
-
-DECLARE_string(test_srcdir);
-DECLARE_string(test_tmpdir);
 DECLARE_bool(use_history_rewriter);
 
 namespace mozc {
-
 namespace {
+
 string GetComposition(const commands::Command &command) {
   if (!command.output().has_preedit()) {
     return "";
@@ -88,65 +83,26 @@ void InitSessionToPrecomposition(session::Session* session) {
 #endif  // OS_WIN
 }
 
-#ifdef OS_ANDROID
-// In actual libmozc.so usage, the dictionary data will be given via JNI call
-// because only Java side code knows where the data is.
-// On native code unittest, we cannot do it, so instead we mmap the files
-// and use it.
-// Note that this technique works here because the no other test code doesn't
-// link to this binary.
-// TODO(hidehiko): Get rid of this hack by refactoring Engine/DataManager
-// related code.
-class AndroidInitializer {
- private:
-  AndroidInitializer() {
-    string dictionary_data_path = FileUtil::JoinPath(
-        FLAGS_test_srcdir, "embedded_data/dictionary_data");
-    CHECK(dictionary_mmap_.Open(dictionary_data_path.c_str(), "r"));
-    mozc::android::AndroidDataManager::SetDictionaryData(
-        dictionary_mmap_.begin(), dictionary_mmap_.size());
+}  // namespace
 
-    string connection_data_path = FileUtil::JoinPath(
-        FLAGS_test_srcdir, "embedded_data/connection_data");
-    CHECK(connection_mmap_.Open(connection_data_path.c_str(), "r"));
-    mozc::android::AndroidDataManager::SetConnectionData(
-        connection_mmap_.begin(), connection_mmap_.size());
-    LOG(ERROR) << "mmap data initialized.";
-  }
-
-  friend class Singleton<AndroidInitializer>;
-
-  Mmap dictionary_mmap_;
-  Mmap connection_mmap_;
-
-  DISALLOW_COPY_AND_ASSIGN(AndroidInitializer);
-};
-#endif  // OS_ANDROID
-
-}  // anonymous namespace
-
-class SessionRegressionTest : public testing::Test {
+class SessionRegressionTest : public ::testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
 
     orig_use_history_rewriter_ = FLAGS_use_history_rewriter;
     FLAGS_use_history_rewriter = true;
 
-#ifdef OS_ANDROID
-    Singleton<AndroidInitializer>::get();
-#endif
-
     // Note: engine must be created after setting all the flags, as it
     // internally depends on global flags, e.g., for creation of rewriters.
-    engine_.reset(EngineFactory::Create());
+    std::unique_ptr<Engine> engine(EngineFactory::Create());
 
-    handler_.reset(new SessionHandler(engine_.get()));
+    handler_.reset(new SessionHandler(std::move(engine)));
     ResetSession();
     CHECK(session_.get());
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // just in case, reset the config in test_tmpdir
     config::Config config;
     config::ConfigHandler::GetDefaultConfig(&config);
@@ -193,15 +149,15 @@ class SessionRegressionTest : public testing::Test {
     session_.reset(static_cast<session::Session *>(handler_->NewSession()));
     commands::Request request;
     table_.reset(new composer::Table());
-    table_->InitializeWithRequestAndConfig(request, config_);
+    table_->InitializeWithRequestAndConfig(request, config_, data_manager_);
     session_->SetTable(table_.get());
   }
 
+  const testing::MockDataManager data_manager_;
   bool orig_use_history_rewriter_;
-  scoped_ptr<EngineInterface> engine_;
-  scoped_ptr<SessionHandler> handler_;
-  scoped_ptr<session::Session> session_;
-  scoped_ptr<composer::Table> table_;
+  std::unique_ptr<SessionHandler> handler_;
+  std::unique_ptr<session::Session> session_;
+  std::unique_ptr<composer::Table> table_;
   config::Config config_;
 };
 
@@ -223,8 +179,7 @@ TEST_F(SessionRegressionTest, ConvertToTransliterationWithMultipleSegments) {
 
     const commands::Preedit &conversion = output.preedit();
     ASSERT_LE(2, conversion.segment_size());
-    // "ぃ"
-    EXPECT_EQ("\xE3\x81\x83", conversion.segment(0).value());
+    EXPECT_EQ("ぃ", conversion.segment(0).value());
   }
 
   // TranslateHalfASCII
@@ -346,9 +301,7 @@ TEST_F(SessionRegressionTest, PredictionAfterUndo) {
 
   commands::Command command;
   InsertCharacterChars("yoroshi", &command);
-  // "よろしく"
-  const string kYoroshikuString =
-      "\xe3\x82\x88\xe3\x82\x8d\xe3\x81\x97\xe3\x81\x8f";
+  const string kYoroshikuString = "よろしく";
 
   command.Clear();
   session_->PredictAndConvert(&command);
@@ -455,10 +408,9 @@ TEST_F(SessionRegressionTest, AutoConversionTest) {
 
     InitSessionToPrecomposition(session_.get());
     config::Config config;
-    config::ConfigHandler::GetConfig(&config);
+    config::ConfigHandler::GetDefaultConfig(&config);
     config.set_use_auto_conversion(true);
-    config::ConfigHandler::SetConfig(config);
-    session_->ReloadConfig();
+    session_->SetConfig(&config);
 
     const char kInputKeys[] = "aiueo.";
     for (size_t i = 0; i < kInputKeys[i]; ++i) {
@@ -481,8 +433,7 @@ TEST_F(SessionRegressionTest, AutoConversionTest) {
     config::Config config;
     config::ConfigHandler::GetConfig(&config);
     config.set_use_auto_conversion(true);
-    config::ConfigHandler::SetConfig(config);
-    session_->ReloadConfig();
+    session_->SetConfig(&config);
 
     const char kInputKeys[] = "1234.";
     for (size_t i = 0; i < kInputKeys[i]; ++i) {
@@ -505,9 +456,7 @@ TEST_F(SessionRegressionTest, Transliteration_Issue2330463) {
     InsertCharacterChars("[],.", &command);
     command.Clear();
     SendKey("F8", &command);
-    // "｢｣､｡"
-    EXPECT_EQ("\357\275\242\357\275\243\357\275\244\357\275\241",
-              command.output().preedit().segment(0).value());
+    EXPECT_EQ("｢｣､｡", command.output().preedit().segment(0).value());
   }
 
   {
@@ -517,9 +466,7 @@ TEST_F(SessionRegressionTest, Transliteration_Issue2330463) {
     InsertCharacterChars("[g],.", &command);
     command.Clear();
     SendKey("F8", &command);
-    // "｢g｣､｡"
-    EXPECT_EQ("\357\275\242\147\357\275\243\357\275\244\357\275\241",
-              command.output().preedit().segment(0).value());
+    EXPECT_EQ("｢g｣､｡", command.output().preedit().segment(0).value());
   }
 
   {
@@ -529,9 +476,7 @@ TEST_F(SessionRegressionTest, Transliteration_Issue2330463) {
     InsertCharacterChars("[a],.", &command);
     command.Clear();
     SendKey("F8", &command);
-    // "｢ｱ｣､｡"
-    EXPECT_EQ("\357\275\242\357\275\261\357\275\243\357\275\244\357\275\241",
-              command.output().preedit().segment(0).value());
+    EXPECT_EQ("｢ｱ｣､｡", command.output().preedit().segment(0).value());
   }
 }
 
@@ -560,7 +505,7 @@ TEST_F(SessionRegressionTest, Transliteration_Issue6209563) {
       command.Clear();
       commands::KeyEvent *key_event = command.mutable_input()->mutable_key();
       key_event->set_key_code('a');
-      key_event->set_key_string("\xE3\x81\xA1");  // "ち"
+      key_event->set_key_string("ち");
       session_->InsertCharacter(&command);
     }
 
@@ -581,8 +526,7 @@ TEST_F(SessionRegressionTest, CommitT13nSuggestion) {
 
   commands::Command command;
   InsertCharacterChars("ssh", &command);
-  // "っｓｈ"
-  EXPECT_EQ("\xE3\x81\xA3\xEF\xBD\x93\xEF\xBD\x88", GetComposition(command));
+  EXPECT_EQ("っｓｈ", GetComposition(command));
 
   command.Clear();
   command.mutable_input()->set_type(commands::Input::SEND_COMMAND);
@@ -595,9 +539,7 @@ TEST_F(SessionRegressionTest, CommitT13nSuggestion) {
   EXPECT_TRUE(command.output().has_result());
   EXPECT_FALSE(command.output().has_preedit());
 
-  // "っｓｈ"
-  EXPECT_EQ("\xE3\x81\xA3\xEF\xBD\x93\xEF\xBD\x88",
-            command.output().result().value());
+  EXPECT_EQ("っｓｈ", command.output().result().value());
 }
 
 }  // namespace mozc

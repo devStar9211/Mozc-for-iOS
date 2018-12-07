@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -48,19 +48,37 @@
       #     TSF Mozc is completed.
       'targets': [
         {
+          'target_name': 'input_dll_import_lib',
+          'type': 'shared_library',
+          'sources': [
+            'input_dll.cc',
+            'input_dll.def',
+          ],
+          'dependencies': [
+            '../../base/base.gyp:base',
+          ],
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'AdditionalOptions': [
+                '/ignore:4070',
+              ],
+            },
+          },
+        },
+        {
           'target_name': 'imframework_util',
           'type': 'static_library',
           'sources': [
             'imm_reconvert_string.cc',
             'imm_registrar.cc',
             'imm_util.cc',
-            'input_dll.cc',
             'keyboard_layout_id.cc',
             'tsf_profile.cc',
             'tsf_registrar.cc',
           ],
           'dependencies': [
             '../../base/base.gyp:base',
+            'input_dll_import_lib',
           ],
         },
         {
@@ -73,7 +91,7 @@
           ],
           'dependencies': [
             '../../base/base.gyp:base',
-            '../../session/session_base.gyp:session_protocol',
+            '../../protocol/protocol.gyp:commands_proto',
             '../../testing/testing.gyp:gtest_main',
             'imframework_util',
           ],
@@ -103,9 +121,9 @@
           'dependencies': [
             '../../base/base.gyp:base',
             '../../config/config.gyp:config_handler',
-            '../../config/config.gyp:config_protocol',
+            '../../protocol/protocol.gyp:commands_proto',
+            '../../protocol/protocol.gyp:config_proto',
             '../../session/session_base.gyp:key_info_util',
-            '../../session/session_base.gyp:session_protocol',
             '../../session/session_base.gyp:output_util',
           ],
           'link_settings': {
@@ -131,6 +149,7 @@
             'surrogate_pair_observer_test.cc',
           ],
           'dependencies': [
+            '../../base/base_test.gyp:clock_mock',
             '../../client/client.gyp:client',
             '../../testing/testing.gyp:gtest_main',
             'ime_impl_base',
@@ -163,7 +182,7 @@
           ],
           'dependencies': [
             '../../base/base.gyp:base',
-            '../../session/session_base.gyp:session_protocol',
+            '../../protocol/protocol.gyp:commands_proto',
             '../../testing/testing.gyp:gtest_main',
             'ime_base',
           ],
@@ -200,56 +219,6 @@
             'text_icon',
           ],
         },
-        {
-          'target_name': 'win32_file_verifier',
-          'type': 'static_library',
-          'sources': [
-            'file_verifier.cc',
-          ],
-          'dependencies': [
-            '../../base/base.gyp:base',
-          ],
-          'link_settings': {
-            'msvs_settings': {
-              'VCLinkerTool': {
-                'AdditionalDependencies': [
-                  'crypt32.lib',
-                  'imagehlp.lib',
-                  'wintrust.lib',
-                ],
-                'DelayLoadDLLs': [
-                  'imagehlp.dll',
-                  'wintrust.dll',
-                ],
-              },
-            },
-          },
-        },
-        {
-          'target_name': 'win32_file_verifier_test',
-          'type': 'executable',
-          'sources': [
-            'file_verifier_test.cc',
-          ],
-          'dependencies': [
-            '../../base/base.gyp:base',
-            '../../testing/testing.gyp:gtest_main',
-            'win32_file_verifier',
-          ],
-          'variables': {
-            'test_size': 'small',
-            # Copy the test data for character set test.
-            'test_data_subdir': 'data/test/win32/integrity',
-            'test_data': [
-              '../../<(test_data_subdir)/mozc_test_binary.exe',
-              '../../<(test_data_subdir)/mozc_test_binary_modified.exe',
-              '../../<(test_data_subdir)/mozc_test_binary_modified_signed.exe',
-              '../../<(test_data_subdir)/mozc_test_binary_no_checksum.exe',
-              '../../<(test_data_subdir)/mozc_test_binary_signed.exe',
-            ],
-          },
-          'includes': [ '../../gyp/install_testdata.gypi' ],
-        },
       ],
     }],
   ],
@@ -263,8 +232,6 @@
           'dependencies': [
             'ime_impl_base_test',
             'imframework_util_test',
-            'win32_base_test',
-            'win32_file_verifier_test',
           ],
         }],
       ],

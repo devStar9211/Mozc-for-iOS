@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,15 +32,11 @@
 #ifndef MOZC_SESSION_INTERNAL_KEYMAP_INL_H_
 #define MOZC_SESSION_INTERNAL_KEYMAP_INL_H_
 
+#include "composer/key_event_util.h"
+#include "protocol/commands.pb.h"
 #include "session/internal/keymap.h"
-#include "session/key_event_util.h"
 
 namespace mozc {
-
-namespace commands {
-class KeyEvent;
-}  // namespace commands
-
 namespace keymap {
 
 template<typename T>
@@ -92,4 +88,4 @@ void KeyMap<T>::Clear() {
 }  // namespace keymap
 }  // namespace mozc
 
-#endif  // MOZC_SESSION_INTERNAL_KEYMAP_INTERFACE_INL_H_
+#endif  // MOZC_SESSION_INTERNAL_KEYMAP_INL_H_

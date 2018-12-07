@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -40,7 +40,6 @@
       '<(gen_out_dir)/nacl_mozc/_locales/en/messages.json',
       '<(gen_out_dir)/nacl_mozc/_locales/ja/messages.json',
       '<(gen_out_dir)/nacl_mozc/credits_en.html',
-      '<(gen_out_dir)/nacl_mozc/credits_ja.html',
       '<(gen_out_dir)/nacl_mozc/dictionary_tool.js',
       '<(gen_out_dir)/nacl_mozc/key_translator.js',
       '<(gen_out_dir)/nacl_mozc/manifest.json',
@@ -57,6 +56,34 @@
       '<(gen_out_dir)/nacl_mozc/options.css',
       '<(gen_out_dir)/nacl_mozc/options.html',
       '<(gen_out_dir)/nacl_mozc/options.js',
+      '<(gen_out_dir)/nacl_mozc/inputview/config/jp.js',
+      '<(gen_out_dir)/nacl_mozc/inputview/config/us.js',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/backspace.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/compact.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/down.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/enter.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/error.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/globe.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/hide_candidates.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/hidekeyboard.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/hide.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/keydots.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/left.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/modifier-hold.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/modifier-off.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/modifier-on.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/regular_size.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/right.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/setting.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/shift.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/show_candidates.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/tab.png',
+      '<(gen_out_dir)/nacl_mozc/inputview/images/up.png',
+      '<(gen_out_dir)/nacl_mozc/inputview.html',
+      '<(gen_out_dir)/nacl_mozc/inputview.js',
+      '<(gen_out_dir)/nacl_mozc/inputview_css.css',
+      '<(gen_out_dir)/nacl_mozc/inputview/inputview_layouts/101kbd.js',
+      '<(gen_out_dir)/nacl_mozc/inputview/inputview_layouts/compactkbd.js',
     ],
     'partial_supported_messages': [
       '<(gen_out_dir)/nacl_mozc/_locales/am/messages.json',
@@ -120,7 +147,7 @@
       }],
       ['branding=="Mozc"', {
         'nacl_mozc_files': [
-          '<(gen_out_dir)/nacl_mozc/zipped_data_oss',
+          '<(gen_out_dir)/nacl_mozc/mozc.data',
         ],
       }],
     ],
@@ -139,25 +166,24 @@
       'sources': [
         'nacl_session_handler.cc',
       ],
-      'link_settings': {
-        'libraries': ['-lppapi', '-lppapi_cpp'],
-      },
       'dependencies': [
         'dictionary_downloader',
         '../../base/base.gyp:base',
+        '../../composer/composer.gyp:key_parser',
         '../../config/config.gyp:config_handler',
-        '../../config/config.gyp:config_protocol',
+        '../../data_manager/data_manager_base.gyp:data_manager',
         '../../dictionary/dictionary_base.gyp:user_dictionary',
         '../../dictionary/dictionary_base.gyp:user_pos',
+        '../../engine/engine.gyp:engine',
         '../../net/net.gyp:http_client',
         '../../net/net.gyp:json_util',
-        '../../session/session_base.gyp:key_parser',
-        '../../session/session_base.gyp:session_protocol',
+        '../../protocol/protocol.gyp:commands_proto',
+        '../../protocol/protocol.gyp:config_proto',
         '../../session/session.gyp:session',
         '../../session/session.gyp:session_handler',
         '../../session/session.gyp:session_usage_observer',
-        '../../usage_stats/usage_stats_base.gyp:usage_stats',
         '../../usage_stats/usage_stats.gyp:usage_stats_uploader',
+        '../../usage_stats/usage_stats_base.gyp:usage_stats',
       ],
     },
     {
@@ -171,9 +197,6 @@
         '../../base/base.gyp:base',
         '../../net/net.gyp:http_client',
       ],
-      'link_settings': {
-        'libraries': ['-lppapi', '-lppapi_cpp'],
-      },
     },
     {
       'target_name': 'url_loader_util',
@@ -184,9 +207,6 @@
       'dependencies': [
         '../../base/base.gyp:base',
       ],
-      'link_settings': {
-        'libraries': ['-lppapi', '-lppapi_cpp'],
-      },
     },
     {
       'target_name': 'gather_nacl_net_test_files',
@@ -244,9 +264,6 @@
         '../../base/file_util_test.cc',
         'nacl_net_test_module.cc',
       ],
-      'link_settings': {
-        'libraries': ['-lppapi', '-lppapi_cpp'],
-      },
       'dependencies': [
         'dictionary_downloader',
         '../../base/base.gyp:base',
@@ -368,41 +385,85 @@
     {
       'target_name': 'gather_nacl_mozc_files',
       'type': 'none',
-      'copies': [{
-        'destination': '<(gen_out_dir)/nacl_mozc',
-        'files': [
-          '../../data/images/product_icon_32bpp-128.png',
-          '../../data/installer/credits_en.html',
-          '../../data/installer/credits_ja.html',
-          '<(gen_out_dir)/manifest.json',
-          '<(gen_out_dir)/nacl_mozc_version.js',
-          '<(PRODUCT_DIR)/nacl_session_handler_x86_32.nexe',
-          '<(PRODUCT_DIR)/nacl_session_handler_x86_64.nexe',
-          '<(PRODUCT_DIR)/nacl_session_handler_arm.nexe',
-          'dictionary_tool.js',
-          'key_translator.js',
-          'nacl_mozc.html',
-          'nacl_mozc.js',
-          'nacl_mozc_init.js',
-          'nacl_session_handler.nmf',
-          'option_page.js',
-          'options.css',
-          'options.html',
-          'options.js',
-        ],
-        'conditions': [
-          ['branding=="GoogleJapaneseInput"', {
-            'files': [
-              '<(SHARED_INTERMEDIATE_DIR)/data_manager/packed/zipped_data_chromeos',
-            ],
-          }],
-          ['branding=="Mozc"', {
-            'files': [
-              '<(SHARED_INTERMEDIATE_DIR)/data_manager/packed/zipped_data_oss',
-            ],
-          }],
-        ],
-      }],
+      'copies': [
+        {
+          'destination': '<(gen_out_dir)/nacl_mozc',
+          'files': [
+            '../../data/images/product_icon_32bpp-128.png',
+            '../../data/installer/credits_en.html',
+            '<(gen_out_dir)/manifest.json',
+            '<(gen_out_dir)/nacl_mozc_version.js',
+            '<(PRODUCT_DIR)/nacl_session_handler_x86_32.nexe',
+            '<(PRODUCT_DIR)/nacl_session_handler_x86_64.nexe',
+            '<(PRODUCT_DIR)/nacl_session_handler_arm.nexe',
+            'dictionary_tool.js',
+            'key_translator.js',
+            'nacl_mozc.html',
+            'nacl_mozc.js',
+            'nacl_mozc_init.js',
+            'nacl_session_handler.nmf',
+            'option_page.js',
+            'options.css',
+            'options.html',
+            'options.js',
+            'inputview/inputview.html',
+            'inputview/inputview.js',
+            'inputview/inputview_css.css',
+          ],
+          'conditions': [
+            ['branding=="GoogleJapaneseInput"', {
+              'files': [
+                '<(SHARED_INTERMEDIATE_DIR)/data_manager/chromeos/zipped_data_chromeos',
+              ],
+            }],
+            ['branding=="Mozc"', {
+              'files': [
+                '<(SHARED_INTERMEDIATE_DIR)/data_manager/oss/mozc.data',
+              ],
+            }],
+          ],
+        },
+        {
+          'destination': '<(gen_out_dir)/nacl_mozc/inputview/config',
+          'files': [
+            'inputview/config/jp.js',
+            'inputview/config/us.js',
+          ],
+        },
+        {
+          'destination': '<(gen_out_dir)/nacl_mozc/inputview/images',
+          'files': [
+            'inputview/images/backspace.png',
+            'inputview/images/compact.png',
+            'inputview/images/down.png',
+            'inputview/images/enter.png',
+            'inputview/images/error.png',
+            'inputview/images/globe.png',
+            'inputview/images/hide_candidates.png',
+            'inputview/images/hidekeyboard.png',
+            'inputview/images/hide.png',
+            'inputview/images/keydots.png',
+            'inputview/images/left.png',
+            'inputview/images/modifier-hold.png',
+            'inputview/images/modifier-off.png',
+            'inputview/images/modifier-on.png',
+            'inputview/images/regular_size.png',
+            'inputview/images/right.png',
+            'inputview/images/setting.png',
+            'inputview/images/shift.png',
+            'inputview/images/show_candidates.png',
+            'inputview/images/tab.png',
+            'inputview/images/up.png',
+          ],
+        },
+        {
+          'destination': '<(gen_out_dir)/nacl_mozc/inputview/inputview_layouts',
+          'files': [
+            'inputview/inputview_layouts/101kbd.js',
+            'inputview/inputview_layouts/compactkbd.js',
+          ],
+        },
+      ],
     },
     {
       'target_name': 'gen_manifest_and_messages',

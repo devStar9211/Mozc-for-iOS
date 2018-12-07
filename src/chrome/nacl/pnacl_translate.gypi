@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,7 @@
       ],
       'action': [
         'python', 'pnacl_translate.py',
-        '--toolchain_root=<(nacl_sdk_root)/toolchain/linux_x86_pnacl',
+        '--toolchain_root=<(nacl_sdk_root)/toolchain/linux_pnacl',
         '--input=<(RULE_INPUT_PATH)',
         '--output_base=<(PRODUCT_DIR)/<(RULE_INPUT_ROOT)',
         '--configuration=<(CONFIGURATION_NAME)',

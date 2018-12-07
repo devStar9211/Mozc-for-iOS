@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -54,7 +54,7 @@ int InstanceCounter<T>::instance_count = 0;
 }  // namespace
 
 TEST(STLDeleteElementsTest, STLDeleteElements) {
-  vector<InstanceCounter<string> *> v;
+  std::vector<InstanceCounter<string> *> v;
   v.push_back(new InstanceCounter<string>());
   v.push_back(new InstanceCounter<string>());
   v.push_back(new InstanceCounter<string>());
@@ -66,7 +66,7 @@ TEST(STLDeleteElementsTest, STLDeleteElements) {
   EXPECT_EQ(0, v.size());
 
   // Deleting NULL pointers to containers is ok.
-  vector<InstanceCounter<string> *> *p = NULL;
+  std::vector<InstanceCounter<string> *> *p = NULL;
   STLDeleteElements(p);
 }
 
@@ -74,16 +74,16 @@ TEST(StlUtilTest, OrderBy) {
   typedef OrderBy<FirstKey, Less> OrderByFirst;
   typedef OrderBy<SecondKey, Less> OrderBySecond;
 
-  EXPECT_TRUE(OrderByFirst()(make_pair(0, 1), make_pair(1, 0)));
-  EXPECT_FALSE(OrderBySecond()(make_pair(0, 1), make_pair(1, 0)));
+  EXPECT_TRUE(OrderByFirst()(std::make_pair(0, 1), std::make_pair(1, 0)));
+  EXPECT_FALSE(OrderBySecond()(std::make_pair(0, 1), std::make_pair(1, 0)));
 }
 
 TEST(StlUtilTest, Key) {
-  EXPECT_EQ(1, FirstKey()(make_pair(1, "abc")));
-  EXPECT_EQ(2, FirstKey()(make_pair(2, "abc")));
+  EXPECT_EQ(1, FirstKey()(std::make_pair(1, "abc")));
+  EXPECT_EQ(2, FirstKey()(std::make_pair(2, "abc")));
 
-  EXPECT_STREQ("abc", SecondKey()(make_pair(1, "abc")));
-  EXPECT_STREQ("def", SecondKey()(make_pair(1, "def")));
+  EXPECT_STREQ("abc", SecondKey()(std::make_pair(1, "abc")));
+  EXPECT_STREQ("def", SecondKey()(std::make_pair(1, "def")));
 }
 
 TEST(StlUtilTest, FunctionalComparator) {

@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -46,7 +46,7 @@
       'target_name': 'mozc_server',
       'type': 'executable',
       'sources': [
-        'server_main.cc',
+        'mozc_server_main.cc',
       ],
       'dependencies': [
         '../base/base.gyp:base',
@@ -96,15 +96,9 @@
               'AdditionalManifestFiles': 'mozc_server.exe.manifest',
               'EmbedManifest': 'true',
             },
-            'VCLinkerTool': {
-              'DelayLoadDLLs': [
-                'version.dll',
-                'wininet.dll',
-              ],
-            },
-          }
+          },
         }],
-      ]
+      ],
     },
     {
       'target_name': 'mozc_server_lib',
@@ -217,10 +211,6 @@
             'VCLinkerTool': {
               'AdditionalDependencies': [
                 'crypt32.lib',  # used in 'mozc_cache_service.cc'
-                'shlwapi.lib',
-              ],
-              'DelayLoadDLLs': [
-                'shlwapi.dll',
               ],
             },
           },

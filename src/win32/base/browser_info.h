@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -48,16 +48,8 @@ class BrowserInfo {
     kBrowserTypeIE,
     kBrowserTypeOpera,
   };
-  struct Version {
-    Version();
-    int major;
-    int minor;
-    int build;
-    int revision;
-  };
 
   static BrowserType GetBrowerType();
-  static Version GetProcessModuleVersion();
 
   static bool IsInIncognitoMode(
       const FocusHierarchyObserver &focus_hierarchy_observer);

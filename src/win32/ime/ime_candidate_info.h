@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -59,8 +59,8 @@ struct CandidateInfo {
   DWORD count;
   DWORD selection;
   bool  show_candidate;
-  vector<DWORD> offsets;
-  vector<wchar_t> text_buffer;
+  std::vector<DWORD> offsets;
+  std::vector<wchar_t> text_buffer;
 };
 
 class CandidateInfoUtil {
@@ -84,7 +84,7 @@ class CandidateInfoUtil {
   // of the returned handle either way.
   static HIMCC Update(HIMCC current_handle,
                       const mozc::commands::Output &output,
-                      vector<UIMessage> *messages);
+                      std::vector<UIMessage> *messages);
 
  private:
   static bool Convert(const mozc::commands::Output &output,

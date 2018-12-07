@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,10 +31,12 @@
 #define MOZC_GUI_CONFIG_DIALOG_KEYBINDING_EDITOR_H_
 
 #include <QtGui/QtGui>
-#include <QtGui/QDialog>
+#include <QtGui/QGuiApplication>
+
+#include <memory>
 #include <string>
+
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "gui/config_dialog/ui_keybinding_editor.h"
 
 namespace mozc {
@@ -75,8 +77,10 @@ class KeyBindingEditor : public QDialog,
 
  private:
   QWidget *trigger_parent_;
-  scoped_ptr<KeyBindingFilter> filter_;
+  std::unique_ptr<KeyBindingFilter> filter_;
 };
-}  // namespace mozc::gui
+
+}  // namespace gui
 }  // namespace mozc
+
 #endif  // MOZC_GUI_CONFIG_DIALOG_KEYBINDING_EDITOR_H_

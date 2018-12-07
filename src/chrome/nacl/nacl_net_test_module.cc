@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,12 +27,12 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include <memory>
 #include <string>
 
+#include "base/pepper_file_util.h"
 #include "base/port.h"
 #include "base/util.h"
-#include "base/number_util.h"
-#include "base/pepper_file_util.h"
 #include "chrome/nacl/dictionary_downloader.h"
 #include "net/http_client.h"
 #include "testing/base/public/gunit.h"
@@ -55,14 +55,14 @@ class DictionaryDownloaderTest : public testing::Test {
     // to "/RETRY_TEST" returns 404.
     EXPECT_TRUE(HTTPClient::Get(
         base_url_ + "?action=set_counter&value=" +
-        NumberUtil::SimpleItoa(counter),
+        std::to_string(counter),
         &output_));
     CheckRetryTestCounter(counter);
   }
   void CheckRetryTestCounter(int32 counter) {
     EXPECT_TRUE(HTTPClient::Get(
         base_url_ + "?action=get_counter", &output_));
-    EXPECT_EQ(NumberUtil::SimpleItoa(counter), output_);
+    EXPECT_EQ(std::to_string(counter), output_);
   }
 
   const string base_url_;
@@ -93,7 +93,7 @@ TEST_F(DictionaryDownloaderTest, HTTPClientRetryTest) {
 
 TEST_F(DictionaryDownloaderTest, SimpleTest) {
   SetRetryTestCounter(0);
-  scoped_ptr<DictionaryDownloader> downloader;
+  std::unique_ptr<DictionaryDownloader> downloader;
   downloader.reset(new DictionaryDownloader(base_url_, "/test01"));
   downloader->StartDownload();
   while (downloader->GetStatus() != DictionaryDownloader::DOWNLOAD_FINISHED) {
@@ -114,7 +114,7 @@ TEST_F(DictionaryDownloaderTest, SimpleTest) {
 
 TEST_F(DictionaryDownloaderTest, LargeDataTest) {
   SetRetryTestCounter(0);
-  scoped_ptr<DictionaryDownloader> downloader;
+  std::unique_ptr<DictionaryDownloader> downloader;
   downloader.reset(new DictionaryDownloader(
       base_url_ + "?data=0123456789&times=1000000",
       "/large_data"));
@@ -131,7 +131,7 @@ TEST_F(DictionaryDownloaderTest, LargeDataTest) {
 
 TEST_F(DictionaryDownloaderTest, RetryTest) {
   SetRetryTestCounter(-1);
-  scoped_ptr<DictionaryDownloader> downloader;
+  std::unique_ptr<DictionaryDownloader> downloader;
   downloader.reset(new DictionaryDownloader(base_url_, "/test01"));
   downloader->StartDownload();
   while (downloader->GetStatus() != DictionaryDownloader::DOWNLOAD_ERROR) {
@@ -159,7 +159,7 @@ TEST_F(DictionaryDownloaderTest, RetryTest) {
 
 TEST_F(DictionaryDownloaderTest, DelayTest) {
   SetRetryTestCounter(0);
-  scoped_ptr<DictionaryDownloader> downloader;
+  std::unique_ptr<DictionaryDownloader> downloader;
   downloader.reset(new DictionaryDownloader(base_url_, "/test01"));
   downloader->SetOption(1000, 0, 0, 0, 0);
   downloader->StartDownload();
@@ -174,7 +174,7 @@ TEST_F(DictionaryDownloaderTest, DelayTest) {
 
 TEST_F(DictionaryDownloaderTest, RetryIntervalTest) {
   SetRetryTestCounter(-3);
-  scoped_ptr<DictionaryDownloader> downloader;
+  std::unique_ptr<DictionaryDownloader> downloader;
   downloader.reset(new DictionaryDownloader(base_url_, "/test01"));
   downloader->SetOption(0, 0, 1000, 0, 3);
   downloader->StartDownload();
@@ -198,7 +198,7 @@ TEST_F(DictionaryDownloaderTest, RetryIntervalTest) {
 }
 
 TEST_F(DictionaryDownloaderTest, RetryIntervalBackOffTest) {
-  scoped_ptr<DictionaryDownloader> downloader;
+  std::unique_ptr<DictionaryDownloader> downloader;
   SetRetryTestCounter(-3);
   downloader.reset(new DictionaryDownloader(base_url_, "/test01"));
   downloader->SetOption(0, 0, 1000, 1, 3);

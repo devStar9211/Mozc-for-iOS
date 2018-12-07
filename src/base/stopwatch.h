@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,6 +33,7 @@
 #include "base/port.h"
 
 namespace mozc {
+
 class Stopwatch {
  public:
   enum StopwatchState {

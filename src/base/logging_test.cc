@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -178,7 +178,7 @@ namespace {
 int g_counter = 0;
 string DebugString() {
   ++g_counter;
-  ostringstream os;
+  std::ostringstream os;
   os << g_counter << " test!";
   return os.str();
 }

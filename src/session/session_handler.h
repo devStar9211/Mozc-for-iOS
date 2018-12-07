@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,25 +33,27 @@
 #define MOZC_SESSION_SESSION_HANDLER_H_
 
 #include <map>
+#include <memory>
 #include <string>
 
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "composer/table.h"
+#include "engine/engine_builder_interface.h"
+#include "engine/engine_interface.h"
 #include "session/common.h"
 #include "session/session_handler_interface.h"
 #include "storage/lru_cache.h"
-
 // for FRIEND_TEST()
 #include "testing/base/public/gunit_prod.h"
 
-#if defined(OS_ANDROID) || defined(__native_client__)
+#if defined(OS_ANDROID) || defined(OS_NACL)
 // Session watch dog is not aviable from android mozc for now.
 #define MOZC_DISABLE_SESSION_WATCHDOG
-#endif  // OS_ANDROID || __native_client__
+#endif  // OS_ANDROID || OS_NACL
+
 
 namespace mozc {
-class EngineInterface;
+
 #ifndef MOZC_DISABLE_SESSION_WATCHDOG
 class SessionWatchDog;
 #else  // MOZC_DISABLE_SESSION_WATCHDOG
@@ -78,35 +80,45 @@ class UserDictionarySessionHandler;
 
 class SessionHandler : public SessionHandlerInterface {
  public:
-  // This class doesn't take an ownership of |engine|.
-  explicit SessionHandler(EngineInterface *engine);
-  virtual ~SessionHandler();
+  explicit SessionHandler(std::unique_ptr<EngineInterface> engine);
+  SessionHandler(std::unique_ptr<EngineInterface> engine,
+                 std::unique_ptr<EngineBuilderInterface> engine_builder);
+  ~SessionHandler() override;
 
   // Returns true if SessionHandle is available.
-  virtual bool IsAvailable() const;
+  bool IsAvailable() const override;
 
-  virtual bool EvalCommand(commands::Command *command);
+  bool EvalCommand(commands::Command *command) override;
 
   // Starts watch dog timer to cleanup sessions.
-  virtual bool StartWatchDog();
+  bool StartWatchDog() override;
 
   // NewSession returns new Sessoin.
   // Client needs to delete it properly
   session::SessionInterface *NewSession();
 
-  virtual void AddObserver(session::SessionObserverInterface *observer);
+  void AddObserver(session::SessionObserverInterface *observer) override;
+  StringPiece GetDataVersion() const override {
+    return engine_->GetDataVersion();
+  }
+
+  const EngineInterface &engine() const { return *engine_; }
 
  private:
   FRIEND_TEST(SessionHandlerTest, StorageTest);
 
-  typedef mozc::storage::LRUCache<SessionID, session::SessionInterface *>
-      SessionMap;
-  typedef SessionMap::Element SessionElement;
+  using SessionMap =
+      mozc::storage::LRUCache<SessionID, session::SessionInterface *>;
+  using SessionElement = SessionMap::Element;
 
-  // Reload settings which are managed by SessionHandler
-  void ReloadSession();
-  // Reload the configurations on the current sessions.
-  void ReloadConfig();
+  void Init(std::unique_ptr<EngineInterface> engine,
+            std::unique_ptr<EngineBuilderInterface> engine_builder);
+
+  // Sets config to all the modules managed by this handler.  This does not
+  // affect the stored config in the local storage.
+  void SetConfig(const config::Config &config);
+  // Updates the stored config, if the |command| contains the config.
+  void MaybeUpdateStoredConfig(commands::Command *command);
 
   bool CreateSession(commands::Command *command);
   bool DeleteSession(commands::Command *command);
@@ -129,35 +141,39 @@ class SessionHandler : public SessionHandlerInterface {
   bool ClearStorage(commands::Command *command);
   bool Cleanup(commands::Command *command);
   bool SendUserDictionaryCommand(commands::Command *command);
+  bool SendEngineReloadRequest(commands::Command *command);
   bool NoOperation(commands::Command *command);
 
   SessionID CreateNewSessionID();
   bool DeleteSessionID(SessionID id);
 
-  scoped_ptr<SessionMap> session_map_;
+  std::unique_ptr<SessionMap> session_map_;
 #ifndef MOZC_DISABLE_SESSION_WATCHDOG
-  scoped_ptr<SessionWatchDog> session_watch_dog_;
+  std::unique_ptr<SessionWatchDog> session_watch_dog_;
 #else  // MOZC_DISABLE_SESSION_WATCHDOG
   // Session watch dog is not aviable from android mozc and nacl mozc for now.
   // TODO(kkojima): Remove this guard after
   // enabling session watch dog for android.
 #endif  // MOZC_DISABLE_SESSION_WATCHDOG
-  bool is_available_;
-  uint32 max_session_size_;
-  uint64 last_session_empty_time_;
-  uint64 last_cleanup_time_;
-  uint64 last_create_session_time_;
+  bool is_available_ = false;
+  uint32 max_session_size_ = 0;
+  uint64 last_session_empty_time_ = 0;
+  uint64 last_cleanup_time_ = 0;
+  uint64 last_create_session_time_ = 0;
 
-  EngineInterface *engine_;
-  scoped_ptr<session::SessionObserverHandler> observer_handler_;
-  scoped_ptr<Stopwatch> stopwatch_;
-  scoped_ptr<user_dictionary::UserDictionarySessionHandler>
+  std::unique_ptr<EngineInterface> engine_;
+  std::unique_ptr<EngineBuilderInterface> engine_builder_;
+  std::unique_ptr<session::SessionObserverHandler> observer_handler_;
+  std::unique_ptr<Stopwatch> stopwatch_;
+  std::unique_ptr<user_dictionary::UserDictionarySessionHandler>
       user_dictionary_session_handler_;
-  scoped_ptr<composer::TableManager> table_manager_;
-  scoped_ptr<commands::Request> request_;
+  std::unique_ptr<composer::TableManager> table_manager_;
+  std::unique_ptr<commands::Request> request_;
+  std::unique_ptr<config::Config> config_;
 
   DISALLOW_COPY_AND_ASSIGN(SessionHandler);
 };
 
 }  // namespace mozc
+
 #endif  // MOZC_SESSION_SESSION_HANDLER_H_

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -49,7 +49,6 @@
 #include <string>
 
 #include "base/port.h"
-#include "base/util.h"
 
 namespace mozc {
 class Timer;
@@ -107,6 +106,9 @@ class Scheduler {
   // stop all jobs
   static void RemoveAllJobs();
 
+  // returns true is the job has been registered.
+  static bool HasJob(const string &name);
+
   // This function is provided for test.
   // The behavior of scheduler can be customized by replacing an underlying
   // helper class inside this.
@@ -121,6 +123,7 @@ class Scheduler {
     virtual bool AddJob(const JobSetting &job_setting) = 0;
     virtual bool RemoveJob(const string &name) = 0;
     virtual void RemoveAllJobs() = 0;
+    virtual bool HasJob(const string &name) const = 0;
   };
 
  private:

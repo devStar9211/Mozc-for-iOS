@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -79,15 +79,11 @@
       'target_name': 'base_test',
       'type': 'executable',
       'sources': [
-        'clock_mock_test.cc',
         'codegen_bytearray_stream_test.cc',
         'cpu_stats_test.cc',
         'process_mutex_test.cc',
         'stopwatch_test.cc',
-        'timer_test.cc',
         'unnamed_event_test.cc',
-        'update_util_test.cc',
-        'url_test.cc',
       ],
       'conditions': [
         ['OS=="mac"', {
@@ -113,12 +109,25 @@
         }],
       ],
       'dependencies': [
-        'base.gyp:base',
         '../testing/testing.gyp:gtest_main',
+        'base.gyp:base',
+        'clock_mock',
       ],
       'variables': {
         'test_size': 'small',
       },
+    },
+    {
+      'target_name': 'url_test',
+      'type': 'executable',
+      'sources': [
+        'url_test.cc',
+      ],
+      'dependencies': [
+        '../testing/testing.gyp:gtest_main',
+        'base.gyp:base_core',  # for util
+        'base.gyp:url',
+      ],
     },
     {
       'target_name': 'base_core_test',
@@ -126,11 +135,9 @@
       'sources': [
         'bitarray_test.cc',
         'flags_test.cc',
-        'hash_tables_test.cc',
         'iterator_adapter_test.cc',
         'logging_test.cc',
         'mmap_test.cc',
-        'mutex_test.cc',
         'singleton_test.cc',
         'stl_util_test.cc',
         'string_piece_test.cc',
@@ -159,6 +166,49 @@
       },
     },
     {
+      'target_name': 'mutex_test',
+      'type': 'executable',
+      'sources': [
+        'mutex_test.cc',
+      ],
+      'dependencies': [
+        '../testing/testing.gyp:gtest_main',
+        'base.gyp:mutex',
+      ],
+      'variables': {
+        'test_size': 'small',
+      },
+    },
+    {
+      'target_name': 'clock_mock',
+      'type': 'static_library',
+      'sources': [
+        'clock_mock.cc'
+      ],
+    },
+    {
+      'target_name': 'clock_mock_test',
+      'type': 'executable',
+      'sources': [
+        'clock_mock_test.cc',
+      ],
+      'dependencies': [
+        '../testing/testing.gyp:gtest_main',
+        'clock_mock',
+      ],
+    },
+    {
+      'target_name': 'update_util_test',
+      'type': 'executable',
+      'sources': [
+        'update_util_test.cc'
+      ],
+      'dependencies': [
+        '../testing/testing.gyp:gtest_main',
+        'base.gyp:update_util',
+      ],
+    },
+    {
       'target_name': 'install_util_test_data',
       'type': 'none',
       'variables': {
@@ -178,8 +228,38 @@
       ],
       'dependencies': [
         '../testing/testing.gyp:gtest_main',
+        '../testing/testing.gyp:mozctest',
         'base.gyp:base_core',
         'install_util_test_data',
+      ],
+      'variables': {
+        'test_size': 'small',
+      },
+    },
+    {
+      'target_name': 'hash_test',
+      'type': 'executable',
+      'sources': [
+        'hash_test.cc',
+      ],
+      'dependencies': [
+        '../testing/testing.gyp:gtest_main',
+        'base.gyp:base_core',
+      ],
+      'variables': {
+        'test_size': 'small',
+      },
+    },
+    {
+      'target_name': 'clock_test',
+      'type': 'executable',
+      'sources': [
+        'clock_test.cc',
+      ],
+      'dependencies': [
+        '../testing/testing.gyp:gtest_main',
+        'base.gyp:base',
+        'clock_mock',
       ],
       'variables': {
         'test_size': 'small',
@@ -265,22 +345,6 @@
         'base.gyp:encryptor',
       ],
     },
-    # init_test.cc is separated from all other base_core_test because it
-    # calls finalizers.
-    {
-      'target_name': 'base_init_test',
-      'type': 'executable',
-      'sources': [
-        'init_test.cc',
-      ],
-      'dependencies': [
-        '../testing/testing.gyp:gtest_main',
-        'base.gyp:base',
-      ],
-      'variables': {
-        'test_size': 'small',
-      },
-    },
     {
       'target_name': 'config_file_stream_test',
       'type': 'executable',
@@ -341,24 +405,92 @@
         'base.gyp:multifile',
       ],
     },
+    {
+      'target_name': 'gen_embedded_file_test_data',
+      'type': 'none',
+      'toolsets': ['host'],
+      'actions': [
+        {
+          'action_name': 'gen_embedded_file_test_data',
+          'variables': {
+            'input': 'embedded_file.h',
+            'gen_header_path': '<(gen_out_dir)/embedded_file_test_data.inc',
+          },
+          'inputs': [
+            '<(input)',
+          ],
+          'outputs': [
+            '<(gen_header_path)',
+          ],
+          'action': [
+            'python', '../build_tools/embed_file.py',
+            '--input', '<(input)',
+            '--name', 'kEmbeddedFileTestData',
+            '--output', '<(gen_header_path)',
+          ],
+        },
+      ],
+    },
+    {
+      'target_name': 'install_embedded_file_h',
+      'type': 'none',
+      'variables': {
+        # Copy the test data for embedded file test.
+        'test_data_subdir': 'base',
+        'test_data': ['../<(test_data_subdir)/embedded_file.h'],
+      },
+      'includes': [ '../gyp/install_testdata.gypi' ],
+    },
+    {
+      'target_name': 'embedded_file_test',
+      'type': 'executable',
+      'sources': [
+        'embedded_file_test.cc',
+      ],
+      'dependencies': [
+        '../testing/testing.gyp:gtest_main',
+        '../testing/testing.gyp:mozctest',
+        'gen_embedded_file_test_data#host',
+        'install_embedded_file_h',
+      ],
+    },
+    {
+      'target_name': 'serialized_string_array_test',
+      'type': 'executable',
+      'sources': [
+        'serialized_string_array_test.cc',
+      ],
+      'dependencies': [
+        '../testing/testing.gyp:gtest_main',
+        'base.gyp:base',
+        'base.gyp:serialized_string_array',
+      ],
+    },
     # Test cases meta target: this target is referred from gyp/tests.gyp
     {
       'target_name': 'base_all_test',
       'type': 'none',
       'dependencies': [
         'base_core_test',
-        'base_init_test',
         'base_test',
+        'clock_mock_test',
+        'clock_test',
         'config_file_stream_test',
+        'embedded_file_test',
         'encryptor_test',
         'file_util_test',
+        'hash_test',
         'multifile_test',
+        'mutex_test',
         'number_util_test',
         'obfuscator_support_test',
         'scheduler_stub_test',
         'scheduler_test',
+        'serialized_string_array_test',
         'system_util_test',
         'trie_test',
+        'update_util_test',
+        'url_test',
         'util_test',
       ],
       'conditions': [

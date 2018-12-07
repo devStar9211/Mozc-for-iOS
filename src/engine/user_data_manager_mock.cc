@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -68,8 +68,8 @@ bool UserDataManagerMock::ClearUserPredictionEntry(const string &,
   return true;
 }
 
-bool UserDataManagerMock::WaitForSyncerForTest() {
-  function_counters_["WaitForSyncer"]++;
+bool UserDataManagerMock::Wait() {
+  function_counters_["Wait"]++;
   return true;
 }
 

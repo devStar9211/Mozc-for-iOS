@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -28,9 +28,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 {
-  'variables': {
-    'zinnia_model_file%': '/usr/share/tegaki/models/zinnia/handwriting-ja.model',
-  },
   'targets': [
     {
       'target_name': 'zinnia_handwriting',
@@ -42,17 +39,22 @@
         '../base/base.gyp:base',
         'zinnia.gyp:zinnia',
       ],
-      'conditions': [
-        ['target_platform=="Linux" and use_libzinnia==1', {
-          'defines': [
-            'USE_LIBZINNIA',
+      # MOZC_ZINNIA_MODEL_FILE is only used for OSS build.
+      'defines': [ 'MOZC_ZINNIA_MODEL_FILE="<(zinnia_model_file)"' ],
+    },
+    {
+      'target_name': 'install_zinnia_handwriting_data',
+      'type': 'none',
+      'actions': [
+        {
+          'action_name': 'copy_zinnia_model_file',
+          'inputs': ['<(zinnia_model_file)'],
+          'outputs': ['<(mozc_data_dir)/handwriting/handwriting-ja.model'],
+          'action': [
+            'python', '../build_tools/copy_file.py', '--preserve',
+            '<@(_inputs)', '<@(_outputs)',
           ],
-        }],
-        ['target_platform=="Linux" and use_libzinnia==1 and zinnia_model_file!=""', {
-          'defines': [
-            'MOZC_ZINNIA_MODEL_FILE="<(zinnia_model_file)"',
-          ],
-        }],
+        },
       ],
     },
     {

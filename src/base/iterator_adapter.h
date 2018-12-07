@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -68,12 +68,12 @@ namespace mozc {
 //       return iter->first;
 //     }
 //   };
-//   vector<pair<int, double> > data;
+//   std::vector<pair<int, double> > data;
 //     :
 //   // To find the first element whose first is 5.
 //   typedef IteratorAdapter<vector<pair<int, double> >, FirstAdapter>
 //       FirstIterator;
-//   vector<pair<int, double> >::const_iterator iter =
+//   std::vector<pair<int, double> >::const_iterator iter =
 //     find(FirstIterator(data.begin()), FirstIterator(data.end()), 5).base();
 //
 // Below, two utilities are provided, AdapterBase class and MakeIteratorAdapter
@@ -86,8 +86,8 @@ namespace mozc {
 //       return iter->first;
 //     }
 //   };
-//   vector<pair<int, double> > data;
-//   vector<pair<int, double> >::const_iterator iter =
+//   std::vector<pair<int, double> > data;
+//   std::vector<pair<int, double> >::const_iterator iter =
 //     find(MakeIteratorAdapter(data.begin(), FirstAdapter()),
 //          MakeIteratorAdapter(data.end(), FirstAdapter()), 5).base();
 //
@@ -99,9 +99,9 @@ template<typename BaseIter, typename Adapter>
 class IteratorAdapter {
  public:
   // Standard type traits for iterator.
-  typedef typename iterator_traits<BaseIter>::iterator_category
+  typedef typename std::iterator_traits<BaseIter>::iterator_category
       iterator_category;
-  typedef typename iterator_traits<BaseIter>::difference_type
+  typedef typename std::iterator_traits<BaseIter>::difference_type
       difference_type;
   typedef typename Adapter::value_type value_type;
   typedef typename Adapter::pointer pointer;

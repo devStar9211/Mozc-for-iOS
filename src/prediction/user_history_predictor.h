@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,7 @@
 #ifndef MOZC_PREDICTION_USER_HISTORY_PREDICTOR_H_
 #define MOZC_PREDICTION_USER_HISTORY_PREDICTOR_H_
 
+#include <memory>
 #include <queue>
 #include <set>
 #include <string>
@@ -37,9 +38,11 @@
 #include <vector>
 
 #include "base/freelist.h"
-#include "base/scoped_ptr.h"
 #include "base/string_piece.h"
 #include "base/trie.h"
+#include "dictionary/dictionary_interface.h"
+#include "dictionary/pos_matcher.h"
+#include "dictionary/suppression_dictionary.h"
 #include "prediction/predictor_interface.h"
 #include "prediction/user_history_predictor.pb.h"
 #include "storage/lru_cache.h"
@@ -53,11 +56,8 @@ class StringStorageInterface;
 }  // namespace storage
 
 class ConversionRequest;
-class DictionaryInterface;
-class POSMatcher;
 class Segment;
 class Segments;
-class SuppressionDictionary;
 class UserHistoryPredictorSyncer;
 
 // Added serialization method for UserHistory.
@@ -66,14 +66,14 @@ class UserHistoryStorage : public mozc::user_history_predictor::UserHistory {
   explicit UserHistoryStorage(const string &filename);
   ~UserHistoryStorage();
 
-  // Load from encrypted file.
+  // Loads from encrypted file.
   bool Load();
 
-  // Save history into encrypted file.
+  // Saves history into encrypted file.
   bool Save() const;
 
  private:
-  scoped_ptr<storage::StringStorageInterface> storage_;
+  std::unique_ptr<storage::StringStorageInterface> storage_;
 };
 
 // UserHistoryPredictor is NOT thread safe.
@@ -83,68 +83,76 @@ class UserHistoryStorage : public mozc::user_history_predictor::UserHistory {
 // called by multiple-threads at the same time
 class UserHistoryPredictor : public PredictorInterface {
  public:
-  UserHistoryPredictor(const DictionaryInterface *dictionary,
-                       const POSMatcher *pos_matcher,
-                       const SuppressionDictionary *suppression_dictionary);
-  virtual ~UserHistoryPredictor();
+  UserHistoryPredictor(
+      const dictionary::DictionaryInterface *dictionary,
+      const dictionary::POSMatcher *pos_matcher,
+      const dictionary::SuppressionDictionary *suppression_dictionary,
+      bool enable_content_word_learning);
+  ~UserHistoryPredictor() override;
 
-  virtual bool Predict(Segments *segments) const;
-  virtual bool PredictForRequest(const ConversionRequest &request,
-                                 Segments *segments) const;
+  void set_content_word_learning_enabled(bool value) {
+    content_word_learning_enabled_ = value;
+  }
+
+  bool Predict(Segments *segments) const;
+  bool PredictForRequest(const ConversionRequest &request,
+                         Segments *segments) const override;
 
   // Hook(s) for all mutable operations.
-  virtual void Finish(Segments *segments);
+  void Finish(const ConversionRequest &request, Segments *segments) override;
 
   // Revert last Finish operation.
-  virtual void Revert(Segments *segments);
+  void Revert(Segments *segments) override;
 
   // Sync user history data to local file.
   // You can call either Save() or AsyncSave().
-  virtual bool Sync();
+  bool Sync() override;
 
   // Reloads from local disk.
   // Do not call Sync() before Reload().
-  virtual bool Reload();
+  bool Reload() override;
 
   // Clears LRU data.
-  virtual bool ClearAllHistory();
+  bool ClearAllHistory() override;
 
   // Clears unused data.
-  virtual bool ClearUnusedHistory();
+  bool ClearUnusedHistory() override;
 
   // Clears a specific history entry.
-  virtual bool ClearHistoryEntry(const string &key, const string &value);
+  bool ClearHistoryEntry(const string &key, const string &value) override;
 
   // Implements PredictorInterface.
-  virtual bool WaitForSyncerForTest();
+  bool Wait() override;
 
   // Gets user history filename.
   static string GetUserHistoryFileName();
 
-  virtual const string &GetPredictorName() const { return predictor_name_; }
+  const string &GetPredictorName() const override { return predictor_name_; }
 
-  // Used in user_history_sync_util.
+  // From user_history_predictor.proto
   typedef user_history_predictor::UserHistory::Entry Entry;
   typedef user_history_predictor::UserHistory::NextEntry NextEntry;
   typedef user_history_predictor::UserHistory::Entry::EntryType EntryType;
 
-  // return fingerprints from various object.
+  // Returns fingerprints from various object.
   static uint32 Fingerprint(const string &key, const string &value);
   static uint32 Fingerprint(const string &key, const string &value,
                             EntryType type);
   static uint32 EntryFingerprint(const Entry &entry);
   static uint32 SegmentFingerprint(const Segment &segment);
 
-  // return the size of cache.
+  // Returns the size of cache.
   static uint32 cache_size();
 
-  // return the size of next entries.
+  // Returns the size of next entries.
   static uint32 max_next_entries_size();
 
  private:
   struct SegmentForLearning {
     string key;
     string value;
+    string content_key;
+    string content_value;
     string description;
   };
   static uint32 LearningSegmentFingerprint(const SegmentForLearning &segment);
@@ -192,8 +200,8 @@ class UserHistoryPredictor : public PredictorInterface {
     }
 
    private:
-    vector<SegmentForLearning> history_segments_;
-    vector<SegmentForLearning> conversion_segments_;
+    std::vector<SegmentForLearning> history_segments_;
+    std::vector<SegmentForLearning> conversion_segments_;
   };
 
   friend class UserHistoryPredictorSyncer;
@@ -207,7 +215,9 @@ class UserHistoryPredictor : public PredictorInterface {
   FRIEND_TEST(UserHistoryPredictorTest, UserHistoryPredictorRevertTest);
   FRIEND_TEST(UserHistoryPredictorTest, UserHistoryPredictorClearTest);
   FRIEND_TEST(UserHistoryPredictorTest,
-              UserHistoryPredictorTailingPunctuation);
+              UserHistoryPredictorTrailingPunctuation);
+  FRIEND_TEST(UserHistoryPredictorTest, TrailingPunctuation_Mobile);
+  FRIEND_TEST(UserHistoryPredictorTest, HistoryToPunctuation);
   FRIEND_TEST(UserHistoryPredictorTest,
               UserHistoryPredictorPreceedingPunctuation);
   FRIEND_TEST(UserHistoryPredictorTest, StartsWithPunctuations);
@@ -264,6 +274,11 @@ class UserHistoryPredictor : public PredictorInterface {
               ClearHistoryEntry_Trigram_DeleteSecondBigram);
   FRIEND_TEST(UserHistoryPredictorTest, ClearHistoryEntry_Scenario1);
   FRIEND_TEST(UserHistoryPredictorTest, ClearHistoryEntry_Scenario2);
+  FRIEND_TEST(UserHistoryPredictorTest, JoinedSegmentsTest_Mobile);
+  FRIEND_TEST(UserHistoryPredictorTest, JoinedSegmentsTest_Desktop);
+  FRIEND_TEST(UserHistoryPredictorTest, UsageStats);
+  FRIEND_TEST(UserHistoryPredictorTest, PunctuationLink_Mobile);
+  FRIEND_TEST(UserHistoryPredictorTest, PunctuationLink_Desktop);
 
   enum MatchType {
     NO_MATCH,            // no match
@@ -278,7 +293,7 @@ class UserHistoryPredictor : public PredictorInterface {
     ZERO_QUERY_SUGGESTION,
   };
 
-  // Return value of RemoveNgramChain() method. See the comments in
+  // Returns value of RemoveNgramChain() method. See the comments in
   // implementation.
   enum RemoveNgramChainResult {
     DONE,
@@ -286,10 +301,10 @@ class UserHistoryPredictor : public PredictorInterface {
     NOT_FOUND,
   };
 
-  // Load user history data to LRU from local file
+  // Loads user history data to LRU from local file
   bool Load();
 
-  // Save user history data in LRU to local file
+  // Saves user history data in LRU to local file
   bool Save();
 
   // non-blocking version of Load
@@ -303,13 +318,13 @@ class UserHistoryPredictor : public PredictorInterface {
   // Waits until syncer finishes.
   void WaitForSyncer();
 
-  // return id for RevertEntry
+  // Returns id for RevertEntry
   static uint16 revert_id();
 
-  // Get match type from two strings
+  // Gets match type from two strings
   static MatchType GetMatchType(const string &lstr, const string &rstr);
 
-  // Get match type with ambiguity expansion
+  // Gets match type with ambiguity expansion
   static MatchType GetMatchTypeFromInput(const string &input_key,
                                          const string &key_base,
                                          const Trie<string> *key_expanded,
@@ -319,11 +334,11 @@ class UserHistoryPredictor : public PredictorInterface {
   static string Uint32ToString(uint32 fp);
   static uint32 StringToUint32(const string &input);
 
-  // return true if prev_entry has a next_fp link to entry
+  // Returns true if prev_entry has a next_fp link to entry
   static bool HasBigramEntry(const Entry &entry,
                              const Entry &prev_entry);
 
-  // return true |result_entry| can be handled as
+  // Returns true |result_entry| can be handled as
   // a valid result if the length of user input is |prefix_len|.
   static bool IsValidSuggestion(RequestType request_type,
                                 uint32 prefix_len,
@@ -336,7 +351,7 @@ class UserHistoryPredictor : public PredictorInterface {
   bool IsValidEntryIgnoringRemovedField(const Entry &entry,
                                         uint32 available_emoji_carrier) const;
 
-  // return "tweaked" score of result_entry.
+  // Returns "tweaked" score of result_entry.
   // the score is basically determined by "last_access_time", (a.k.a,
   // LRU policy), but we want to slightly change the score
   // with different signals, including the length of value and/or
@@ -359,11 +374,11 @@ class UserHistoryPredictor : public PredictorInterface {
 
    private:
     friend class UserHistoryPredictor;
-    typedef pair<uint32, Entry *> QueueElement;
-    typedef priority_queue<QueueElement> Agenda;
+    typedef std::pair<uint32, Entry *> QueueElement;
+    typedef std::priority_queue<QueueElement> Agenda;
     Agenda agenda_;
     FreeList<Entry> pool_;
-    set<uint32> seen_;
+    std::set<uint32> seen_;
   };
 
   typedef mozc::storage::LRUCache<uint32, Entry> DicCache;
@@ -377,12 +392,27 @@ class UserHistoryPredictor : public PredictorInterface {
   // |prev_entry| is an optional field. If set NULL, this field is just ignored.
   // This method adds a new result entry with score, pair<score, entry>, to
   // |results|.
-  bool LookupEntry(const string &input_key,
+  bool LookupEntry(RequestType request_type,
+                   const string &input_key,
                    const string &key_base,
                    const Trie<string> *key_expanded,
                    const Entry *entry,
                    const Entry *prev_entry,
                    EntryPriorityQueue *results) const;
+
+  // For the EXACT and RIGHT_PREFIX match, we will generate joined
+  // candidates by looking up the history link.
+  // Gets key value pair and assigns them to |result_key| and |result_value|
+  // for prediction result. The last entry which was joined
+  // will be assigned to |result_last_entry|.
+  // Returns false if we don't have the result for this match.
+  // |left_last_access_time| and |left_most_last_access_time| will be updated
+  // according to the entry lookup.
+  bool GetKeyValueForExactAndRightPrefixMatch(
+      const string &input_key,
+      const Entry *entry, const Entry **result_last_entry,
+      uint64 *left_last_access_time, uint64 *left_most_last_access_time,
+      string *result_key, string *result_value) const;
 
   const Entry *LookupPrevEntry(const Segments &segments,
                                uint32 available_emoji_carrier) const;
@@ -396,17 +426,18 @@ class UserHistoryPredictor : public PredictorInterface {
                                  EntryPriorityQueue *results) const;
 
   void GetResultsFromHistoryDictionary(
+      RequestType request_type,
       const ConversionRequest &request,
       const Segments &segments,
       const Entry *prev_entry,
       EntryPriorityQueue *results) const;
 
-  // Get input data from segments.
+  // Gets input data from segments.
   // These input data include ambiguities.
   static void GetInputKeyFromSegments(
       const ConversionRequest &request, const Segments &segments,
       string *input_key, string *base,
-      scoped_ptr<Trie<string> >*expanded);
+      std::unique_ptr<Trie<string>>*expanded);
 
   bool InsertCandidates(RequestType request_type,
                         const ConversionRequest &request, Segments *segments,
@@ -415,21 +446,22 @@ class UserHistoryPredictor : public PredictorInterface {
   void MakeLearningSegments(const Segments &segments,
                             SegmentsForLearning *learning_segments) const;
 
-  // return true if |prefix| is a fuzzy-prefix of |str|.
+  // Returns true if |prefix| is a fuzzy-prefix of |str|.
   // 'Fuzzy' means that
   // 1) Allows one character deletation in the |prefix|.
   // 2) Allows one character swap in the |prefix|.
   static bool RomanFuzzyPrefixMatch(const string &str,
                                     const string &prefix);
 
-  // return romanized preedit string if the preedit looks
+  // Returns romanized preedit string if the preedit looks
   // misspelled. It first tries to get the preedit string with
   // composer() if composer is available. If not, use the key
   // directory. It also use MaybeRomanMisspelledKey() defined
   // below to check the preedit looks missspelled or not.
-  static string GetRomanMisspelledKey(const Segments &segments);
+  static string GetRomanMisspelledKey(const ConversionRequest &request,
+                                      const Segments &segments);
 
-  // return true if |key| may contain miss spelling.
+  // Returns true if |key| may contain miss spelling.
   // Currently, this function returns true if
   // 1) key contains only one alphabet.
   // 2) other characters of key are all hiragana.
@@ -444,11 +476,12 @@ class UserHistoryPredictor : public PredictorInterface {
       const Entry *entry,
       EntryPriorityQueue *results) const;
 
-  void InsertHistory(bool is_suggestion_selected,
-                     uint32 last_access_time,
+  void InsertHistory(RequestType request_type,
+                     bool is_suggestion_selected,
+                     uint64 last_access_time,
                      Segments *segments);
 
-  // insert |key,value,description| to the internal dictionary database.
+  // Inserts |key,value,description| to the internal dictionary database.
   // |is_suggestion_selected|: key/value is suggestion or conversion.
   // |next_fp|: fingerprint of the next segment.
   // |last_access_time|: the time when this entrty was created
@@ -457,42 +490,53 @@ class UserHistoryPredictor : public PredictorInterface {
               const string &description,
               bool is_suggestion_selected,
               uint32 next_fp,
-              uint32 last_access_time,
+              uint64 last_access_time,
               Segments *segments);
 
-  // Insert event entry (CLEAN_ALL_EVENT|CLEAN_UNUSED_EVENT).
+  // Tries to insert entry.
+  // Entry's contents and request_type will be checked before insersion.
+  void TryInsert(RequestType request_type,
+                 const string &key,
+                 const string &value,
+                 const string &description,
+                 bool is_suggestion_selected,
+                 uint32 next_fp,
+                 uint64 last_access_time,
+                 Segments *segments);
+
+  // Inserts event entry (CLEAN_ALL_EVENT|CLEAN_UNUSED_EVENT).
   void InsertEvent(EntryType type);
 
-  // Insert a new |next_entry| into |entry|.
+  // Inserts a new |next_entry| into |entry|.
   // it makes a bigram connection from entry to next_entry.
-  void InsertNextEntry(const NextEntry &next_entry,
-                       UserHistoryPredictor::Entry *entry) const;
+  void InsertNextEntry(const NextEntry &next_entry, Entry *entry) const;
 
   static void EraseNextEntries(uint32 fp, Entry *entry);
 
   // Recursively removes a chain of Entries in |dic_|. See the comment in
   // implemenetation for details.
-  RemoveNgramChainResult RemoveNgramChain(const string &target_key,
-                                          const string &target_value,
-                                          Entry *entry,
-                                          vector<StringPiece> *key_ngrams,
-                                          size_t key_ngrams_len,
-                                          vector<StringPiece> *value_ngrams,
-                                          size_t value_ngrams_len);
+  RemoveNgramChainResult RemoveNgramChain(
+      const string &target_key, const string &target_value, Entry *entry,
+      std::vector<StringPiece> *key_ngrams, size_t key_ngrams_len,
+      std::vector<StringPiece> *value_ngrams, size_t value_ngrams_len);
 
   // Returns true if the input first candidate seems to be a privacy sensitive
   // such like password.
   bool IsPrivacySensitive(const Segments *segments) const;
 
-  const DictionaryInterface *dictionary_;
-  const POSMatcher *pos_matcher_;
-  const SuppressionDictionary *suppression_dictionary_;
+  void MaybeRecordUsageStats(const Segments &segments) const;
+
+  const dictionary::DictionaryInterface *dictionary_;
+  const dictionary::POSMatcher *pos_matcher_;
+  const dictionary::SuppressionDictionary *suppression_dictionary_;
   const string predictor_name_;
 
+  bool content_word_learning_enabled_;
   bool updated_;
-  scoped_ptr<DicCache> dic_;
-  mutable scoped_ptr<UserHistoryPredictorSyncer> syncer_;
+  std::unique_ptr<DicCache> dic_;
+  mutable std::unique_ptr<UserHistoryPredictorSyncer> syncer_;
 };
+
 }  // namespace mozc
 
 #endif  // MOZC_PREDICTION_USER_HISTORY_PREDICTOR_H_

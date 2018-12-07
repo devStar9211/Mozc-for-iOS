@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,13 +29,15 @@
 
 #include "renderer/win32/win32_renderer_client.h"
 
+#include <memory>
+
 #include "base/logging.h"
 #include "base/mutex.h"
 #include "base/scoped_handle.h"
 #include "base/system_util.h"
 #include "base/util.h"
 #include "renderer/renderer_client.h"
-#include "renderer/renderer_command.pb.h"
+#include "protocol/renderer_command.pb.h"
 
 namespace mozc {
 namespace renderer {
@@ -189,7 +191,7 @@ SenderThread *CreateSenderThread() {
     return nullptr;
   }
 
-  scoped_ptr<SenderThread> thread(new SenderThread(
+  std::unique_ptr<SenderThread> thread(new SenderThread(
       command_event.take(), quit_event.take()));
 
   // Resume the thread.

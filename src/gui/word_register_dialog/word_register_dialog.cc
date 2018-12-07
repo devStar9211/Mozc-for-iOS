@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,12 +29,17 @@
 
 #include "gui/word_register_dialog/word_register_dialog.h"
 
+#if defined(OS_ANDROID) || defined(OS_NACL)
+#error "This platform is not supported."
+#endif  // OS_ANDROID || OS_NACL
+
 #ifdef OS_WIN
 # include <windows.h>
 # include <imm.h>
 #endif  // OS_WIN
 
 #include <QtGui/QtGui>
+#include <QtWidgets/QMessageBox>
 #include <cstdlib>
 #ifdef OS_WIN
 #include <memory>  // for std::unique_ptr
@@ -46,12 +51,11 @@
 #include "base/logging.h"
 #include "base/util.h"
 #include "client/client.h"
-#include "data_manager/user_pos_manager.h"
+#include "data_manager/pos_list_provider.h"
 #include "dictionary/user_dictionary_session.h"
 #include "dictionary/user_dictionary_storage.h"
-#include "dictionary/user_dictionary_storage.pb.h"
 #include "dictionary/user_dictionary_util.h"
-#include "dictionary/user_pos.h"
+#include "protocol/user_dictionary_storage.pb.h"
 
 namespace mozc {
 namespace gui {
@@ -60,9 +64,6 @@ using mozc::user_dictionary::UserDictionary;
 using mozc::user_dictionary::UserDictionaryCommandStatus;
 using mozc::user_dictionary::UserDictionarySession;
 using mozc::user_dictionary::UserDictionaryStorage;
-#ifdef OS_WIN
-using std::unique_ptr;
-#endif  // OS_WIN
 
 namespace {
 const int kSessionTimeout = 100000;
@@ -71,18 +72,18 @@ const int kMaxReverseConversionLength = 30;
 
 QString GetEnv(const char *envname) {
 #if defined(OS_WIN)
-  wstring wenvname;
+  std::wstring wenvname;
   mozc::Util::UTF8ToWide(envname, &wenvname);
   const DWORD buffer_size =
       ::GetEnvironmentVariable(wenvname.c_str(), NULL, 0);
   if (buffer_size == 0) {
     return "";
   }
-  unique_ptr<wchar_t[]> buffer(new wchar_t[buffer_size]);
+  std::unique_ptr<wchar_t[]> buffer(new wchar_t[buffer_size]);
   const DWORD num_copied =
       ::GetEnvironmentVariable(wenvname.c_str(), buffer.get(), buffer_size);
   if (num_copied > 0) {
-    return QString::fromWCharArray(buffer.get());
+    return QString::fromUtf16(buffer.get());
   }
   return "";
 #endif  // OS_WIN
@@ -92,7 +93,7 @@ QString GetEnv(const char *envname) {
   // TODO(team): Support other platforms.
   return "";
 }
-}  // anonymous namespace
+}  // namespace
 
 WordRegisterDialog::WordRegisterDialog()
     : is_available_(true),
@@ -100,10 +101,11 @@ WordRegisterDialog::WordRegisterDialog()
           UserDictionaryUtil::GetUserDictionaryFileName())),
       client_(client::ClientFactory::NewClient()),
       window_title_(tr("Mozc")),
-      user_pos_(new UserPOS(
-          UserPosManager::GetUserPosManager()->GetUserPOSData())) {
+      pos_list_provider_(new POSListProvider()) {
   setupUi(this);
-  setWindowFlags(Qt::WindowSystemMenuHint | Qt::WindowStaysOnTopHint);
+  setWindowFlags(Qt::WindowSystemMenuHint |
+                 Qt::WindowCloseButtonHint |
+                 Qt::WindowStaysOnTopHint);
   setWindowModality(Qt::NonModal);
 
   ReadinglineEdit->setMaxLength(kMaxEditLength);
@@ -140,8 +142,8 @@ WordRegisterDialog::WordRegisterDialog()
 #endif  // !ENABLE_CLOUD_SYNC
 
   // Initialize ComboBox
-  vector<string> pos_set;
-  user_pos_->GetPOSList(&pos_set);
+  std::vector<string> pos_set;
+  pos_list_provider_->GetPOSList(&pos_set);
   CHECK(!pos_set.empty());
 
   for (size_t i = 0; i < pos_set.size(); ++i) {
@@ -478,7 +480,7 @@ const QString WordRegisterDialog::TrimValue(const QString &str) const {
 void WordRegisterDialog::EnableIME() {
 #ifdef OS_WIN
   // TODO(taku): implement it for other platform.
-  HIMC himc = ::ImmGetContext(winId());
+  HIMC himc = ::ImmGetContext(reinterpret_cast<HWND>(winId()));
   if (himc != NULL) {
     ::ImmSetOpenStatus(himc, TRUE);
   }

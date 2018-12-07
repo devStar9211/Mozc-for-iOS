@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,6 +31,7 @@
 
 #ifdef OS_WIN
 #include <Windows.h>
+#include <KtmW32.h>
 #else
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -45,7 +46,6 @@
 #include "base/pepper_file_util.h"
 #endif  // MOZC_USE_PEPPER_FILE_IO
 #include "base/scoped_handle.h"
-#include "base/system_util.h"
 #include "base/util.h"
 #include "base/win_util.h"
 
@@ -87,7 +87,7 @@ void StripWritePreventingAttributesIfExists(const string &filename) {
   if (!FileUtil::FileExists(filename)) {
     return;
   }
-  wstring wide_filename;
+  std::wstring wide_filename;
   Util::UTF8ToWide(filename, &wide_filename);
   const DWORD kDropAttributes =
       FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_READONLY;
@@ -100,36 +100,38 @@ void StripWritePreventingAttributesIfExists(const string &filename) {
 }  // namespace
 #endif  // OS_WIN
 
-#ifndef MOZC_USE_PEPPER_FILE_IO
 bool FileUtil::CreateDirectory(const string &path) {
-#ifdef OS_WIN
-  wstring wide;
-  return (Util::UTF8ToWide(path.c_str(), &wide) > 0 &&
+#if defined(OS_WIN)
+  std::wstring wide;
+  return (Util::UTF8ToWide(path, &wide) > 0 &&
           ::CreateDirectoryW(wide.c_str(), nullptr) != 0);
-#else  // OS_WIN
+#elif defined(OS_NACL)  // OS_WIN
+  return PepperFileUtil::CreateDirectory(path);
+#else  // OS_WIN or OS_NACL
   return ::mkdir(path.c_str(), 0700) == 0;
-#endif  // OS_WIN
+#endif  // OS_WIN or OS_NACL
 }
 
 bool FileUtil::RemoveDirectory(const string &dirname) {
 #ifdef OS_WIN
-  wstring wide;
-  return (Util::UTF8ToWide(dirname.c_str(), &wide) > 0 &&
+  std::wstring wide;
+  return (Util::UTF8ToWide(dirname, &wide) > 0 &&
           ::RemoveDirectoryW(wide.c_str()) != 0);
-#else  // OS_WIN
+#elif defined(OS_NACL)  // OS_WIN
+  return PepperFileUtil::Delete(dirname);
+#else  // OS_WIN or OS_NACL
   return ::rmdir(dirname.c_str()) == 0;
-#endif  // OS_WIN
+#endif  // OS_WIN or OS_NACL
 }
-#endif  // MOZC_USE_PEPPER_FILE_IO
 
 bool FileUtil::Unlink(const string &filename) {
 #ifdef OS_WIN
   StripWritePreventingAttributesIfExists(filename);
-  wstring wide;
-  return (Util::UTF8ToWide(filename.c_str(), &wide) > 0 &&
+  std::wstring wide;
+  return (Util::UTF8ToWide(filename, &wide) > 0 &&
           ::DeleteFileW(wide.c_str()) != 0);
 #elif defined(MOZC_USE_PEPPER_FILE_IO)
-  return PepperFileUtil::DeleteFile(filename);;
+  return PepperFileUtil::Delete(filename);
 #else  // !OS_WIN && !MOZC_USE_PEPPER_FILE_IO
   return ::unlink(filename.c_str()) == 0;
 #endif  // OS_WIN
@@ -137,8 +139,8 @@ bool FileUtil::Unlink(const string &filename) {
 
 bool FileUtil::FileExists(const string &filename) {
 #ifdef OS_WIN
-  wstring wide;
-  return (Util::UTF8ToWide(filename.c_str(), &wide) > 0 &&
+  std::wstring wide;
+  return (Util::UTF8ToWide(filename, &wide) > 0 &&
           ::GetFileAttributesW(wide.c_str()) != -1);
 #elif defined(MOZC_USE_PEPPER_FILE_IO)
   return PepperFileUtil::FileExists(filename);
@@ -150,8 +152,8 @@ bool FileUtil::FileExists(const string &filename) {
 
 bool FileUtil::DirectoryExists(const string &dirname) {
 #ifdef OS_WIN
-  wstring wide;
-  if (Util::UTF8ToWide(dirname.c_str(), &wide) <= 0) {
+  std::wstring wide;
+  if (Util::UTF8ToWide(dirname, &wide) <= 0) {
     return false;
   }
 
@@ -168,97 +170,10 @@ bool FileUtil::DirectoryExists(const string &dirname) {
 
 #ifdef OS_WIN
 namespace {
-typedef HANDLE (WINAPI *FPCreateTransaction)(LPSECURITY_ATTRIBUTES,
-                                             LPGUID,
-                                             DWORD,
-                                             DWORD,
-                                             DWORD,
-                                             DWORD,
-                                             LPWSTR);
-typedef BOOL (WINAPI *FPMoveFileTransactedW)(LPCTSTR,
-                                             LPCTSTR,
-                                             LPPROGRESS_ROUTINE,
-                                             LPVOID,
-                                             DWORD,
-                                             HANDLE);
-typedef BOOL (WINAPI *FPGetFileAttributesTransactedW)(LPCTSTR,
-                                                      GET_FILEEX_INFO_LEVELS,
-                                                      LPVOID,
-                                                      HANDLE);
-typedef BOOL (WINAPI *FPSetFileAttributesTransactedW)(LPCTSTR,
-                                                      DWORD,
-                                                      HANDLE);
-typedef BOOL (WINAPI *FPCommitTransaction)(HANDLE);
 
-FPCreateTransaction   g_create_transaction    = nullptr;
-FPMoveFileTransactedW g_move_file_transactedw = nullptr;
-FPGetFileAttributesTransactedW g_get_file_attributes_transactedw = nullptr;
-FPSetFileAttributesTransactedW g_set_file_attributes_transactedw = nullptr;
-FPCommitTransaction   g_commit_transaction    = nullptr;
-
-static once_t g_init_tx_move_file_once = MOZC_ONCE_INIT;
-
-void InitTxMoveFile() {
-  if (!SystemUtil::IsVistaOrLater()) {
-    return;
-  }
-
-  const HMODULE lib_ktmw = WinUtil::LoadSystemLibrary(L"ktmw32.dll");
-  if (lib_ktmw == nullptr) {
-    LOG(ERROR) << "LoadSystemLibrary for ktmw32.dll failed.";
-    return;
-  }
-
-  const HMODULE lib_kernel = WinUtil::GetSystemModuleHandle(L"kernel32.dll");
-  if (lib_kernel == nullptr) {
-    LOG(ERROR) << "LoadSystemLibrary for kernel32.dll failed.";
-    return;
-  }
-
-  g_create_transaction =
-      reinterpret_cast<FPCreateTransaction>
-      (::GetProcAddress(lib_ktmw, "CreateTransaction"));
-
-  g_move_file_transactedw =
-      reinterpret_cast<FPMoveFileTransactedW>
-      (::GetProcAddress(lib_kernel, "MoveFileTransactedW"));
-
-  g_get_file_attributes_transactedw =
-      reinterpret_cast<FPGetFileAttributesTransactedW>
-      (::GetProcAddress(lib_kernel, "GetFileAttributesTransactedW"));
-
-  g_set_file_attributes_transactedw =
-      reinterpret_cast<FPSetFileAttributesTransactedW>
-      (::GetProcAddress(lib_kernel, "SetFileAttributesTransactedW"));
-
-  g_commit_transaction =
-      reinterpret_cast<FPCommitTransaction>
-      (::GetProcAddress(lib_ktmw, "CommitTransaction"));
-
-  LOG_IF(ERROR, g_create_transaction == nullptr)
-      << "CreateTransaction init failed";
-  LOG_IF(ERROR, g_move_file_transactedw == nullptr)
-      << "MoveFileTransactedW init failed";
-  LOG_IF(ERROR, g_get_file_attributes_transactedw == nullptr)
-      << "GetFileAttributesTransactedW init failed";
-  LOG_IF(ERROR, g_set_file_attributes_transactedw == nullptr)
-      << "SetFileAttributesTransactedW init failed";
-  LOG_IF(ERROR, g_commit_transaction == nullptr)
-      << "CommitTransaction init failed";
-}
-
-bool TransactionalMoveFile(const wstring &from, const wstring &to) {
-  CallOnce(&g_init_tx_move_file_once, &InitTxMoveFile);
-
-  if (g_commit_transaction == nullptr || g_move_file_transactedw == nullptr ||
-      g_set_file_attributes_transactedw == nullptr ||
-      g_create_transaction == nullptr) {
-    // Transactional NTFS is not available.
-    return false;
-  }
-
+bool TransactionalMoveFile(const std::wstring &from, const std::wstring &to) {
   const DWORD kTimeout = 5000;  // 5 sec.
-  ScopedHandle handle((*g_create_transaction)(
+  ScopedHandle handle(::CreateTransaction(
       nullptr, 0, 0, 0, 0, kTimeout, nullptr));
   const DWORD create_transaction_error = ::GetLastError();
   if (handle.get() == 0) {
@@ -267,37 +182,32 @@ bool TransactionalMoveFile(const wstring &from, const wstring &to) {
   }
 
   WIN32_FILE_ATTRIBUTE_DATA file_attribute_data = {};
-  if (!(*g_get_file_attributes_transactedw)(from.c_str(), GetFileExInfoStandard,
-                                            &file_attribute_data,
-                                            handle.get())) {
+  if (!::GetFileAttributesTransactedW(from.c_str(), GetFileExInfoStandard,
+                                      &file_attribute_data, handle.get())) {
     const DWORD get_file_attributes_error = ::GetLastError();
     LOG(ERROR) << "GetFileAttributesTransactedW failed: "
                << get_file_attributes_error;
     return false;
   }
 
-  if (!(*g_move_file_transactedw)(from.c_str(), to.c_str(),
-                                  nullptr, nullptr,
-                                  MOVEFILE_COPY_ALLOWED |
-                                  MOVEFILE_REPLACE_EXISTING,
-                                  handle.get())) {
+  if (!::MoveFileTransactedW(from.c_str(), to.c_str(), nullptr, nullptr,
+                             MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING,
+                             handle.get())) {
     const DWORD move_file_transacted_error = ::GetLastError();
     LOG(ERROR) << "MoveFileTransactedW failed: "
                << move_file_transacted_error;
     return false;
   }
 
-  if (!(*g_set_file_attributes_transactedw)(
-          to.c_str(),
-          file_attribute_data.dwFileAttributes,
-          handle.get())) {
+  if (!::SetFileAttributesTransactedW(
+          to.c_str(), file_attribute_data.dwFileAttributes, handle.get())) {
     const DWORD set_file_attributes_error = ::GetLastError();
     LOG(ERROR) << "SetFileAttributesTransactedW failed: "
                << set_file_attributes_error;
     return false;
   }
 
-  if (!(*g_commit_transaction)(handle.get())) {
+  if (!::CommitTransaction(handle.get())) {
     const DWORD commit_transaction_error = ::GetLastError();
     LOG(ERROR) << "CommitTransaction failed: " << commit_transaction_error;
     return false;
@@ -307,9 +217,7 @@ bool TransactionalMoveFile(const wstring &from, const wstring &to) {
 }
 
 }  // namespace
-#endif  // OS_WIN
 
-#ifdef OS_WIN
 bool FileUtil::HideFile(const string &filename) {
   return HideFileWithExtraAttributes(filename, 0);
 }
@@ -321,8 +229,8 @@ bool FileUtil::HideFileWithExtraAttributes(const string &filename,
     return false;
   }
 
-  wstring wfilename;
-  Util::UTF8ToWide(filename.c_str(), &wfilename);
+  std::wstring wfilename;
+  Util::UTF8ToWide(filename, &wfilename);
 
   const DWORD original_attributes = ::GetFileAttributesW(wfilename.c_str());
   const auto result = ::SetFileAttributesW(
@@ -335,36 +243,35 @@ bool FileUtil::HideFileWithExtraAttributes(const string &filename,
 #endif  // OS_WIN
 
 bool FileUtil::CopyFile(const string &from, const string &to) {
-  Mmap input;
-  if (!input.Open(from.c_str(), "r")) {
+  InputFileStream ifs(from.c_str(), std::ios::binary);
+  if (!ifs) {
     LOG(ERROR) << "Can't open input file. " << from;
     return false;
   }
 
 #ifdef OS_WIN
-  wstring wto;
-  Util::UTF8ToWide(to.c_str(), &wto);
+  std::wstring wto;
+  Util::UTF8ToWide(to, &wto);
   StripWritePreventingAttributesIfExists(to);
 #endif  // OS_WIN
 
-  OutputFileStream ofs(to.c_str(), ios::binary | ios::trunc);
+  OutputFileStream ofs(to.c_str(), std::ios::binary | std::ios::trunc);
   if (!ofs) {
     LOG(ERROR) << "Can't open output file. " << to;
     return false;
   }
 
-  // TOOD(taku): opening file with mmap could not be
-  // a best solution. Also, we have to check disk quota
-  // in advance.
-  if (!ofs.write(input.begin(), input.size()).good()) {
+  // TODO(taku): we have to check disk quota in advance.
+  if (!(ofs << ifs.rdbuf())) {
     LOG(ERROR) << "Can't write data.";
     return false;
   }
+  ifs.close();
   ofs.close();
 
 #ifdef OS_WIN
-  wstring wfrom;
-  Util::UTF8ToWide(from.c_str(), &wfrom);
+  std::wstring wfrom;
+  Util::UTF8ToWide(from, &wfrom);
   ::SetFileAttributesW(wto.c_str(), ::GetFileAttributesW(wfrom.c_str()));
 #endif  // OS_WIN
 
@@ -394,9 +301,9 @@ bool FileUtil::IsEqualFile(const string &filename1,
 
 bool FileUtil::AtomicRename(const string &from, const string &to) {
 #ifdef OS_WIN
-  wstring fromw, tow;
-  Util::UTF8ToWide(from.c_str(), &fromw);
-  Util::UTF8ToWide(to.c_str(), &tow);
+  std::wstring fromw, tow;
+  Util::UTF8ToWide(from, &fromw);
+  Util::UTF8ToWide(to, &tow);
 
   if (TransactionalMoveFile(fromw, tow)) {
     return true;
@@ -414,8 +321,8 @@ bool FileUtil::AtomicRename(const string &from, const string &to) {
 
   return true;
 #elif defined(MOZC_USE_PEPPER_FILE_IO)
-  // TODO(horo): PepperFileUtil::RenameFile() is not atomic operation.
-  return PepperFileUtil::RenameFile(from, to);
+  // TODO(horo): PepperFileUtil::Rename() is not atomic operation.
+  return PepperFileUtil::Rename(from, to);
 #else  // !OS_WIN && !MOZC_USE_PEPPER_FILE_IO
   // Mac OSX: use rename(2), but rename(2) on Mac OSX
   // is not properly implemented, atomic rename is POSIX spec though.
@@ -424,19 +331,24 @@ bool FileUtil::AtomicRename(const string &from, const string &to) {
 #endif  // OS_WIN
 }
 
-string FileUtil::JoinPath(const string &path1, const string &path2) {
+string FileUtil::JoinPath(const std::vector<StringPiece> &components) {
   string output;
-  JoinPath(path1, path2, &output);
+  JoinPath(components, &output);
   return output;
 }
 
-void FileUtil::JoinPath(const string &path1, const string &path2,
+void FileUtil::JoinPath(const std::vector<StringPiece> &components,
                         string *output) {
-  *output = path1;
-  if (path1.size() > 0 && path1[path1.size() - 1] != kFileDelimiter) {
-    *output += kFileDelimiter;
+  output->clear();
+  for (size_t i = 0; i < components.size(); ++i) {
+    if (components[i].empty()) {
+      continue;
+    }
+    if (!output->empty() && output->back() != kFileDelimiter) {
+      output->append(1, kFileDelimiter);
+    }
+    output->append(components[i].data(), components[i].size());
   }
-  *output += path2;
 }
 
 // TODO(taku): what happens if filename == '/foo/bar/../bar/..
@@ -467,6 +379,41 @@ string FileUtil::NormalizeDirectorySeparator(const string &path) {
 #else
   return path;
 #endif  // OS_WIN
+}
+
+bool FileUtil::GetModificationTime(const string &filename,
+                                   FileTimeStamp *modified_at) {
+#if defined (OS_WIN)
+  std::wstring wide;
+  if (!Util::UTF8ToWide(filename, &wide)) {
+    return false;
+  }
+  WIN32_FILE_ATTRIBUTE_DATA info = {};
+  if (!::GetFileAttributesEx(wide.c_str(), GetFileExInfoStandard, &info)) {
+    const auto last_error = ::GetLastError();
+    LOG(ERROR) << "GetFileAttributesEx(" << filename << ") failed. error="
+               << last_error;
+    return false;
+  }
+  *modified_at =
+      (static_cast<uint64>(info.ftLastWriteTime.dwHighDateTime) << 32)
+      + info.ftLastWriteTime.dwLowDateTime;
+  return true;
+#elif defined(OS_NACL)
+  PP_FileInfo file_info;
+  if (!PepperFileUtil::Query(filename, &file_info)) {
+    return false;
+  }
+  *modified_at = file_info.last_modified_time;
+  return true;
+#else  // OS_WIN or OS_NACL
+  struct stat stat_info;
+  if (::stat(filename.c_str(), &stat_info)) {
+    return false;
+  }
+  *modified_at = stat_info.st_mtime;
+  return true;
+#endif  // OS_WIN or OS_NACL
 }
 
 }  // namespace mozc

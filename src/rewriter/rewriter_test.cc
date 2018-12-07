@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,23 +30,25 @@
 #include "rewriter/rewriter.h"
 
 #include <cstddef>
+#include <memory>
 #include <string>
 
 #include "base/system_util.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
-#include "converter/conversion_request.h"
 #include "converter/converter_mock.h"
 #include "converter/segments.h"
 #include "data_manager/testing/mock_data_manager.h"
 #include "dictionary/pos_group.h"
+#include "request/conversion_request.h"
 #include "rewriter/rewriter_interface.h"
+#include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
-
-DECLARE_string(test_tmpdir);
 
 namespace mozc {
 namespace {
+
+using dictionary::DictionaryInterface;
+using dictionary::PosGroup;
 
 size_t CommandCandidatesSize(const Segment &segment) {
   size_t result = 0;
@@ -65,32 +67,23 @@ class RewriterTest : public ::testing::Test {
  protected:
   virtual void SetUp() {
     SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config::ConfigHandler::SetConfig(config);
     converter_mock_.reset(new ConverterMock);
     const testing::MockDataManager data_manager;
     pos_group_.reset(new PosGroup(data_manager.GetPosGroupData()));
-    const DictionaryInterface *kNullDictionary = NULL;
+    const DictionaryInterface *kNullDictionary = nullptr;
     rewriter_.reset(new RewriterImpl(converter_mock_.get(),
                                      &data_manager,
                                      pos_group_.get(),
                                      kNullDictionary));
   }
 
-  virtual void TearDown() {
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config::ConfigHandler::SetConfig(config);
-  }
-
   const RewriterInterface *GetRewriter() const {
     return rewriter_.get();
   }
 
-  scoped_ptr<ConverterMock> converter_mock_;
-  scoped_ptr<const PosGroup> pos_group_;
-  scoped_ptr<RewriterImpl> rewriter_;
+  std::unique_ptr<ConverterMock> converter_mock_;
+  std::unique_ptr<const PosGroup> pos_group_;
+  std::unique_ptr<RewriterImpl> rewriter_;
 };
 
 // Command rewriter should be disabled on Android build. b/5851240
@@ -101,36 +94,58 @@ TEST_F(RewriterTest, CommandRewriterAvailability) {
 
   {
     Segment::Candidate *candidate = seg->add_candidate();
-    // seg->set_key("こまんど");
-    // candidate->value = "コマンド";
-    seg->set_key("\xE3\x81\x93\xE3\x81\xBE\xE3\x82\x93\xE3\x81\xA9");
-    candidate->value = "\xE3\x82\xB3\xE3\x83\x9E"
-                       "\xE3\x83\xB3\xE3\x83\x89";
+    seg->set_key("こまんど");
+    candidate->value = "コマンド";
     EXPECT_TRUE(GetRewriter()->Rewrite(request, &segments));
 #ifdef OS_ANDROID
     EXPECT_EQ(0, CommandCandidatesSize(*seg));
-#else
+#else  // OS_ANDROID
     EXPECT_EQ(2, CommandCandidatesSize(*seg));
-#endif
+#endif  // OS_ANDROID
     seg->clear_candidates();
   }
 
   {
     Segment::Candidate *candidate = seg->add_candidate();
-    // seg->set_key("さじぇすと");
-    // candidate->value = "サジェスト";
-    seg->set_key("\xE3\x81\x95\xE3\x81\x98\xE3\x81\x87"
-                 "\xE3\x81\x99\xE3\x81\xA8");
-    candidate->value = "\xE3\x82\xB5\xE3\x82\xB8\xE3\x82\xA7"
-                       "\xE3\x82\xB9\xE3\x83\x88";
+    seg->set_key("さじぇすと");
+    candidate->value = "サジェスト";
     EXPECT_TRUE(GetRewriter()->Rewrite(request, &segments));
 #ifdef OS_ANDROID
     EXPECT_EQ(0, CommandCandidatesSize(*seg));
-#else
+#else  // OS_ANDROID
     EXPECT_EQ(1, CommandCandidatesSize(*seg));
-#endif
+#endif  // OS_ANDROID
     seg->clear_candidates();
   }
+}
+
+TEST_F(RewriterTest, EmoticonsAboveSymbols) {
+  const char kKey[] = "かおもじ";
+  const char kEmoticon[] = "^^;";
+  const char kSymbol[] = "☹";  // A platform-dependent symbol
+
+  const ConversionRequest request;
+  Segments segments;
+  Segment *seg = segments.push_back_segment();
+  Segment::Candidate *candidate = seg->add_candidate();
+  seg->set_key(kKey);
+  candidate->value = kKey;
+  EXPECT_EQ(1, seg->candidates_size());
+  EXPECT_TRUE(GetRewriter()->Rewrite(request, &segments));
+  EXPECT_LT(1, seg->candidates_size());
+
+  int emoticon_index = -1;
+  int symbol_index = -1;
+  for (size_t i = 0; i < seg->candidates_size(); ++i) {
+    if (seg->candidate(i).value == kEmoticon) {
+      emoticon_index = i;
+    } else if (seg->candidate(i).value == kSymbol) {
+      symbol_index = i;
+    }
+  }
+  EXPECT_NE(-1, emoticon_index);
+  EXPECT_NE(-1, symbol_index);
+  EXPECT_LT(emoticon_index, symbol_index);
 }
 
 }  // namespace mozc

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,31 +30,37 @@
 // Qt component of configure dialog for Mozc
 #include "gui/config_dialog/config_dialog.h"
 
+#if defined(OS_ANDROID) || defined(OS_NACL)
+#error "This platform is not supported."
+#endif  // OS_ANDROID || OS_NACL
+
 #ifdef OS_WIN
-#include <QtGui/QWindowsStyle>
+#include <QtGui/QGuiApplication>
 #include <windows.h>
 #endif
 
-#include <QtGui/QMessageBox>
+#include <QtWidgets/QMessageBox>
+
 #include <algorithm>
 #include <cstdlib>
+#include <memory>
 #include <sstream>
+
 #include "base/config_file_stream.h"
 #include "base/const.h"
 #include "base/logging.h"
 #include "base/mac_util.h"
 #include "base/run_level.h"
-#include "base/system_util.h"
 #include "base/util.h"
 #include "client/client.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
 #include "config/stats_config_util.h"
 #include "gui/base/win_util.h"
 #include "gui/config_dialog/keymap_editor.h"
 #include "gui/config_dialog/roman_table_editor.h"
 #include "ipc/ipc.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 #include "session/internal/keymap.h"
 
 namespace {
@@ -81,7 +87,7 @@ ConfigDialog::ConfigDialog()
       initial_use_keyboard_to_change_preedit_method_(false),
       initial_use_mode_indicator_(true) {
   setupUi(this);
-  setWindowFlags(Qt::WindowSystemMenuHint);
+  setWindowFlags(Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint);
   setWindowModality(Qt::NonModal);
 
 #ifdef OS_WIN
@@ -121,31 +127,15 @@ ConfigDialog::ConfigDialog()
 
   suggestionsSizeSpinBox->setRange(1, 9);
 
-  // punctuationsSettingComboBox->addItem(QString::fromUtf8("、。"));
-  // punctuationsSettingComboBox->addItem(QString::fromUtf8("，．"));
-  // punctuationsSettingComboBox->addItem(QString::fromUtf8("、．"));
-  // punctuationsSettingComboBox->addItem(QString::fromUtf8("，。"));
-  punctuationsSettingComboBox->addItem
-      (QString::fromUtf8("\xE3\x80\x81\xE3\x80\x82"));
-  punctuationsSettingComboBox->addItem
-      (QString::fromUtf8("\xEF\xBC\x8C\xEF\xBC\x8E"));
-  punctuationsSettingComboBox->addItem
-      (QString::fromUtf8("\xE3\x80\x81\xEF\xBC\x8E"));
-  punctuationsSettingComboBox->addItem
-      (QString::fromUtf8("\xEF\xBC\x8C\xE3\x80\x82"));
+  punctuationsSettingComboBox->addItem(QString::fromUtf8("、。"));
+  punctuationsSettingComboBox->addItem(QString::fromUtf8("，．"));
+  punctuationsSettingComboBox->addItem(QString::fromUtf8("、．"));
+  punctuationsSettingComboBox->addItem(QString::fromUtf8("，。"));
 
-  // symbolsSettingComboBox->addItem(QString::fromUtf8("「」・"));
-  // symbolsSettingComboBox->addItem(QString::fromUtf8("[]／"));
-  // symbolsSettingComboBox->addItem(QString::fromUtf8("「」／"));
-  // symbolsSettingComboBox->addItem(QString::fromUtf8("[]・"));
-  symbolsSettingComboBox->addItem(
-      QString::fromUtf8("\xE3\x80\x8C\xE3\x80\x8D\xE3\x83\xBB"));
-  symbolsSettingComboBox->addItem(
-      QString::fromUtf8("[]\xEF\xBC\x8F"));
-  symbolsSettingComboBox->addItem(
-      QString::fromUtf8("\xE3\x80\x8C\xE3\x80\x8D\xEF\xBC\x8F"));
-  symbolsSettingComboBox->addItem(
-      QString::fromUtf8("[]\xE3\x83\xBB"));
+  symbolsSettingComboBox->addItem(QString::fromUtf8("「」・"));
+  symbolsSettingComboBox->addItem(QString::fromUtf8("[]／"));
+  symbolsSettingComboBox->addItem(QString::fromUtf8("「」／"));
+  symbolsSettingComboBox->addItem(QString::fromUtf8("[]・"));
 
   keymapSettingComboBox->addItem(tr("Custom keymap"));
   keymapSettingComboBox->addItem(tr("ATOK"));
@@ -190,7 +180,7 @@ ConfigDialog::ConfigDialog()
   verboseLevelComboBox->addItem(tr("1"));
   verboseLevelComboBox->addItem(tr("2"));
 
-  yenSignComboBox->addItem(tr("Yen Sign \xC2\xA5"));
+  yenSignComboBox->addItem(tr("Yen Sign ¥"));
   yenSignComboBox->addItem(tr("Backslash \\"));
 
 #ifndef OS_MACOSX
@@ -201,10 +191,16 @@ ConfigDialog::ConfigDialog()
   useJapaneseLayout->hide();
 #endif  // !OS_MACOSX
 
-#ifndef MOZC_ENABLE_MODE_INDICATOR
-  // If not enabled, useModeIndicator checkbox should be invisible.
+#ifndef OS_WIN
+  // Mode indicator is available only on Windows.
   useModeIndicator->hide();
-#endif  // !MOZC_ENABLE_MODE_INDICATOR
+#endif  // !OS_WIN
+
+  // Reset texts explicitly for translations.
+  configDialogButtonBox->button(QDialogButtonBox::Ok)->setText(tr("  Ok  "));
+  configDialogButtonBox->button(QDialogButtonBox::Cancel)->setText(
+      tr("Cancel"));
+  configDialogButtonBox->button(QDialogButtonBox::Apply)->setText(tr("Apply"));
 
   // signal/slot
   QObject::connect(configDialogButtonBox,
@@ -297,16 +293,11 @@ ConfigDialog::ConfigDialog()
   launchAdministrationDialogButton->setEnabled(true);
   // if the current application is not elevated by UAC,
   // add a shield icon
-  if (mozc::SystemUtil::IsVistaOrLater()) {
-    if (!mozc::RunLevel::IsElevatedByUAC()) {
-      QWindowsStyle style;
-      QIcon vista_icon(style.standardIcon(QStyle::SP_VistaShield));
-      launchAdministrationDialogButton->setIcon(vista_icon);
-      launchAdministrationDialogButtonForUsageStats->setIcon(vista_icon);
-    }
-  } else {
-    dictionaryPreloadingAndUACLabel->setText(
-        tr("Dictionary preloading"));
+  if (!mozc::RunLevel::IsElevatedByUAC()) {
+    const QIcon &vista_shield_icon =
+        QApplication::style()->standardIcon(QStyle::SP_VistaShield);
+    launchAdministrationDialogButton->setIcon(vista_shield_icon);
+    launchAdministrationDialogButtonForUsageStats->setIcon(vista_shield_icon);
   }
 
   usageStatsCheckBox->setDisabled(true);
@@ -526,7 +517,7 @@ void GetComboboxForPreeditMethod(const QComboBox *combobox,
     config->set_use_keyboard_to_change_preedit_method(false);
   }
 }
-}  // anonymous namespace
+}  // namespace
 
 
 // TODO(taku)
@@ -598,8 +589,8 @@ void ConfigDialog::ConvertFromProto(const config::Config &config) {
   SET_CHECKBOX(dictionarySuggestCheckBox, use_dictionary_suggest);
   SET_CHECKBOX(realtimeConversionCheckBox, use_realtime_conversion);
 
-  suggestionsSizeSpinBox->setValue
-      (max(1, min(9, static_cast<int>(config.suggestions_size()))));
+  suggestionsSizeSpinBox->setValue(
+      std::max(1, std::min(9, static_cast<int>(config.suggestions_size()))));
 
   // tab5
   SetSendStatsCheckBox();
@@ -815,16 +806,16 @@ void ConfigDialog::EditUserDictionary() {
 void ConfigDialog::EditKeymap() {
   string current_keymap_table = "";
   const QString keymap_name = keymapSettingComboBox->currentText();
-  const map<QString, config::Config::SessionKeymap>::const_iterator itr =
+  const std::map<QString, config::Config::SessionKeymap>::const_iterator itr =
       keymapname_sessionkeymap_map_.find(keymap_name);
   if (itr != keymapname_sessionkeymap_map_.end()) {
     // Load from predefined mapping file.
     const char *keymap_file =
         keymap::KeyMapManager::GetKeyMapFileName(itr->second);
-    scoped_ptr<istream> ifs(
+    std::unique_ptr<std::istream> ifs(
         ConfigFileStream::LegacyOpen(keymap_file));
     CHECK(ifs.get() != NULL);  // should never happen
-    stringstream buffer;
+    std::stringstream buffer;
     buffer << ifs->rdbuf();
     current_keymap_table = buffer.str();
   } else {

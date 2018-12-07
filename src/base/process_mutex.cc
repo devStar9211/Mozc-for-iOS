@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -94,8 +94,8 @@ bool ProcessMutex::LockAndWrite(const string &message) {
     return false;
   }
 
-  wstring wfilename;
-  Util::UTF8ToWide(filename_.c_str(), &wfilename);
+  std::wstring wfilename;
+  Util::UTF8ToWide(filename_, &wfilename);
   const DWORD kAttribute =
       FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM |
       FILE_ATTRIBUTE_TEMPORARY | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED |
@@ -151,7 +151,7 @@ class NamedLockManager {
   ~NamedLockManager() {}
   bool Lock(const string &filename, const string &message) {
     scoped_lock l(&mutex_);
-    return lock_map_.insert(make_pair(filename, message)).second;
+    return lock_map_.insert(std::make_pair(filename, message)).second;
   }
   void UnLock(const string &filename) {
     scoped_lock l(&mutex_);
@@ -161,7 +161,7 @@ class NamedLockManager {
 
  private:
   Mutex mutex_;
-  map<string, string> lock_map_;
+  std::map<string, string> lock_map_;
   DISALLOW_COPY_AND_ASSIGN(NamedLockManager);
 };
 
@@ -176,11 +176,17 @@ ProcessMutex::~ProcessMutex() {
 }
 
 bool ProcessMutex::LockAndWrite(const string &message) {
-  return Singleton<NamedLockManager>::get()->Lock(filename_, message);
+  if (!Singleton<NamedLockManager>::get()->Lock(filename_, message)) {
+    VLOG(1) << filename_ << " is already locked";
+    return false;
+  }
+  locked_ = true;
+  return true;
 }
 
 bool ProcessMutex::UnLock() {
   Singleton<NamedLockManager>::get()->UnLock(filename_);
+  locked_ = false;
   return true;
 }
 
@@ -249,14 +255,14 @@ class FileLockManager {
       return false;   // another server is already running
     }
 
-    fdmap_.insert(make_pair(filename, *fd));
+    fdmap_.insert(std::make_pair(filename, *fd));
 
     return true;
   }
 
   void UnLock(const string &filename) {
     scoped_lock l(&mutex_);
-    map<string, int>::iterator it = fdmap_.find(filename);
+    std::map<string, int>::iterator it = fdmap_.find(filename);
     if (it == fdmap_.end()) {
       LOG(ERROR) << filename << " is not locked";
       return;
@@ -269,7 +275,7 @@ class FileLockManager {
   FileLockManager() {}
 
   ~FileLockManager() {
-    for (map<string, int>::const_iterator it = fdmap_.begin();
+    for (std::map<string, int>::const_iterator it = fdmap_.begin();
          it != fdmap_.end(); ++it) {
       ::close(it->second);
     }
@@ -278,7 +284,7 @@ class FileLockManager {
 
  private:
   Mutex mutex_;
-  map<string, int> fdmap_;
+  std::map<string, int> fdmap_;
 };
 
 }  // namespace

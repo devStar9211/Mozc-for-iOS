@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,28 +35,33 @@
 #include <vector>
 
 #include "base/port.h"
+#include "dictionary/file/codec_interface.h"
 #include "dictionary/file/section.h"
 
 namespace mozc {
+namespace dictionary {
+
 class DictionaryFileBuilder {
  public:
-  DictionaryFileBuilder();
-
+  explicit DictionaryFileBuilder(DictionaryFileCodecInterface *file_codec);
   virtual ~DictionaryFileBuilder();
 
-  // Add section from file
-  bool AddSectionFromFile(const string &section_name,
-                          const string &file_name);
+  // Adds a section from a file
+  bool AddSectionFromFile(const string &section_name, const string &file_name);
 
-  // Write image of dictionary file to file
+  // Writes the image of dictionary file to a file.
   void WriteImageToFile(const string &file_name) const;
 
  private:
-  vector<DictionaryFileSection> sections_;
-  set<string> added_;
+  // DictionaryFileBuilder does not take the ownership of |file_codec_|.
+  DictionaryFileCodecInterface *file_codec_;
+  std::vector<DictionaryFileSection> sections_;
+  std::set<string> added_;
 
   DISALLOW_COPY_AND_ASSIGN(DictionaryFileBuilder);
 };
+
+}  // namespace dictionary
 }  // namespace mozc
 
 #endif  // MOZC_DICTIONARY_FILE_DICTIONARY_FILE_BUILDER_H_

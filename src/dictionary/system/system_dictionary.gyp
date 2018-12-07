@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -39,11 +39,14 @@
       'dependencies': [
         '../../base/base.gyp:base_core',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
+    },
+    {
+      'target_name': 'key_expansion_table',
+      'type': 'none',
+      'toolsets': ['target', 'host'],
+      'sources': [
+        'key_expansion_table.h',
+      ],
     },
     {
       'target_name': 'system_dictionary',
@@ -53,17 +56,15 @@
       ],
       'dependencies': [
         '../../base/base.gyp:base_core',
+        '../../request/request.gyp:conversion_request',
         '../../storage/louds/louds.gyp:bit_vector_based_array',
         '../../storage/louds/louds.gyp:louds_trie',
         '../dictionary_base.gyp:text_dictionary_loader',
+        '../file/dictionary_file.gyp:codec_factory',
         '../file/dictionary_file.gyp:dictionary_file',
+        'key_expansion_table',
         'system_dictionary_codec',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'value_dictionary',
@@ -75,14 +76,9 @@
         '../../base/base.gyp:base_core',
         '../../storage/louds/louds.gyp:louds_trie',
         '../dictionary_base.gyp:pos_matcher',
-        '../file/dictionary_file.gyp:dictionary_file',
+        '../file/dictionary_file.gyp:codec_factory',
         'system_dictionary_codec',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'system_dictionary_builder',
@@ -98,28 +94,9 @@
         '../dictionary_base.gyp:pos_matcher',
         '../dictionary_base.gyp:text_dictionary_loader',
         '../file/dictionary_file.gyp:codec',
+        '../file/dictionary_file.gyp:codec_factory',
         'system_dictionary_codec',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {
-      # TODO(noriyukit): Ideally, the copy rule of
-      # dictionary_oss/dictionary00.txt can be shared with one in
-      # data_manager/dictionary_oss/oss_data_manager_test.gyp. However, to avoid
-      # conflict of copy destination name, the copy destination here is changed
-      # from the original one.
-      'target_name': 'install_system_dictionary_test_data',
-      'type': 'none',
-      'variables': {
-        'test_data_subdir': 'data/system_dictionary_test',
-        'test_data': [
-          '../../data/dictionary_oss/dictionary00.txt',
-        ],
-      },
     },
   ],
 }

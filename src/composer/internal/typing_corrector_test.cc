@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,28 +31,26 @@
 
 #include <string>
 #include <vector>
+
 #include "base/singleton.h"
-#include "config/config_handler.h"
+#include "composer/internal/typing_model.h"
 #include "composer/table.h"
 #include "composer/type_corrected_query.h"
-#include "composer/internal/typing_model.h"
-#include "session/commands.pb.h"
+#include "config/config_handler.h"
+#include "data_manager/testing/mock_data_manager.h"
+#include "protocol/commands.pb.h"
 #include "testing/base/public/gunit.h"
 
 namespace mozc {
 namespace composer {
 
-namespace {
-#include "composer/internal/typing_model_qwerty_mobile-hiragana.h"
-}
-
-using mozc::config::Config;
-using mozc::config::ConfigHandler;
+using ::mozc::config::Config;
+using ::mozc::config::ConfigHandler;
 
 // Embedded cost for testing purpose.
 class CostTableForTest {
  public:
-  typedef map<StringPiece, ProbableKeyEvents> CorrectionTable;
+  typedef std::map<StringPiece, ProbableKeyEvents> CorrectionTable;
 
   CostTableForTest() {
     {
@@ -287,30 +285,19 @@ class CostTableForTest {
 
 class TypingCorrectorTest : public ::testing::Test {
  protected:
-  TypingCorrectorTest() :
-      qwerty_typing_model_(
-          kKeyCharacters_QwertyMobileHiragana,
-          kKeyCharactersSize_QwertyMobileHiragana,
-          kCostTable_QwertyMobileHiragana,
-          kCostTableSize_QwertyMobileHiragana,
-          kCostMappingTable_QwertyMobileHiragana) {
-  }
+  TypingCorrectorTest() = default;
 
-  virtual void SetUp() {
-    ConfigHandler::GetConfig(&config_backup_);
-    Config config;
-    ConfigHandler::GetDefaultConfig(&config);
-    config.set_use_typing_correction(true);
-    ConfigHandler::SetConfig(config);
+  void SetUp() override {
+    ConfigHandler::GetDefaultConfig(&config_);
+    config_.set_use_typing_correction(true);
     commands::Request request;
     request.set_special_romanji_table(
         commands::Request::QWERTY_MOBILE_TO_HIRAGANA);
-    qwerty_table_.InitializeWithRequestAndConfig(request, config);
-    qwerty_table_.typing_model_ = &qwerty_typing_model_;
-  }
-
-  virtual void TearDown() {
-    ConfigHandler::SetConfig(config_backup_);
+    qwerty_table_.InitializeWithRequestAndConfig(request, config_,
+                                                 mock_data_manager_);
+    qwerty_table_.typing_model_ = TypingModel::CreateTypingModel(
+        commands::Request::QWERTY_MOBILE_TO_HIRAGANA,
+        mock_data_manager_);
   }
 
   void InsertOneByOne(const char *keys, TypingCorrector *corrector) {
@@ -320,14 +307,14 @@ class TypingCorrectorTest : public ::testing::Test {
     }
   }
 
-  bool FindKey(const vector<TypeCorrectedQuery> &queries,
+  bool FindKey(const std::vector<TypeCorrectedQuery> &queries,
                const string &key) {
     for (size_t i = 0; i < queries.size(); ++i) {
-      const set<string> &expanded = queries[i].expanded;
+      const std::set<string> &expanded = queries[i].expanded;
       if (expanded.empty() && queries[i].base == key) {
         return true;
       }
-      for (set<string>::const_iterator itr = expanded.begin();
+      for (std::set<string>::const_iterator itr = expanded.begin();
            itr != expanded.end(); ++itr) {
         if (queries[i].base + *itr == key) {
           return true;
@@ -341,6 +328,7 @@ class TypingCorrectorTest : public ::testing::Test {
                                   const TypingCorrector &r) {
     EXPECT_EQ(l.available_, r.available_);
     EXPECT_EQ(l.table_, r.table_);
+    EXPECT_EQ(l.config_, r.config_);
     EXPECT_EQ(l.max_correction_query_candidates_,
               r.max_correction_query_candidates_);
     EXPECT_EQ(l.max_correction_query_results_,
@@ -351,9 +339,9 @@ class TypingCorrectorTest : public ::testing::Test {
     }
   }
 
-  Config config_backup_;
+  const testing::MockDataManager mock_data_manager_;
+  Config config_;
   Table qwerty_table_;
-  TypingModel qwerty_typing_model_;
 };
 
 TEST_F(TypingCorrectorTest, TypingCorrection) {
@@ -362,6 +350,7 @@ TEST_F(TypingCorrectorTest, TypingCorrection) {
   TypingCorrector corrector(&qwerty_table_,
                             kCorrectedQueryCandidates,
                             kCorrectedQueryResults);
+  corrector.SetConfig(&config_);
   ASSERT_TRUE(corrector.IsAvailable());
 
   struct {
@@ -369,73 +358,46 @@ TEST_F(TypingCorrectorTest, TypingCorrection) {
     const char *correction;
     const char *exact_composition;
   } kTestCases[] = {
-    // "phayou" -> "おはよう", "ｐはよう"
-    { "phayou",
-      "\xE3\x81\x8A\xE3\x81\xAF\xE3\x82\x88\xE3\x81\x86",
-      "\xEF\xBD\x90\xE3\x81\xAF\xE3\x82\x88\xE3\x81\x86"},
-    // "orukaresama" -> "おつかれさま", "おるかれさま"
-    { "orukaresama",
-      "\xE3\x81\x8A\xE3\x81\xA4\xE3\x81\x8B"
-          "\xE3\x82\x8C\xE3\x81\x95\xE3\x81\xBE",
-      "\xE3\x81\x8A\xE3\x82\x8B\xE3\x81\x8B"
-          "\xE3\x82\x8C\xE3\x81\x95\xE3\x81\xBE"},
-    // "gu-huru" -> "ぐーぐる", "ぐーふる"
-    { "gu-huru",
-      "\xE3\x81\x90\xE3\x83\xBC\xE3\x81\x90\xE3\x82\x8B",
-      "\xE3\x81\x90\xE3\x83\xBC\xE3\x81\xB5\xE3\x82\x8B"},
-    // "bihongo" -> "にほんご", "びほんご"
-    { "bihongo",
-      "\xE3\x81\xAB\xE3\x81\xBB\xE3\x82\x93\xE3\x81\x94",
-      "\xE3\x81\xB3\xE3\x81\xBB\xE3\x82\x93\xE3\x81\x94"},
-    // "yajiniku" -> "やきにく", "やじにく"
-    { "yajiniku",
-      "\xE3\x82\x84\xE3\x81\x8D\xE3\x81\xAB\xE3\x81\x8F",
-      "\xE3\x82\x84\xE3\x81\x98\xE3\x81\xAB\xE3\x81\x8F"},
-    // "so-natsu" -> "どーなつ", "そーなつ"
-    { "so-natsu",
-      "\xE3\x81\xA9\xE3\x83\xBC\xE3\x81\xAA\xE3\x81\xA4",
-      "\xE3\x81\x9D\xE3\x83\xBC\xE3\x81\xAA\xE3\x81\xA4"},
-    // "ohayou" -> NULL, "おはよう"
-    // "おはよう" can be generated from raw key so
-    // it shouldn't be in correction candidates.
-    { "ohayou",
-      NULL,
-      "\xE3\x81\x8A\xE3\x81\xAF\xE3\x82\x88\xE3\x81\x86"},
-    // "syamoji" -> NULL, "しゃもじ"
-    // A query which can be composed from raw input
-    // shouldn't be in correction candidates.
-    // This is more complex pattern than "おはよう" test case.
-    // "おはよう" case can be processed correctly by comparing
-    // raw input and corrected query.
-    // But this case "syamoji" (raw input) and "shamoji" (corrected input)
-    // are different but their query is identical ("しゃもじ").
-    // Thus we have to also check not only raw/corrected input but also
-    // raw/corrected queries.
-    { "syamozi",
-      NULL,
-      "\xE3\x81\x97\xE3\x82\x83\xE3\x82\x82\xE3\x81\x98"},
-    // "kaish" -> NULL, "かいしゃ"
-    // Pending input is expanded into possible queries for
-    // kana-modifier-insensitive-conversion (a.k.a かつこう変換).
-    // In this case "kaish" is expanded into "かいしゃ", "かいしゅ"
-    // and so on.
-    // Typing corrected input "kaisy" is also expanded into
-    // "かいしゃ", "かいしゅ" and so on but they are duplicate
-    // of expanded queries from "kaish".
-    // Thus they shouldn't be in corrected candidates.
-    { "kaish",
-      NULL,
-      "\xE3\x81\x8B\xE3\x81\x84\xE3\x81\x97\xE3\x82\x83"},
+      {"phayou", "おはよう", "ｐはよう"},
+      {"orukaresama", "おつかれさま", "おるかれさま"},
+      {"gu-huru", "ぐーぐる", "ぐーふる"},
+      {"bihongo", "にほんご", "びほんご"},
+      {"yajiniku", "やきにく", "やじにく"},
+      {"so-natsu", "どーなつ", "そーなつ"},
+      // "おはよう" can be generated from raw key so
+      // it shouldn't be in correction candidates.
+      {"ohayou", nullptr, "おはよう"},
+      // "syamoji" -> nullptr, "しゃもじ"
+      // A query which can be composed from raw input
+      // shouldn't be in correction candidates.
+      // This is more complex pattern than "おはよう" test case.
+      // "おはよう" case can be processed correctly by comparing
+      // raw input and corrected query.
+      // But this case "syamoji" (raw input) and "shamoji" (corrected input)
+      // are different but their query is identical ("しゃもじ").
+      // Thus we have to also check not only raw/corrected input but also
+      // raw/corrected queries.
+      {"syamozi", nullptr, "しゃもじ"},
+      // "kaish" -> nullptr, "かいしゃ"
+      // Pending input is expanded into possible queries for
+      // kana-modifier-insensitive-conversion (a.k.a かつこう変換).
+      // In this case "kaish" is expanded into "かいしゃ", "かいしゅ"
+      // and so on.
+      // Typing corrected input "kaisy" is also expanded into
+      // "かいしゃ", "かいしゅ" and so on but they are duplicate
+      // of expanded queries from "kaish".
+      // Thus they shouldn't be in corrected candidates.
+      {"kaish", nullptr, "かいしゃ"},
   };
 
   for (size_t i = 0; i < arraysize(kTestCases); ++i) {
     SCOPED_TRACE(string("key: ") + kTestCases[i].keys);
     InsertOneByOne(kTestCases[i].keys, &corrector);
-    vector<TypeCorrectedQuery> queries;
+    std::vector<TypeCorrectedQuery> queries;
     corrector.GetQueriesForPrediction(&queries);
     // Number of queries can be equal to kCorrectedQueries.
     EXPECT_GE(kCorrectedQueryResults, queries.size());
-    for (vector<TypeCorrectedQuery>::iterator it = queries.begin();
+    for (std::vector<TypeCorrectedQuery>::iterator it = queries.begin();
          it != queries.end();
          ++it) {
       // Empty TypeCorrectedQuery is unexpected.
@@ -455,6 +417,7 @@ TEST_F(TypingCorrectorTest, Invalidate) {
   const CostTableForTest *table = Singleton<CostTableForTest>::get();
 
   TypingCorrector corrector(&qwerty_table_, 30, 30);
+  corrector.SetConfig(&config_);
 
   EXPECT_TRUE(corrector.IsAvailable());
   table->InsertCharacter(&corrector, "p");
@@ -468,16 +431,17 @@ TEST_F(TypingCorrectorTest, Invalidate) {
   table->InsertCharacter(&corrector, "o");
   table->InsertCharacter(&corrector, "u");
 
-  vector<TypeCorrectedQuery> queries;
+  std::vector<TypeCorrectedQuery> queries;
   corrector.GetQueriesForPrediction(&queries);
   EXPECT_TRUE(queries.empty());
 }
 
 TEST_F(TypingCorrectorTest, CopyFrom) {
   TypingCorrector corrector(&qwerty_table_, 30, 30);
+  corrector.SetConfig(&config_);
   InsertOneByOne("phayou", &corrector);
 
-  TypingCorrector corrector2(NULL, 1000, 1000);
+  TypingCorrector corrector2(nullptr, 1000, 1000);
   corrector2.CopyFrom(corrector);
 
   ExpectTypingCorrectorEqual(corrector, corrector2);

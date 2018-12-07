@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,27 +29,23 @@
 
 #include "converter/converter.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "base/logging.h"
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "base/system_util.h"
 #include "base/util.h"
 #include "composer/composer.h"
 #include "composer/table.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
-#include "converter/connector_base.h"
-#include "converter/connector_interface.h"
-#include "converter/conversion_request.h"
+#include "converter/connector.h"
 #include "converter/converter_interface.h"
 #include "converter/immutable_converter.h"
 #include "converter/immutable_converter_interface.h"
 #include "converter/node.h"
-#include "converter/segmenter_base.h"
-#include "converter/segmenter_interface.h"
+#include "converter/segmenter.h"
 #include "converter/segments.h"
 #include "data_manager/data_manager_interface.h"
 #include "data_manager/testing/mock_data_manager.h"
@@ -62,7 +58,9 @@
 #include "dictionary/suppression_dictionary.h"
 #include "dictionary/system/system_dictionary.h"
 #include "dictionary/system/value_dictionary.h"
+#include "dictionary/user_dictionary.h"
 #include "dictionary/user_dictionary_stub.h"
+#include "dictionary/user_pos.h"
 #include "engine/engine.h"
 #include "engine/engine_interface.h"
 #include "engine/mock_data_engine_factory.h"
@@ -71,36 +69,44 @@
 #include "prediction/predictor_interface.h"
 #include "prediction/suggestion_filter.h"
 #include "prediction/user_history_predictor.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
+#include "request/conversion_request.h"
 #include "rewriter/rewriter.h"
 #include "rewriter/rewriter_interface.h"
-#include "session/commands.pb.h"
+#include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
+#include "testing/base/public/mozctest.h"
 #include "transliteration/transliteration.h"
 #include "usage_stats/usage_stats.h"
 #include "usage_stats/usage_stats_testing_util.h"
 
-DECLARE_string(test_tmpdir);
-
 namespace mozc {
-
-struct SuffixToken;
-using mozc::dictionary::DictionaryImpl;
-using mozc::dictionary::SystemDictionary;
-using mozc::dictionary::ValueDictionary;
-using mozc::usage_stats::UsageStats;
-
 namespace {
+
+using dictionary::DictionaryImpl;
+using dictionary::DictionaryInterface;
+using dictionary::DictionaryMock;
+using dictionary::PosGroup;
+using dictionary::POSMatcher;
+using dictionary::SuffixDictionary;
+using dictionary::SuppressionDictionary;
+using dictionary::SystemDictionary;
+using dictionary::Token;
+using dictionary::UserDictionaryStub;
+using dictionary::ValueDictionary;
+using usage_stats::UsageStats;
 
 class StubPredictor : public PredictorInterface {
  public:
   StubPredictor() : predictor_name_("StubPredictor") {}
 
-  virtual bool PredictForRequest(const ConversionRequest &request,
-                                 Segments *segments) const {
+  bool PredictForRequest(const ConversionRequest &request, Segments *segments)
+      const override {
     return true;
   }
 
-  virtual const string &GetPredictorName() const {
+  const string &GetPredictorName() const override {
     return predictor_name_;
   }
 
@@ -109,21 +115,26 @@ class StubPredictor : public PredictorInterface {
 };
 
 class StubRewriter : public RewriterInterface {
-  bool Rewrite(const ConversionRequest &request, Segments *segments) const {
+  bool Rewrite(const ConversionRequest &request,
+               Segments *segments) const override {
     return true;
   }
 };
 
 SuffixDictionary *CreateSuffixDictionaryFromDataManager(
     const DataManagerInterface &data_manager) {
-  const SuffixToken *tokens = NULL;
-  size_t size = 0;
-  data_manager.GetSuffixDictionaryData(&tokens, &size);
-  return new SuffixDictionary(tokens, size);
+  StringPiece suffix_key_array_data, suffix_value_array_data;
+  const uint32 *token_array;
+  data_manager.GetSuffixDictionaryData(&suffix_key_array_data,
+                                       &suffix_value_array_data,
+                                       &token_array);
+  return new SuffixDictionary(suffix_key_array_data,
+                              suffix_value_array_data,
+                              token_array);
 }
 
 class InsertDummyWordsRewriter : public RewriterInterface {
-  bool Rewrite(const ConversionRequest &, Segments *segments) const {
+  bool Rewrite(const ConversionRequest &, Segments *segments) const override {
     for (size_t i = 0; i < segments->conversion_segments_size(); ++i) {
       Segment *seg = segments->mutable_conversion_segment(i);
       {
@@ -147,99 +158,225 @@ class InsertDummyWordsRewriter : public RewriterInterface {
 
 class ConverterTest : public ::testing::Test {
  protected:
+  enum PredictorType {
+    STUB_PREDICTOR,
+    DEFAULT_PREDICTOR,
+    MOBILE_PREDICTOR,
+  };
+
+  struct UserDefinedEntry {
+    const string key;
+    const string value;
+    const user_dictionary::UserDictionary::PosType pos;
+    UserDefinedEntry(const string &k, const string &v,
+                     user_dictionary::UserDictionary::PosType p)
+        : key(k), value(v), pos(p) {}
+  };
+
   // Workaround for C2512 error (no default appropriate constructor) on MSVS.
   ConverterTest() {}
-  virtual ~ConverterTest() {}
+  ~ConverterTest() override {}
 
-  virtual void SetUp() {
-    // set default user profile directory
-    SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config::ConfigHandler::SetConfig(config);
-
+  void SetUp() override {
     UsageStats::ClearAllStatsForTest();
   }
 
-  virtual void TearDown() {
-    // just in case, reset the config in test_tmpdir
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config::ConfigHandler::SetConfig(config);
-
+  void TearDown() override {
     UsageStats::ClearAllStatsForTest();
   }
 
   // This struct holds resources used by converter.
   struct ConverterAndData {
-    scoped_ptr<DictionaryInterface> user_dictionary;
-    scoped_ptr<SuppressionDictionary> suppression_dictionary;
-    scoped_ptr<DictionaryInterface> suffix_dictionary;
-    scoped_ptr<const ConnectorInterface> connector;
-    scoped_ptr<const SegmenterInterface> segmenter;
-    scoped_ptr<DictionaryInterface> dictionary;
-    scoped_ptr<const PosGroup> pos_group;
-    scoped_ptr<const SuggestionFilter> suggestion_filter;
-    scoped_ptr<ImmutableConverterInterface> immutable_converter;
-    scoped_ptr<ConverterImpl> converter;
+    std::unique_ptr<testing::MockDataManager> data_manager;
+    std::unique_ptr<DictionaryInterface> user_dictionary;
+    std::unique_ptr<SuppressionDictionary> suppression_dictionary;
+    std::unique_ptr<DictionaryInterface> suffix_dictionary;
+    std::unique_ptr<const Connector> connector;
+    std::unique_ptr<const Segmenter> segmenter;
+    std::unique_ptr<DictionaryInterface> dictionary;
+    std::unique_ptr<const PosGroup> pos_group;
+    std::unique_ptr<const SuggestionFilter> suggestion_filter;
+    std::unique_ptr<ImmutableConverterInterface> immutable_converter;
+    std::unique_ptr<ConverterImpl> converter;
+    dictionary::POSMatcher pos_matcher;
   };
 
-  ConverterAndData *CreateConverterAndData(RewriterInterface *rewriter) {
-    ConverterAndData *ret = new ConverterAndData;
+  // Returns initialized predictor for the given type.
+  // Note that all fields of |converter_and_data| should be filled including
+  // |converter_and_data.converter|. |converter| will be initialized using
+  // predictor pointer, but predictor need the pointer for |converter| for
+  // initializing. Prease see mozc/engine/engine.cc for details.
+  // Caller should manage the ownership.
+  PredictorInterface *CreatePredictor(
+      PredictorType predictor_type,
+      const POSMatcher *pos_matcher,
+      const ConverterAndData &converter_and_data) {
+    if (predictor_type == STUB_PREDICTOR) {
+      return new StubPredictor;
+    }
 
-    testing::MockDataManager data_manager;
+    PredictorInterface *(*predictor_factory)(
+        PredictorInterface *, PredictorInterface *) = nullptr;
+    bool enable_content_word_learning = false;
 
-    const char *dictionary_data = NULL;
+    switch (predictor_type) {
+      case DEFAULT_PREDICTOR:
+        predictor_factory = DefaultPredictor::CreateDefaultPredictor;
+        enable_content_word_learning = false;
+        break;
+      case MOBILE_PREDICTOR:
+        predictor_factory = MobilePredictor::CreateMobilePredictor;
+        enable_content_word_learning = true;
+        break;
+      default:
+        LOG(ERROR) << "Should not come here: Invalid predictor type.";
+        predictor_factory = DefaultPredictor::CreateDefaultPredictor;
+        enable_content_word_learning = false;
+        break;
+    }
+
+    CHECK(converter_and_data.converter.get()) << "converter should be filled.";
+
+    // Create a predictor with three sub-predictors, dictionary predictor, user
+    // history predictor, and extra predictor.
+    PredictorInterface *dictionary_predictor =
+        new DictionaryPredictor(*converter_and_data.data_manager,
+                                converter_and_data.converter.get(),
+                                converter_and_data.immutable_converter.get(),
+                                converter_and_data.dictionary.get(),
+                                converter_and_data.suffix_dictionary.get(),
+                                converter_and_data.connector.get(),
+                                converter_and_data.segmenter.get(),
+                                pos_matcher,
+                                converter_and_data.suggestion_filter.get());
+    CHECK(dictionary_predictor);
+
+    PredictorInterface *user_history_predictor =
+        new UserHistoryPredictor(
+            converter_and_data.dictionary.get(),
+            pos_matcher,
+            converter_and_data.suppression_dictionary.get(),
+            enable_content_word_learning);
+    CHECK(user_history_predictor);
+
+    PredictorInterface *ret_predictor =
+        (*predictor_factory)(dictionary_predictor, user_history_predictor);
+    CHECK(ret_predictor);
+    return ret_predictor;
+  }
+
+  // Initializes ConverterAndData with mock data set using given
+  // |user_dictionary| and |suppression_dictionary|.
+  // ConverterAndData takes ownership of |user_dicationary| and
+  // |suppression_dictionary|
+  void InitConverterAndData(DictionaryInterface *user_dictionary,
+                            SuppressionDictionary *suppression_dictionary,
+                            RewriterInterface *rewriter,
+                            PredictorType predictor_type,
+                            ConverterAndData *converter_and_data) {
+    converter_and_data->data_manager.reset(new testing::MockDataManager());
+    const auto &data_manager = *converter_and_data->data_manager;
+
+    const char *dictionary_data = nullptr;
     int dictionary_size = 0;
     data_manager.GetSystemDictionaryData(&dictionary_data, &dictionary_size);
 
-    ret->user_dictionary.reset(new UserDictionaryStub);
-    ret->suppression_dictionary.reset(new SuppressionDictionary);
-    ret->dictionary.reset(new DictionaryImpl(
-        SystemDictionary::CreateSystemDictionaryFromImage(
-            dictionary_data, dictionary_size),
-        ValueDictionary::CreateValueDictionaryFromImage(
-            *data_manager.GetPOSMatcher(), dictionary_data, dictionary_size),
-        ret->user_dictionary.get(),
-        ret->suppression_dictionary.get(),
-        data_manager.GetPOSMatcher()));
-    ret->pos_group.reset(new PosGroup(data_manager.GetPosGroupData()));
-    ret->suggestion_filter.reset(CreateSuggestionFilter(data_manager));
-    ret->suffix_dictionary.reset(
+    converter_and_data->pos_matcher.Set(data_manager.GetPOSMatcherData());
+
+    SystemDictionary *sysdic =
+        SystemDictionary::Builder(dictionary_data, dictionary_size).Build();
+    converter_and_data->user_dictionary.reset(user_dictionary);
+    converter_and_data->suppression_dictionary.reset(suppression_dictionary);
+    converter_and_data->dictionary.reset(new DictionaryImpl(
+        sysdic,  // DictionaryImpl takes the ownership
+        new ValueDictionary(converter_and_data->pos_matcher,
+                            &sysdic->value_trie()),
+        converter_and_data->user_dictionary.get(),
+        converter_and_data->suppression_dictionary.get(),
+        &converter_and_data->pos_matcher));
+    converter_and_data->pos_group.reset(
+        new PosGroup(data_manager.GetPosGroupData()));
+    converter_and_data->suggestion_filter.reset(
+        CreateSuggestionFilter(data_manager));
+    converter_and_data->suffix_dictionary.reset(
         CreateSuffixDictionaryFromDataManager(data_manager));
-    ret->connector.reset(ConnectorBase::CreateFromDataManager(data_manager));
-    ret->segmenter.reset(SegmenterBase::CreateFromDataManager(data_manager));
-    ret->immutable_converter.reset(
-        new ImmutableConverterImpl(ret->dictionary.get(),
-                                   ret->suffix_dictionary.get(),
-                                   ret->suppression_dictionary.get(),
-                                   ret->connector.get(),
-                                   ret->segmenter.get(),
-                                   data_manager.GetPOSMatcher(),
-                                   ret->pos_group.get(),
-                                   ret->suggestion_filter.get()));
-    ret->converter.reset(new ConverterImpl);
-    ret->converter->Init(data_manager.GetPOSMatcher(),
-                         ret->suppression_dictionary.get(),
-                         new StubPredictor,
-                         rewriter,
-                         ret->immutable_converter.get());
+    converter_and_data->connector.reset(
+        Connector::CreateFromDataManager(data_manager));
+    converter_and_data->segmenter.reset(
+        Segmenter::CreateFromDataManager(data_manager));
+    converter_and_data->immutable_converter.reset(
+        new ImmutableConverterImpl(
+            converter_and_data->dictionary.get(),
+            converter_and_data->suffix_dictionary.get(),
+            converter_and_data->suppression_dictionary.get(),
+            converter_and_data->connector.get(),
+            converter_and_data->segmenter.get(),
+            &converter_and_data->pos_matcher,
+            converter_and_data->pos_group.get(),
+            converter_and_data->suggestion_filter.get()));
+    converter_and_data->converter.reset(new ConverterImpl);
+
+    PredictorInterface *predictor = CreatePredictor(
+        predictor_type, &converter_and_data->pos_matcher, *converter_and_data);
+    converter_and_data->converter->Init(
+        &converter_and_data->pos_matcher,
+        converter_and_data->suppression_dictionary.get(),
+        predictor,
+        rewriter,
+        converter_and_data->immutable_converter.get());
+  }
+
+  ConverterAndData *CreateConverterAndData(RewriterInterface *rewriter,
+                                           PredictorType predictor_type) {
+    ConverterAndData *ret = new ConverterAndData;
+    InitConverterAndData(new UserDictionaryStub, new SuppressionDictionary,
+                         rewriter, predictor_type, ret);
     return ret;
   }
 
   ConverterAndData *CreateStubbedConverterAndData() {
-    return CreateConverterAndData(new StubRewriter);
+    return CreateConverterAndData(new StubRewriter, STUB_PREDICTOR);
   }
 
   ConverterAndData *CreateConverterAndDataWithInsertDummyWordsRewriter() {
-    return CreateConverterAndData(new InsertDummyWordsRewriter);
+    return CreateConverterAndData(new InsertDummyWordsRewriter, STUB_PREDICTOR);
+  }
+
+  ConverterAndData *CreateConverterAndDataWithUserDefinedEntries(
+      const std::vector<UserDefinedEntry> &user_defined_entries,
+      RewriterInterface *rewriter, PredictorType predictor_type) {
+    ConverterAndData *ret = new ConverterAndData;
+
+    ret->pos_matcher.Set(mock_data_manager_.GetPOSMatcherData());
+
+    SuppressionDictionary *suppression_dictionary = new SuppressionDictionary;
+    dictionary::UserDictionary *user_dictionary =
+        new dictionary::UserDictionary(
+            dictionary::UserPOS::CreateFromDataManager(mock_data_manager_),
+            ret->pos_matcher,
+            suppression_dictionary);
+    InitConverterAndData(
+        user_dictionary, suppression_dictionary, rewriter, predictor_type, ret);
+
+    {
+      user_dictionary::UserDictionaryStorage storage;
+      typedef user_dictionary::UserDictionary::Entry UserEntry;
+      user_dictionary::UserDictionary *dictionary = storage.add_dictionaries();
+      for (const auto &user_entry : user_defined_entries) {
+        UserEntry *entry = dictionary->add_entries();
+        entry->set_key(user_entry.key);
+        entry->set_value(user_entry.value);
+        entry->set_pos(user_entry.pos);
+      }
+
+      user_dictionary->Load(storage);
+    }
+    return ret;
   }
 
   EngineInterface *CreateEngineWithMobilePredictor() {
-    Engine *engine = new Engine;
-    testing::MockDataManager data_manager;
-    engine->Init(&data_manager, MobilePredictor::CreateMobilePredictor);
-    return engine;
+    return Engine::CreateMobileEngineHelper<testing::MockDataManager>()
+        .release();
   }
 
   bool FindCandidateByValue(const string &value, const Segment &segment) const {
@@ -257,13 +394,15 @@ class ConverterTest : public ::testing::Test {
 
   static SuggestionFilter *CreateSuggestionFilter(
       const DataManagerInterface &data_manager) {
-    const char *data = NULL;
+    const char *data = nullptr;
     size_t size = 0;
     data_manager.GetSuggestionFilterData(&data, &size);
     return new SuggestionFilter(data, size);
   }
 
  private:
+  const testing::ScopedTmpUserProfileDirectory scoped_profile_dir_;
+  const testing::MockDataManager mock_data_manager_;
   const commands::Request default_request_;
   mozc::usage_stats::scoped_usage_stats_enabler usage_stats_enabler_;
 };
@@ -272,20 +411,16 @@ class ConverterTest : public ::testing::Test {
 // just checking whether this causes segmentation fault or not.
 // TODO(toshiyuki): make dictionary mock and test strictly.
 TEST_F(ConverterTest, CanConvertTest) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   CHECK(converter);
   {
     Segments segments;
-    EXPECT_TRUE(converter->StartConversion(&segments, string("-")));
+    EXPECT_TRUE(converter->StartConversion(&segments, "-"));
   }
   {
     Segments segments;
-    // "おきておきて"
-    EXPECT_TRUE(converter->StartConversion(
-        &segments,
-        string("\xe3\x81\x8a\xe3\x81\x8d\xe3\x81\xa6\xe3\x81\x8a"
-               "\xe3\x81\x8d\xe3\x81\xa6")));
+    EXPECT_TRUE(converter->StartConversion(&segments, "おきておきて"));
   }
 }
 
@@ -293,7 +428,7 @@ namespace {
 string ContextAwareConvert(const string &first_key,
                            const string &first_value,
                            const string &second_key) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   CHECK(converter);
 
@@ -336,90 +471,54 @@ string ContextAwareConvert(const string &first_key,
 
   return segments.segment(segment_num).candidate(0).value;
 }
-}  // anonymous namespace
+}  // namespace
 
 TEST_F(ConverterTest, ContextAwareConversionTest) {
   // Desirable context aware conversions
-  // EXPECT_EQ("一髪", ContextAwareConvert("きき", "危機", "いっぱつ"));
-  EXPECT_EQ("\xE4\xB8\x80\xE9\xAB\xAA",
-            ContextAwareConvert(
-                "\xE3\x81\x8D\xE3\x81\x8D",
-                "\xE5\x8D\xB1\xE6\xA9\x9F",
-                "\xE3\x81\x84\xE3\x81\xA3\xE3\x81\xB1\xE3\x81\xA4"));
+  EXPECT_EQ("一髪", ContextAwareConvert("きき", "危機", "いっぱつ"));
   EXPECT_TIMING_STATS("SubmittedSegmentLengthx1000", 2000, 1, 2000, 2000);
   EXPECT_TIMING_STATS("SubmittedLengthx1000", 2000, 1, 2000, 2000);
   EXPECT_TIMING_STATS("SubmittedSegmentNumberx1000", 1000, 1, 1000, 1000);
   EXPECT_COUNT_STATS("SubmittedTotalLength", 2);
 
-  // EXPECT_EQ("大", ContextAwareConvert("きょうと", "京都", "だい"));
-  EXPECT_EQ("\xE5\xA4\xA7",
-            ContextAwareConvert(
-                "\xE3\x81\x8D\xE3\x82\x87\xE3\x81\x86\xE3\x81\xA8",
-                "\xE4\xBA\xAC\xE9\x83\xBD",
-                "\xE3\x81\xA0\xE3\x81\x84"));
+  EXPECT_EQ("大", ContextAwareConvert("きょうと", "京都", "だい"));
   EXPECT_TIMING_STATS("SubmittedSegmentLengthx1000", 4000, 2, 2000, 2000);
   EXPECT_TIMING_STATS("SubmittedLengthx1000", 4000, 2, 2000, 2000);
   EXPECT_TIMING_STATS("SubmittedSegmentNumberx1000", 2000, 2, 1000, 1000);
   EXPECT_COUNT_STATS("SubmittedTotalLength", 4);
 
-  // EXPECT_EQ("点", ContextAwareConvert("もんだい", "問題", "てん"));
-  EXPECT_EQ("\xE7\x82\xB9",
-            ContextAwareConvert(
-                "\xE3\x82\x82\xE3\x82\x93\xE3\x81\xA0\xE3\x81\x84",
-                "\xE5\x95\x8F\xE9\xA1\x8C",
-                "\xE3\x81\xA6\xE3\x82\x93"));
+  EXPECT_EQ("点", ContextAwareConvert("もんだい", "問題", "てん"));
   EXPECT_TIMING_STATS("SubmittedSegmentLengthx1000", 6000, 3, 2000, 2000);
   EXPECT_TIMING_STATS("SubmittedLengthx1000", 6000, 3, 2000, 2000);
   EXPECT_TIMING_STATS("SubmittedSegmentNumberx1000", 3000, 3, 1000, 1000);
   EXPECT_COUNT_STATS("SubmittedTotalLength", 6);
 
-  // EXPECT_EQ("陽水", ContextAwareConvert("いのうえ", "井上", "ようすい"));
-  EXPECT_EQ("\xE9\x99\xBD\xE6\xB0\xB4",
-            ContextAwareConvert(
-                "\xE3\x81\x84\xE3\x81\xAE\xE3\x81\x86\xE3\x81\x88",
-                "\xE4\xBA\x95\xE4\xB8\x8A",
-                "\xE3\x82\x88\xE3\x81\x86\xE3\x81\x99\xE3\x81\x84"));
+  EXPECT_EQ("陽水", ContextAwareConvert("いのうえ", "井上", "ようすい"));
   EXPECT_TIMING_STATS("SubmittedSegmentLengthx1000", 8000, 4, 2000, 2000);
   EXPECT_TIMING_STATS("SubmittedLengthx1000", 8000, 4, 2000, 2000);
   EXPECT_TIMING_STATS("SubmittedSegmentNumberx1000", 4000, 4, 1000, 1000);
   EXPECT_COUNT_STATS("SubmittedTotalLength", 8);
 
   // Undesirable context aware conversions
-  // EXPECT_NE("宗号", ContextAwareConvert("19じ", "19時", "しゅうごう"));
-  EXPECT_NE("\xE5\xAE\x97\xE5\x8F\xB7", ContextAwareConvert(
-      "19\xE3\x81\x98",
-      "19\xE6\x99\x82",
-      "\xE3\x81\x97\xE3\x82\x85\xE3\x81\x86\xE3\x81\x94\xE3\x81\x86"));
+  EXPECT_NE("宗号", ContextAwareConvert("19じ", "19時", "しゅうごう"));
   EXPECT_TIMING_STATS("SubmittedSegmentLengthx1000", 11000, 6, 1000, 2000);
   EXPECT_TIMING_STATS("SubmittedLengthx1000", 11000, 5, 2000, 3000);
   EXPECT_TIMING_STATS("SubmittedSegmentNumberx1000", 6000, 5, 1000, 2000);
   EXPECT_COUNT_STATS("SubmittedTotalLength", 11);
 
-  // EXPECT_NE("な前", ContextAwareConvert("の", "の", "なまえ"));
-  EXPECT_NE("\xE3\x81\xAA\xE5\x89\x8D", ContextAwareConvert(
-      "\xE3\x81\xAE",
-      "\xE3\x81\xAE",
-      "\xE3\x81\xAA\xE3\x81\xBE\xE3\x81\x88"));
+  EXPECT_NE("な前", ContextAwareConvert("の", "の", "なまえ"));
   EXPECT_TIMING_STATS("SubmittedSegmentLengthx1000", 12000, 7, 1000, 2000);
   EXPECT_TIMING_STATS("SubmittedLengthx1000", 12000, 6, 1000, 3000);
   EXPECT_TIMING_STATS("SubmittedSegmentNumberx1000", 7000, 6, 1000, 2000);
   EXPECT_COUNT_STATS("SubmittedTotalLength", 12);
 
-  // EXPECT_NE("し料", ContextAwareConvert("の", "の", "しりょう"));
-  EXPECT_NE("\xE3\x81\x97\xE6\x96\x99", ContextAwareConvert(
-      "\xE3\x81\xAE",
-      "\xE3\x81\xAE",
-      "\xE3\x81\x97\xE3\x82\x8A\xE3\x82\x87\xE3\x81\x86"));
+  EXPECT_NE("し料", ContextAwareConvert("の", "の", "しりょう"));
   EXPECT_TIMING_STATS("SubmittedSegmentLengthx1000", 13000, 8, 1000, 2000);
   EXPECT_TIMING_STATS("SubmittedLengthx1000", 13000, 7, 1000, 3000);
   EXPECT_TIMING_STATS("SubmittedSegmentNumberx1000", 8000, 7, 1000, 2000);
   EXPECT_COUNT_STATS("SubmittedTotalLength", 13);
 
-  // EXPECT_NE("し礼賛", ContextAwareConvert("ぼくと", "僕と", "しらいさん"));
-  EXPECT_NE("\xE3\x81\x97\xE7\xA4\xBC\xE8\xB3\x9B", ContextAwareConvert(
-      "\xE3\x81\xBC\xE3\x81\x8F\xE3\x81\xA8",
-      "\xE5\x83\x95\xE3\x81\xA8",
-      "\xE3\x81\x97\xE3\x82\x89\xE3\x81\x84\xE3\x81\x95\xE3\x82\x93"));
+  EXPECT_NE("し礼賛", ContextAwareConvert("ぼくと", "僕と", "しらいさん"));
   EXPECT_TIMING_STATS("SubmittedSegmentLengthx1000", 15000, 9, 1000, 2000);
   EXPECT_TIMING_STATS("SubmittedLengthx1000", 15000, 8, 1000, 3000);
   EXPECT_TIMING_STATS("SubmittedSegmentNumberx1000", 9000, 8, 1000, 2000);
@@ -427,7 +526,7 @@ TEST_F(ConverterTest, ContextAwareConversionTest) {
 }
 
 TEST_F(ConverterTest, CommitSegmentValue) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   CHECK(converter);
   Segments segments;
@@ -458,8 +557,8 @@ TEST_F(ConverterTest, CommitSegmentValue) {
   }
   {
     // Make the segment SUBMITTED
-    segments.mutable_conversion_segment(0)->
-        set_segment_type(Segment::SUBMITTED);
+    segments.mutable_conversion_segment(0)->set_segment_type(
+        Segment::SUBMITTED);
     EXPECT_EQ(2, segments.segments_size());
     EXPECT_EQ(1, segments.history_segments_size());
     EXPECT_EQ(1, segments.conversion_segments_size());
@@ -479,7 +578,7 @@ TEST_F(ConverterTest, CommitSegmentValue) {
 }
 
 TEST_F(ConverterTest, CommitSegments) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   CHECK(converter);
   Segments segments;
@@ -487,45 +586,33 @@ TEST_F(ConverterTest, CommitSegments) {
   // History segment.
   {
     Segment *segment = segments.add_segment();
-    // "あした"
-    segment->set_key("\xE3\x81\x82\xE3\x81\x97\xE3\x81\x9F");
+    segment->set_key("あした");
     segment->set_segment_type(Segment::HISTORY);
-
     Segment::Candidate *candidate = segment->add_candidate();
-    // "あした"
-    candidate->key = "\xE3\x81\x82\xE3\x81\x97\xE3\x81\x9F";
-    // "明日"
-    candidate->value = "\xE4\xBB\x8A\xE6\x97\xA5";
+    candidate->key = "あした";
+    candidate->value = "今日";
   }
 
   {
     Segment *segment = segments.add_segment();
-    // "かつこうに"
-    segment->set_key(
-        "\xe3\x81\x8b\xe3\x81\xa4\xe3\x81\x93\xe3\x81\x86\xe3\x81\xab");
+    segment->set_key("かつこうに");
     Segment::Candidate *candidate = segment->add_candidate();
-    // "学校に"
-    candidate->value = "\xe5\xad\xa6\xe6\xa0\xa1\xE3\x81\xAB";
-    // "がっこうに"
-    candidate->key =
-        "\xe3\x81\x8c\xe3\x81\xa3\xe3\x81\x93\xe3\x81\x86\xe3\x81\xab";
+    candidate->value = "学校に";
+    candidate->key = "がっこうに";
   }
 
   {
     Segment *segment = segments.add_segment();
-    // "いく"
-    segment->set_key("\xE3\x81\x84\xE3\x81\x8F");
+    segment->set_key("いく");
     Segment::Candidate *candidate = segment->add_candidate();
-    // "行く"
-    candidate->value = "\xE8\xA1\x8C\xE3\x81\x8F";
-    // "いく"
-    candidate->key = "\xE3\x81\x84\xE3\x81\x8F";
+    candidate->value = "行く";
+    candidate->key = "いく";
   }
 
   // Test "CommitFirstSegment" feature.
   {
     // Commit 1st segment.
-    vector<size_t> index_list;
+    std::vector<size_t> index_list;
     index_list.push_back(0);
     converter->CommitSegments(&segments, index_list);
 
@@ -546,7 +633,7 @@ TEST_F(ConverterTest, CommitSegments) {
   // Test "CommitHeadToFocusedSegment" feature.
   {
     // Commit 1st and 2nd segments.
-    vector<size_t> index_list;
+    std::vector<size_t> index_list;
     index_list.push_back(0);
     index_list.push_back(0);
     converter->CommitSegments(&segments, index_list);
@@ -565,7 +652,7 @@ TEST_F(ConverterTest, CommitSegments) {
 }
 
 TEST_F(ConverterTest, CommitPartialSuggestionSegmentValue) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   CHECK(converter);
   Segments segments;
@@ -611,7 +698,7 @@ TEST_F(ConverterTest, CommitPartialSuggestionSegmentValue) {
 }
 
 TEST_F(ConverterTest, CommitPartialSuggestionUsageStats) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   CHECK(converter);
   Segments segments;
@@ -619,52 +706,34 @@ TEST_F(ConverterTest, CommitPartialSuggestionUsageStats) {
   // History segment.
   {
     Segment *segment = segments.add_segment();
-    // "あした"
-    segment->set_key("\xE3\x81\x82\xE3\x81\x97\xE3\x81\x9F");
+    segment->set_key("あした");
     segment->set_segment_type(Segment::HISTORY);
 
     Segment::Candidate *candidate = segment->add_candidate();
-    // "あした"
-    candidate->key = "\xE3\x81\x82\xE3\x81\x97\xE3\x81\x9F";
-    // "明日"
-    candidate->value = "\xE4\xBB\x8A\xE6\x97\xA5";
+    candidate->key = "あした";
+    candidate->value = "今日";
   }
 
   {
     Segment *segment = segments.add_segment();
-    // "かつこうに"
-    segment->set_key(
-        "\xe3\x81\x8b\xe3\x81\xa4\xe3\x81\x93\xe3\x81\x86\xe3\x81\xab");
+    segment->set_key("かつこうに");
 
     Segment::Candidate *candidate = segment->add_candidate();
-    // "学校に"
-    candidate->value = "\xe5\xad\xa6\xe6\xa0\xa1\xE3\x81\xAB";
-    // "がっこうに"
-    candidate->key =
-        "\xe3\x81\x8c\xe3\x81\xa3\xe3\x81\x93\xe3\x81\x86\xe3\x81\xab";
+    candidate->value = "学校に";
+    candidate->key = "がっこうに";
 
     candidate = segment->add_candidate();
-    // "格好に"
-    candidate->value = "\xe6\xa0\xbc\xe5\xa5\xbd\xe3\x81\xab";
-    // "かっこうに"
-    candidate->key =
-        "\xe3\x81\x8b\xe3\x81\xa3\xe3\x81\x93\xe3\x81\x86\xe3\x81\xab";
+    candidate->value = "格好に";
+    candidate->key = "かっこうに";
 
     candidate = segment->add_candidate();
-    // "かつこうに"
-    candidate->value =
-        "\xe3\x81\x8b\xe3\x81\xa4\xe3\x81\x93\xe3\x81\x86\xe3\x81\xab";
-    // "かつこうに"
-    candidate->key =
-        "\xe3\x81\x8b\xe3\x81\xa4\xe3\x81\x93\xe3\x81\x86\xe3\x81\xab";
+    candidate->value = "かつこうに";
+    candidate->key = "かつこうに";
   }
 
   EXPECT_STATS_NOT_EXIST("CommitPartialSuggestion");
   EXPECT_TRUE(converter->CommitPartialSuggestionSegmentValue(
-      // "かつこうに", "いく"
-      &segments, 0, 1,
-      "\xe3\x81\x8b\xe3\x81\xa4\xe3\x81\x93\xe3\x81\x86\xe3\x81\xab",
-      "\xe3\x81\x84\xe3\x81\x8f"));
+      &segments, 0, 1, "かつこうに", "いく"));
   EXPECT_EQ(2, segments.history_segments_size());
   EXPECT_EQ(1, segments.conversion_segments_size());
   EXPECT_EQ(Segment::HISTORY, segments.history_segment(0).segment_type());
@@ -676,15 +745,9 @@ TEST_F(ConverterTest, CommitPartialSuggestionUsageStats) {
     const Segment &segment =
         segments.history_segment(segments.history_segments_size() - 1);
     EXPECT_EQ(Segment::SUBMITTED, segment.segment_type());
-    // "格好に"
-    EXPECT_EQ("\xe6\xa0\xbc\xe5\xa5\xbd\xe3\x81\xab",
-              segment.candidate(0).value);
-    // "かっこうに"
-    EXPECT_EQ("\xe3\x81\x8b\xe3\x81\xa3\xe3\x81\x93\xe3\x81\x86\xe3\x81\xab",
-              segment.candidate(0).key);
-    // "かつこうに"
-    EXPECT_EQ("\xe3\x81\x8b\xe3\x81\xa4\xe3\x81\x93\xe3\x81\x86\xe3\x81\xab",
-              segment.key());
+    EXPECT_EQ("格好に", segment.candidate(0).value);
+    EXPECT_EQ("かっこうに", segment.candidate(0).key);
+    EXPECT_EQ("かつこうに", segment.key());
     EXPECT_NE(0,
               segment.candidate(0).attributes & Segment::Candidate::RERANKED);
   }
@@ -692,8 +755,7 @@ TEST_F(ConverterTest, CommitPartialSuggestionUsageStats) {
     // The head segment of the conversion segments uses |new_segment_key|.
     const Segment &segment = segments.conversion_segment(0);
     EXPECT_EQ(Segment::FREE, segment.segment_type());
-    // "いく"
-    EXPECT_EQ("\xe3\x81\x84\xe3\x81\x8f", segment.key());
+    EXPECT_EQ("いく", segment.key());
   }
 
   EXPECT_COUNT_STATS("CommitPartialSuggestion", 1);
@@ -704,50 +766,31 @@ TEST_F(ConverterTest, CommitPartialSuggestionUsageStats) {
 }
 
 TEST_F(ConverterTest, CommitAutoPartialSuggestionUsageStats) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   CHECK(converter);
   Segments segments;
 
   {
     Segment *segment = segments.add_segment();
-    // "かつこうにいく"
-    segment->set_key(
-        "\xe3\x81\x8b\xe3\x81\xa4\xe3\x81\x93\xe3\x81\x86\xe3"
-        "\x81\xab\xe3\x81\x84\xe3\x81\x8f");
+    segment->set_key("かつこうにいく");
 
     Segment::Candidate *candidate = segment->add_candidate();
-    // "学校にいく"
-    candidate->value =
-        "\xe5\xad\xa6\xe6\xa0\xa1\xe3\x81\xab\xe3\x81\x84\xe3\x81\x8f";
-    // "がっこうにいく"
-    candidate->key =
-        "\xe3\x81\x8c\xe3\x81\xa3\xe3\x81\x93\xe3\x81\x86\xe3"
-        "\x81\xab\xe3\x81\x84\xe3\x81\x8f";
+    candidate->value = "学校にいく";
+    candidate->key = "がっこうにいく";
 
     candidate = segment->add_candidate();
-    // "学校に行く"
-    candidate->value =
-        "\xe5\xad\xa6\xe6\xa0\xa1\xe3\x81\xab\xe8\xa1\x8c\xe3\x81\x8f";
-    // "がっこうにいく"
-    candidate->key =
-        "\xe3\x81\x8c\xe3\x81\xa3\xe3\x81\x93\xe3\x81\x86\xe3"
-        "\x81\xab\xe3\x81\x84\xe3\x81\x8f";
+    candidate->value = "学校に行く";
+    candidate->key = "がっこうにいく";
 
     candidate = segment->add_candidate();
-    // "学校に"
-    candidate->value = "\xe5\xad\xa6\xe6\xa0\xa1\xe3\x81\xab";
-    // "がっこうに"
-    candidate->key =
-        "\xe3\x81\x8c\xe3\x81\xa3\xe3\x81\x93\xe3\x81\x86\xe3\x81\xab";
+    candidate->value = "学校に";
+    candidate->key = "がっこうに";
   }
 
   EXPECT_STATS_NOT_EXIST("CommitPartialSuggestion");
   EXPECT_TRUE(converter->CommitPartialSuggestionSegmentValue(
-      // "かつこうに", "いく"
-      &segments, 0, 2,
-      "\xe3\x81\x8b\xe3\x81\xa4\xe3\x81\x93\xe3\x81\x86\xe3\x81\xab",
-      "\xe3\x81\x84\xe3\x81\x8f"));
+      &segments, 0, 2, "かつこうに", "いく"));
   EXPECT_EQ(2, segments.segments_size());
   EXPECT_EQ(1, segments.history_segments_size());
   EXPECT_EQ(1, segments.conversion_segments_size());
@@ -758,15 +801,9 @@ TEST_F(ConverterTest, CommitAutoPartialSuggestionUsageStats) {
     const Segment &segment =
         segments.history_segment(segments.history_segments_size() - 1);
     EXPECT_EQ(Segment::SUBMITTED, segment.segment_type());
-    // "学校に"
-    EXPECT_EQ("\xe5\xad\xa6\xe6\xa0\xa1\xe3\x81\xab",
-              segment.candidate(0).value);
-    // "がっこうに"
-    EXPECT_EQ("\xe3\x81\x8c\xe3\x81\xa3\xe3\x81\x93\xe3\x81\x86\xe3\x81\xab",
-              segment.candidate(0).key);
-    // "かつこうに"
-    EXPECT_EQ("\xe3\x81\x8b\xe3\x81\xa4\xe3\x81\x93\xe3\x81\x86\xe3\x81\xab",
-              segment.key());
+    EXPECT_EQ("学校に", segment.candidate(0).value);
+    EXPECT_EQ("がっこうに", segment.candidate(0).key);
+    EXPECT_EQ("かつこうに", segment.key());
     EXPECT_NE(0,
               segment.candidate(0).attributes & Segment::Candidate::RERANKED);
   }
@@ -774,50 +811,37 @@ TEST_F(ConverterTest, CommitAutoPartialSuggestionUsageStats) {
     // The head segment of the conversion segments uses |new_segment_key|.
     const Segment &segment = segments.conversion_segment(0);
     EXPECT_EQ(Segment::FREE, segment.segment_type());
-    // "いく"
-    EXPECT_EQ("\xe3\x81\x84\xe3\x81\x8f", segment.key());
+    EXPECT_EQ("いく", segment.key());
   }
 
   EXPECT_COUNT_STATS("CommitAutoPartialSuggestion", 1);
 }
 
 TEST_F(ConverterTest, CandidateKeyTest) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   CHECK(converter);
   Segments segments;
-  // "わたしは"
-  EXPECT_TRUE(converter->StartConversion(
-      &segments,
-      string("\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAF")));
+  EXPECT_TRUE(converter->StartConversion(&segments, "わたしは"));
   EXPECT_EQ(1, segments.segments_size());
-  // "わたしは"
-  EXPECT_EQ("\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAF",
-            segments.segment(0).candidate(0).key);
-  // "わたし"
-  EXPECT_EQ("\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97",
-            segments.segment(0).candidate(0).content_key);
+  EXPECT_EQ("わたしは", segments.segment(0).candidate(0).key);
+  EXPECT_EQ("わたし", segments.segment(0).candidate(0).content_key);
 }
 
 TEST_F(ConverterTest, Regression3437022) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   Segments segments;
 
-  // "けいたい"
-  const string kKey1 = "\xe3\x81\x91\xe3\x81\x84\xe3\x81\x9f\xe3\x81\x84";
-  // "でんわ"
-  const string kKey2 = "\xe3\x81\xa7\xe3\x82\x93\xe3\x82\x8f";
+  const string kKey1 = "けいたい";
+  const string kKey2 = "でんわ";
 
-  // "携帯"
-  const string kValue1 = "\xe6\x90\xba\xe5\xb8\xaf";
-  // "電話"
-  const string kValue2 = "\xe9\x9b\xbb\xe8\xa9\xb1";
+  const string kValue1 = "携帯";
+  const string kValue2 = "電話";
 
   {
     // Make sure converte result is one segment
-    EXPECT_TRUE(converter->StartConversion(
-        &segments, kKey1 + kKey2));
+    EXPECT_TRUE(converter->StartConversion(&segments, kKey1 + kKey2));
     EXPECT_EQ(1, segments.conversion_segments_size());
     EXPECT_EQ(kValue1 + kValue2,
               segments.conversion_segment(0).candidate(0).value);
@@ -825,16 +849,14 @@ TEST_F(ConverterTest, Regression3437022) {
   {
     // Make sure we can convert first part
     segments.Clear();
-    EXPECT_TRUE(converter->StartConversion(
-        &segments, kKey1));
+    EXPECT_TRUE(converter->StartConversion(&segments, kKey1));
     EXPECT_EQ(1, segments.conversion_segments_size());
     EXPECT_EQ(kValue1, segments.conversion_segment(0).candidate(0).value);
   }
   {
     // Make sure we can convert last part
     segments.Clear();
-    EXPECT_TRUE(converter->StartConversion(
-        &segments, kKey2));
+    EXPECT_TRUE(converter->StartConversion(&segments, kKey2));
     EXPECT_EQ(1, segments.conversion_segments_size());
     EXPECT_EQ(kValue2, segments.conversion_segment(0).candidate(0).value);
   }
@@ -847,8 +869,7 @@ TEST_F(ConverterTest, Regression3437022) {
   dic->AddEntry(kKey1 + kKey2, kValue1 + kValue2);
   dic->UnLock();
 
-  EXPECT_TRUE(converter->StartConversion(
-      &segments, kKey1 + kKey2));
+  EXPECT_TRUE(converter->StartConversion(&segments, kKey1 + kKey2));
 
   int rest_size = 0;
   for (size_t i = 1; i < segments.conversion_segments_size(); ++i) {
@@ -874,24 +895,15 @@ TEST_F(ConverterTest, Regression3437022) {
 
 TEST_F(ConverterTest, CompletePOSIds) {
   const char *kTestKeys[] = {
-    // "きょうと",
-    "\xE3\x81\x8D\xE3\x82\x87\xE3\x81\x86\xE3\x81\xA8",
-    // "いきます",
-    "\xE3\x81\x84\xE3\x81\x8D\xE3\x81\xBE\xE3\x81\x99",
-    // "うつくしい",
-    "\xE3\x81\x86\xE3\x81\xA4\xE3\x81\x8F\xE3\x81\x97\xE3\x81\x84",
-    // "おおきな",
-    "\xE3\x81\x8A\xE3\x81\x8A\xE3\x81\x8D\xE3\x81\xAA",
-    // "いっちゃわない"
-    "\xE3\x81\x84\xE3\x81\xA3\xE3\x81\xA1\xE3\x82\x83\xE3\x82\x8F"
-    "\xE3\x81\xAA\xE3\x81\x84\xE3\x81\xAD",
-    // "わたしのなまえはなかのです"
-    "\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAE\xE3\x81\xAA"
-    "\xE3\x81\xBE\xE3\x81\x88\xE3\x81\xAF\xE3\x81\xAA\xE3\x81\x8B"
-    "\xE3\x81\xAE\xE3\x81\xA7\xE3\x81\x99"
+      "きょうと",
+      "いきます",
+      "うつくしい",
+      "おおきな",
+      "いっちゃわないね",
+      "わたしのなまえはなかのです",
   };
 
-  scoped_ptr<ConverterAndData> converter_and_data(
+  std::unique_ptr<ConverterAndData> converter_and_data(
       CreateStubbedConverterAndData());
   ConverterImpl *converter = converter_and_data->converter.get();
   for (size_t i = 0; i < arraysize(kTestKeys); ++i) {
@@ -930,33 +942,27 @@ TEST_F(ConverterTest, CompletePOSIds) {
 
 TEST_F(ConverterTest, Regression3046266) {
   // Shouldn't correct nodes at the beginning of a sentence.
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   Segments segments;
 
   // Can be any string that has "ん" at the end
-  // "かん"
-  const char kKey1[] = "\xE3\x81\x8B\xE3\x82\x93";
+  const char kKey1[] = "かん";
 
   // Can be any string that has a vowel at the beginning
-  // "あか"
-  const char kKey2[] = "\xE3\x81\x82\xE3\x81\x8B";
+  const char kKey2[] = "あか";
 
-  // "中"
-  const char kValueNotExpected[] = "\xE4\xB8\xAD";
+  const char kValueNotExpected[] = "中";
 
-  EXPECT_TRUE(converter->StartConversion(
-      &segments, kKey1));
+  EXPECT_TRUE(converter->StartConversion(&segments, kKey1));
   EXPECT_EQ(1, segments.conversion_segments_size());
-  EXPECT_TRUE(converter->CommitSegmentValue(
-      &segments, 0, 0));
+  EXPECT_TRUE(converter->CommitSegmentValue(&segments, 0, 0));
 
   // TODO(team): Use StartConversionForRequest instead of StartConversion.
   const ConversionRequest default_request;
   EXPECT_TRUE(converter->FinishConversion(default_request, &segments));
 
-  EXPECT_TRUE(converter->StartConversion(
-      &segments, kKey2));
+  EXPECT_TRUE(converter->StartConversion(&segments, kKey2));
   EXPECT_EQ(1, segments.conversion_segments_size());
   const Segment &segment = segments.conversion_segment(0);
   for (size_t i = 0; i < segment.candidates_size(); ++i) {
@@ -966,15 +972,12 @@ TEST_F(ConverterTest, Regression3046266) {
 
 TEST_F(ConverterTest, Regression5502496) {
   // Make sure key correction works for the first word of a sentence.
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   Segments segments;
 
-  // "みんあ"
-  const char kKey[] = "\xE3\x81\xBF\xE3\x82\x93\xE3\x81\x82";
-
-  // "みんな"
-  const char kValueExpected[] = "\xE3\x81\xBF\xE3\x82\x93\xE3\x81\xAA";
+  const char kKey[] = "みんあ";
+  const char kValueExpected[] = "みんな";
 
   EXPECT_TRUE(converter->StartConversion(&segments, kKey));
   EXPECT_EQ(1, segments.conversion_segments_size());
@@ -988,156 +991,96 @@ TEST_F(ConverterTest, Regression5502496) {
   EXPECT_TRUE(found);
 }
 
-TEST_F(ConverterTest, EmoticonsAboveSymbols) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
-  ConverterInterface *converter = engine->GetConverter();
-  Segments segments;
-
-  // "かおもじ"
-  const char kKey[] = "\xE3\x81\x8B\xE3\x81\x8A\xE3\x82\x82\xE3\x81\x98";
-
-  const char kEmoticon[] = "^^;";
-  // "☹": A platform-dependent symbol
-  const char kSymbol[] = "\xE2\x98\xB9";
-
-  EXPECT_TRUE(converter->StartConversion(
-      &segments, kKey));
-  EXPECT_EQ(1, segments.conversion_segments_size());
-  const Segment &segment = segments.conversion_segment(0);
-  bool found_emoticon = false;
-  bool found_symbol = false;
-
-  for (size_t i = 0; i < segment.candidates_size(); ++i) {
-    if (segment.candidate(i).value == kEmoticon) {
-      found_emoticon = true;
-    } else if (segment.candidate(i).value == kSymbol) {
-      found_symbol = true;
-    }
-    if (found_symbol) {
-      break;
-    }
-  }
-  EXPECT_TRUE(found_emoticon);
-}
-
 TEST_F(ConverterTest, StartSuggestionForRequest) {
   commands::Request client_request;
   client_request.set_mixed_conversion(true);
 
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   CHECK(converter);
 
-  // "し"
-  const string kShi = "\xE3\x81\x97";
+  const string kShi = "し";
 
   composer::Table table;
   table.AddRule("si", kShi, "");
   table.AddRule("shi", kShi, "");
+  config::Config config;
 
   {
-    composer::Composer composer(&table, &client_request);
+    composer::Composer composer(&table, &client_request, &config);
 
     composer.InsertCharacter("shi");
 
     Segments segments;
-    const ConversionRequest request(&composer, &client_request);
+    const ConversionRequest request(&composer, &client_request, &config);
     EXPECT_TRUE(converter->StartSuggestionForRequest(request, &segments));
     EXPECT_EQ(1, segments.segments_size());
     ASSERT_TRUE(segments.segment(0).meta_candidates_size() >=
                 transliteration::HALF_ASCII);
-    EXPECT_EQ("shi",
-              segments.segment(0).meta_candidate(
-                  transliteration::HALF_ASCII).value);
+    EXPECT_EQ(
+        "shi",
+        segments.segment(0).meta_candidate(transliteration::HALF_ASCII).value);
   }
 
   {
-    composer::Composer composer(&table, &client_request);
+    composer::Composer composer(&table, &client_request, &config);
 
     composer.InsertCharacter("si");
 
     Segments segments;
-    const ConversionRequest request(&composer, &client_request);
+    const ConversionRequest request(&composer, &client_request, &config);
     EXPECT_TRUE(converter->StartSuggestionForRequest(request, &segments));
     EXPECT_EQ(1, segments.segments_size());
     ASSERT_TRUE(segments.segment(0).meta_candidates_size() >=
                 transliteration::HALF_ASCII);
-    EXPECT_EQ("si",
-              segments.segment(0).meta_candidate(
-                  transliteration::HALF_ASCII).value);
+    EXPECT_EQ(
+        "si",
+        segments.segment(0).meta_candidate(transliteration::HALF_ASCII).value);
   }
 }
 
 TEST_F(ConverterTest, StartPartialPrediction) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   CHECK(converter);
   Segments segments;
-  // "わたしは"
-  EXPECT_TRUE(converter->StartPartialPrediction(
-              &segments,
-              "\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAF"));
+  EXPECT_TRUE(converter->StartPartialPrediction(&segments, "わたしは"));
   EXPECT_EQ(1, segments.segments_size());
-  // "わたしは"
-  EXPECT_EQ("\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAF",
-            segments.segment(0).candidate(0).key);
-  // "わたしは"
-  EXPECT_EQ("\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAF",
-            segments.segment(0).candidate(0).content_key);
+  EXPECT_EQ("わたしは", segments.segment(0).candidate(0).key);
+  EXPECT_EQ("わたしは", segments.segment(0).candidate(0).content_key);
 }
 
 TEST_F(ConverterTest, StartPartialSuggestion) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   CHECK(converter);
   Segments segments;
-  // "わたしは"
-  EXPECT_TRUE(converter->StartPartialSuggestion(
-              &segments,
-              "\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAF"));
+  EXPECT_TRUE(converter->StartPartialSuggestion(&segments, "わたしは"));
   EXPECT_EQ(1, segments.segments_size());
-  // "わたしは"
-  EXPECT_EQ("\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAF",
-            segments.segment(0).candidate(0).key);
-  // "わたしは"
-  EXPECT_EQ("\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAF",
-            segments.segment(0).candidate(0).content_key);
+  EXPECT_EQ("わたしは", segments.segment(0).candidate(0).key);
+  EXPECT_EQ("わたしは", segments.segment(0).candidate(0).content_key);
 }
 
 TEST_F(ConverterTest, StartPartialPrediction_mobile) {
-  scoped_ptr<EngineInterface> engine(CreateEngineWithMobilePredictor());
+  std::unique_ptr<EngineInterface> engine(CreateEngineWithMobilePredictor());
   ConverterInterface *converter = engine->GetConverter();
   CHECK(converter);
   Segments segments;
-  // "わたしは"
-  EXPECT_TRUE(converter->StartPartialPrediction(
-              &segments,
-              "\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAF"));
+  EXPECT_TRUE(converter->StartPartialPrediction(&segments, "わたしは"));
   EXPECT_EQ(1, segments.segments_size());
-  // "わたしは"
-  EXPECT_EQ("\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAF",
-            segments.segment(0).candidate(0).key);
-  // "わたしは"
-  EXPECT_EQ("\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAF",
-            segments.segment(0).candidate(0).content_key);
+  EXPECT_EQ("わたしは", segments.segment(0).candidate(0).key);
+  EXPECT_EQ("わたしは", segments.segment(0).candidate(0).content_key);
 }
 
 TEST_F(ConverterTest, StartPartialSuggestion_mobile) {
-  scoped_ptr<EngineInterface> engine(CreateEngineWithMobilePredictor());
+  std::unique_ptr<EngineInterface> engine(CreateEngineWithMobilePredictor());
   ConverterInterface *converter = engine->GetConverter();
   CHECK(converter);
   Segments segments;
-  // "わたしは"
-  EXPECT_TRUE(converter->StartPartialSuggestion(
-              &segments,
-              "\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAF"));
+  EXPECT_TRUE(converter->StartPartialSuggestion(&segments, "わたしは"));
   EXPECT_EQ(1, segments.segments_size());
-  // "わたしは"
-  EXPECT_EQ("\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAF",
-            segments.segment(0).candidate(0).key);
-  // "わたしは"
-  EXPECT_EQ("\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\xE3\x81\xAF",
-            segments.segment(0).candidate(0).content_key);
+  EXPECT_EQ("わたしは", segments.segment(0).candidate(0).key);
+  EXPECT_EQ("わたしは", segments.segment(0).candidate(0).content_key);
 }
 
 TEST_F(ConverterTest, MaybeSetConsumedKeySizeToSegment) {
@@ -1180,24 +1123,24 @@ TEST_F(ConverterTest, Predict_SetKey) {
   const char kPredictionKey2[] = "prediction key2";
   // Tests whether SetKey method is called or not.
   struct TestData {
-    const Segments::RequestType request_type_;
-    const char *key_;
-    const bool expect_reset_;
+    const Segments::RequestType request_type;
+    const char *key;
+    const bool expect_reset;
   };
   const TestData test_data_list[] = {
-      {Segments::CONVERSION, NULL, true},
+      {Segments::CONVERSION, nullptr, true},
       {Segments::CONVERSION, kPredictionKey, true},
       {Segments::CONVERSION, kPredictionKey2, true},
-      {Segments::REVERSE_CONVERSION, NULL, true},
+      {Segments::REVERSE_CONVERSION, nullptr, true},
       {Segments::REVERSE_CONVERSION, kPredictionKey, true},
       {Segments::REVERSE_CONVERSION, kPredictionKey2, true},
-      {Segments::PREDICTION, NULL, true},
+      {Segments::PREDICTION, nullptr, true},
       {Segments::PREDICTION, kPredictionKey2, true},
-      {Segments::SUGGESTION, NULL, true},
+      {Segments::SUGGESTION, nullptr, true},
       {Segments::SUGGESTION, kPredictionKey2, true},
-      {Segments::PARTIAL_PREDICTION, NULL, true},
+      {Segments::PARTIAL_PREDICTION, nullptr, true},
       {Segments::PARTIAL_PREDICTION, kPredictionKey2, true},
-      {Segments::PARTIAL_SUGGESTION, NULL, true},
+      {Segments::PARTIAL_SUGGESTION, nullptr, true},
       {Segments::PARTIAL_SUGGESTION, kPredictionKey2, true},
       // If we are predicting, and one or more segment exists,
       // and the segments's key equals to the input key, then do not reset.
@@ -1207,7 +1150,7 @@ TEST_F(ConverterTest, Predict_SetKey) {
       {Segments::PARTIAL_SUGGESTION, kPredictionKey, true},
   };
 
-  scoped_ptr<ConverterAndData> converter_and_data(
+  std::unique_ptr<ConverterAndData> converter_and_data(
       CreateStubbedConverterAndData());
   ConverterImpl *converter = converter_and_data->converter.get();
   ASSERT_NE(nullptr, converter);
@@ -1217,12 +1160,12 @@ TEST_F(ConverterTest, Predict_SetKey) {
   for (size_t i = 0; i < arraysize(test_data_list); ++i) {
     const TestData &test_data = test_data_list[i];
     Segments segments;
-    segments.set_request_type(test_data.request_type_);
+    segments.set_request_type(test_data.request_type);
 
-    if (test_data.key_) {
+    if (test_data.key) {
       Segment *seg = segments.add_segment();
       seg->Clear();
-      seg->set_key(test_data.key_);
+      seg->set_key(test_data.key);
       // The segment has a candidate.
       seg->add_candidate();
     }
@@ -1232,7 +1175,7 @@ TEST_F(ConverterTest, Predict_SetKey) {
 
     EXPECT_EQ(1, segments.conversion_segments_size());
     EXPECT_EQ(kPredictionKey, segments.conversion_segment(0).key());
-    EXPECT_EQ(test_data.expect_reset_ ? 0 : 1,
+    EXPECT_EQ(test_data.expect_reset ? 0 : 1,
               segments.conversion_segment(0).candidates_size());
   }
 }
@@ -1240,75 +1183,76 @@ TEST_F(ConverterTest, Predict_SetKey) {
 TEST_F(ConverterTest, VariantExpansionForSuggestion) {
   // Create Converter with mock user dictionary
   testing::MockDataManager data_manager;
-  scoped_ptr<DictionaryMock> mock_user_dictionary(new DictionaryMock);
+  std::unique_ptr<DictionaryMock> mock_user_dictionary(new DictionaryMock);
 
   mock_user_dictionary->AddLookupPredictive(
-      // "てすと"
-      "\xe3\x81\xa6\xe3\x81\x99\xe3\x81\xa8",
-      // "てすと"
-      "\xe3\x81\xa6\xe3\x81\x99\xe3\x81\xa8",
+      "てすと",
+      "てすと",
       "<>!?",
       Token::USER_DICTIONARY);
   mock_user_dictionary->AddLookupPrefix(
-      // "てすと"
-      "\xe3\x81\xa6\xe3\x81\x99\xe3\x81\xa8",
-      // "てすと"
-      "\xe3\x81\xa6\xe3\x81\x99\xe3\x81\xa8",
+      "てすと",
+      "てすと",
       "<>!?",
       Token::USER_DICTIONARY);
-  scoped_ptr<SuppressionDictionary> suppression_dictionary(
+  std::unique_ptr<SuppressionDictionary> suppression_dictionary(
       new SuppressionDictionary);
 
-  const char *dictionary_data = NULL;
+  const char *dictionary_data = nullptr;
   int dictionary_size = 0;
   data_manager.GetSystemDictionaryData(&dictionary_data, &dictionary_size);
 
-  scoped_ptr<DictionaryInterface> dictionary(new DictionaryImpl(
-      SystemDictionary::CreateSystemDictionaryFromImage(
-          dictionary_data, dictionary_size),
-      ValueDictionary::CreateValueDictionaryFromImage(
-          *data_manager.GetPOSMatcher(), dictionary_data, dictionary_size),
+  const dictionary::POSMatcher pos_matcher(
+      data_manager.GetPOSMatcherData());
+
+  SystemDictionary *sysdic =
+      SystemDictionary::Builder(dictionary_data, dictionary_size).Build();
+  std::unique_ptr<DictionaryInterface> dictionary(new DictionaryImpl(
+      sysdic,  // DictionaryImpl takes the ownership
+      new ValueDictionary(pos_matcher, &sysdic->value_trie()),
       mock_user_dictionary.get(),
       suppression_dictionary.get(),
-      data_manager.GetPOSMatcher()));
-  scoped_ptr<const PosGroup> pos_group(
+      &pos_matcher));
+  std::unique_ptr<const PosGroup> pos_group(
       new PosGroup(data_manager.GetPosGroupData()));
-  scoped_ptr<const DictionaryInterface> suffix_dictionary(
+  std::unique_ptr<const DictionaryInterface> suffix_dictionary(
       CreateSuffixDictionaryFromDataManager(data_manager));
-  scoped_ptr<const ConnectorInterface> connector(
-      ConnectorBase::CreateFromDataManager(data_manager));
-  scoped_ptr<const SegmenterInterface> segmenter(
-      SegmenterBase::CreateFromDataManager(data_manager));
-  scoped_ptr<const SuggestionFilter> suggestion_filter(
+  std::unique_ptr<const Connector> connector(
+      Connector::CreateFromDataManager(data_manager));
+  std::unique_ptr<const Segmenter> segmenter(
+      Segmenter::CreateFromDataManager(data_manager));
+  std::unique_ptr<const SuggestionFilter> suggestion_filter(
       CreateSuggestionFilter(data_manager));
-  scoped_ptr<ImmutableConverterInterface> immutable_converter(
+  std::unique_ptr<ImmutableConverterInterface> immutable_converter(
       new ImmutableConverterImpl(dictionary.get(),
                                  suffix_dictionary.get(),
                                  suppression_dictionary.get(),
                                  connector.get(),
                                  segmenter.get(),
-                                 data_manager.GetPOSMatcher(),
+                                 &pos_matcher,
                                  pos_group.get(),
                                  suggestion_filter.get()));
-  scoped_ptr<const SuggestionFilter> suggegstion_filter(
+  std::unique_ptr<const SuggestionFilter> suggegstion_filter(
       CreateSuggestionFilter(data_manager));
-  scoped_ptr<ConverterImpl> converter(new ConverterImpl);
-  const DictionaryInterface *kNullDictionary = NULL;
-  converter->Init(data_manager.GetPOSMatcher(),
+  std::unique_ptr<ConverterImpl> converter(new ConverterImpl);
+  const DictionaryInterface *kNullDictionary = nullptr;
+  converter->Init(&pos_matcher,
                   suppression_dictionary.get(),
                   DefaultPredictor::CreateDefaultPredictor(
                       new DictionaryPredictor(
+                          data_manager,
                           converter.get(),
                           immutable_converter.get(),
                           dictionary.get(),
                           suffix_dictionary.get(),
                           connector.get(),
                           segmenter.get(),
-                          data_manager.GetPOSMatcher(),
+                          &pos_matcher,
                           suggegstion_filter.get()),
                       new UserHistoryPredictor(dictionary.get(),
-                                               data_manager.GetPOSMatcher(),
-                                               suppression_dictionary.get())),
+                                               &pos_matcher,
+                                               suppression_dictionary.get(),
+                                               false)),
                   new RewriterImpl(converter.get(),
                                    &data_manager,
                                    pos_group.get(),
@@ -1318,71 +1262,55 @@ TEST_F(ConverterTest, VariantExpansionForSuggestion) {
   Segments segments;
   {
     // Dictionary suggestion
-    EXPECT_TRUE(converter->StartSuggestion(
-        &segments,
-        // "てすと"
-        "\xe3\x81\xa6\xe3\x81\x99\xe3\x81\xa8"));
+    EXPECT_TRUE(converter->StartSuggestion(&segments, "てすと"));
     EXPECT_EQ(1, segments.conversion_segments_size());
     EXPECT_LE(1, segments.conversion_segment(0).candidates_size());
     EXPECT_TRUE(FindCandidateByValue("<>!?", segments.conversion_segment(0)));
-    EXPECT_FALSE(FindCandidateByValue(
-        // "＜＞！？"
-        "\xef\xbc\x9c\xef\xbc\x9e\xef\xbc\x81\xef\xbc\x9f",
-        segments.conversion_segment(0)));
+    EXPECT_FALSE(
+        FindCandidateByValue("＜＞！？", segments.conversion_segment(0)));
   }
   {
     // Realtime conversion
     segments.Clear();
-    EXPECT_TRUE(converter->StartSuggestion(
-        &segments,
-        // "てすとの"
-        "\xe3\x81\xa6\xe3\x81\x99\xe3\x81\xa8\xe3\x81\xae"));
+    EXPECT_TRUE(converter->StartSuggestion(&segments, "てすとの"));
     EXPECT_EQ(1, segments.conversion_segments_size());
     EXPECT_LE(1, segments.conversion_segment(0).candidates_size());
-    // "<>!?の"
-    EXPECT_TRUE(FindCandidateByValue("\x3c\x3e\x21\x3f\xe3\x81\xae",
-                                     segments.conversion_segment(0)));
-    EXPECT_FALSE(FindCandidateByValue(
-        // "＜＞！？の"
-        // "＜＞！？の"
-        "\xef\xbc\x9c\xef\xbc\x9e\xef\xbc\x81\xef\xbc\x9f\xe3\x81\xae",
-        segments.conversion_segment(0)));
+    EXPECT_TRUE(FindCandidateByValue("<>!?の", segments.conversion_segment(0)));
+    EXPECT_FALSE(
+        FindCandidateByValue("＜＞！？の", segments.conversion_segment(0)));
   }
 }
 
 TEST_F(ConverterTest, ComposerKeySelection) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
   composer::Table table;
+  config::Config config;
   {
     Segments segments;
-    composer::Composer composer(&table, &default_request());
-    composer.InsertCharacterPreedit(
-        "\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\x68");  // "わたしh"
-    ConversionRequest request(&composer, &default_request());
+    composer::Composer composer(&table, &default_request(), &config);
+    composer.InsertCharacterPreedit("わたしh");
+    ConversionRequest request(&composer, &default_request(), &config);
     request.set_composer_key_selection(ConversionRequest::CONVERSION_KEY);
     converter->StartConversionForRequest(request, &segments);
     EXPECT_EQ(2, segments.conversion_segments_size());
-    EXPECT_EQ("\xE7\xA7\x81",  // "私"
-              segments.conversion_segment(0).candidate(0).value);
+    EXPECT_EQ("私", segments.conversion_segment(0).candidate(0).value);
     EXPECT_EQ("h", segments.conversion_segment(1).candidate(0).value);
   }
   {
     Segments segments;
-    composer::Composer composer(&table, &default_request());
-    composer.InsertCharacterPreedit(
-        "\xE3\x82\x8F\xE3\x81\x9F\xE3\x81\x97\x68");  // "わたしh"
-    ConversionRequest request(&composer, &default_request());
+    composer::Composer composer(&table, &default_request(), &config);
+    composer.InsertCharacterPreedit("わたしh");
+    ConversionRequest request(&composer, &default_request(), &config);
     request.set_composer_key_selection(ConversionRequest::PREDICTION_KEY);
     converter->StartConversionForRequest(request, &segments);
     EXPECT_EQ(1, segments.conversion_segments_size());
-    EXPECT_EQ("\xE7\xA7\x81",  // "私"
-              segments.conversion_segment(0).candidate(0).value);
+    EXPECT_EQ("私", segments.conversion_segment(0).candidate(0).value);
   }
 }
 
 TEST_F(ConverterTest, SuppressionDictionaryForRewriter) {
-  scoped_ptr<ConverterAndData> ret(
+  std::unique_ptr<ConverterAndData> ret(
       CreateConverterAndDataWithInsertDummyWordsRewriter());
 
   // Set up suppression dictionary
@@ -1393,9 +1321,10 @@ TEST_F(ConverterTest, SuppressionDictionaryForRewriter) {
 
   // Convert
   composer::Table table;
-  composer::Composer composer(&table, &default_request());
+  config::Config config;
+  composer::Composer composer(&table, &default_request(), &config);
   composer.InsertCharacter("dummy");
-  const ConversionRequest request(&composer, &default_request());
+  const ConversionRequest request(&composer, &default_request(), &config);
   Segments segments;
   EXPECT_TRUE(ret->converter->StartConversionForRequest(request, &segments));
 
@@ -1410,7 +1339,7 @@ TEST_F(ConverterTest, SuppressionDictionaryForRewriter) {
 
 TEST_F(ConverterTest, EmptyConvertReverse_Issue8661091) {
   // This is a test case against b/8661091.
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
 
   Segments segments;
@@ -1418,18 +1347,17 @@ TEST_F(ConverterTest, EmptyConvertReverse_Issue8661091) {
 }
 
 TEST_F(ConverterTest, StartReverseConversion) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   const ConverterInterface *converter = engine->GetConverter();
 
-  const string kHonKanji = "\xE6\x9C\xAC";  // "本"
-  const string kHonHiragana = "\xE3\x81\xBB\xE3\x82\x93";  // "ほん"
-  const string kMuryouKanji = "\xE7\x84\xA1\xE6\x96\x99";  // "無料"
-  const string kMuryouHiragana =
-      "\xE3\x82\x80\xE3\x82\x8A\xE3\x82\x87\xE3\x81\x86";  // "むりょう"
-  const string kFullWidthSpace = "\xE3\x80\x80";  // full-width space
+  const string kHonKanji = "本";
+  const string kHonHiragana = "ほん";
+  const string kMuryouKanji = "無料";
+  const string kMuryouHiragana = "むりょう";
+  const string kFullWidthSpace = "　";  // full-width space
   {
     // Test for single Kanji character.
-    const string &kInput = kHonKanji;  // "本"
+    const string &kInput = kHonKanji;
     Segments segments;
     EXPECT_TRUE(converter->StartReverseConversion(&segments, kInput));
     ASSERT_EQ(1, segments.segments_size());
@@ -1438,7 +1366,7 @@ TEST_F(ConverterTest, StartReverseConversion) {
   }
   {
     // Test for multi-Kanji character.
-    const string &kInput = kMuryouKanji;  // "無料"
+    const string &kInput = kMuryouKanji;
     Segments segments;
     EXPECT_TRUE(converter->StartReverseConversion(&segments, kInput));
     ASSERT_EQ(1, segments.segments_size());
@@ -1448,13 +1376,12 @@ TEST_F(ConverterTest, StartReverseConversion) {
   }
   {
     // Test for multi terms separated by a space.
-    const string &kInput = kHonKanji + " " + kMuryouKanji;  // "本 無料"
+    const string &kInput = kHonKanji + " " + kMuryouKanji;
     Segments segments;
     EXPECT_TRUE(converter->StartReverseConversion(&segments, kInput));
     ASSERT_EQ(3, segments.segments_size());
     ASSERT_LT(0, segments.conversion_segment(0).candidates_size());
-    EXPECT_EQ(kHonHiragana,
-              segments.conversion_segment(0).candidate(0).value);
+    EXPECT_EQ(kHonHiragana, segments.conversion_segment(0).candidate(0).value);
     ASSERT_LT(0, segments.conversion_segment(1).candidates_size());
     EXPECT_EQ(" ", segments.conversion_segment(1).candidate(0).value);
     ASSERT_LT(0, segments.conversion_segment(2).candidates_size());
@@ -1463,13 +1390,12 @@ TEST_F(ConverterTest, StartReverseConversion) {
   }
   {
     // Test for multi terms separated by multiple spaces.
-    const string &kInput = kHonKanji + "   " + kMuryouKanji;  // "本   無料"
+    const string &kInput = kHonKanji + "   " + kMuryouKanji;
     Segments segments;
     EXPECT_TRUE(converter->StartReverseConversion(&segments, kInput));
     ASSERT_EQ(3, segments.segments_size());
     ASSERT_LT(0, segments.conversion_segment(0).candidates_size());
-    EXPECT_EQ(kHonHiragana,
-              segments.conversion_segment(0).candidate(0).value);
+    EXPECT_EQ(kHonHiragana, segments.conversion_segment(0).candidate(0).value);
     ASSERT_LT(0, segments.conversion_segment(1).candidates_size());
     EXPECT_EQ("   ", segments.conversion_segment(1).candidate(0).value);
     ASSERT_LT(0, segments.conversion_segment(2).candidates_size());
@@ -1478,19 +1404,18 @@ TEST_F(ConverterTest, StartReverseConversion) {
   }
   {
     // Test for leading white spaces.
-    const string &kInput = "  " + kHonKanji;  // "  本"
+    const string &kInput = "  " + kHonKanji;
     Segments segments;
     EXPECT_TRUE(converter->StartReverseConversion(&segments, kInput));
     ASSERT_EQ(2, segments.segments_size());
     ASSERT_LT(0, segments.conversion_segment(0).candidates_size());
     EXPECT_EQ("  ", segments.conversion_segment(0).candidate(0).value);
     ASSERT_LT(0, segments.conversion_segment(1).candidates_size());
-    EXPECT_EQ(kHonHiragana,
-              segments.conversion_segment(1).candidate(0).value);
+    EXPECT_EQ(kHonHiragana, segments.conversion_segment(1).candidate(0).value);
   }
   {
     // Test for trailing white spaces.
-    const string &kInput = kMuryouKanji + "  ";  // "無料  "
+    const string &kInput = kMuryouKanji + "  ";
     Segments segments;
     EXPECT_TRUE(converter->StartReverseConversion(&segments, kInput));
     ASSERT_EQ(2, segments.segments_size());
@@ -1498,19 +1423,16 @@ TEST_F(ConverterTest, StartReverseConversion) {
     EXPECT_EQ(kMuryouHiragana,
               segments.conversion_segment(0).candidate(0).value);
     ASSERT_LT(0, segments.conversion_segment(1).candidates_size());
-    EXPECT_EQ("  ",
-              segments.conversion_segment(1).candidate(0).value);
+    EXPECT_EQ("  ", segments.conversion_segment(1).candidate(0).value);
   }
   {
     // Test for multi terms separated by a full-width space.
-    // "本　無料"
     const string &kInput = kHonKanji + kFullWidthSpace + kMuryouKanji;
     Segments segments;
     EXPECT_TRUE(converter->StartReverseConversion(&segments, kInput));
     ASSERT_EQ(3, segments.segments_size());
     ASSERT_LT(0, segments.conversion_segment(0).candidates_size());
-    EXPECT_EQ(kHonHiragana,
-              segments.conversion_segment(0).candidate(0).value);
+    EXPECT_EQ(kHonHiragana, segments.conversion_segment(0).candidate(0).value);
     ASSERT_LT(0, segments.conversion_segment(1).candidates_size());
     EXPECT_EQ(kFullWidthSpace,
               segments.conversion_segment(1).candidate(0).value);
@@ -1520,15 +1442,13 @@ TEST_F(ConverterTest, StartReverseConversion) {
   }
   {
     // Test for multi terms separated by two full-width spaces.
-    // "本　　無料"
     const string &kFullWidthSpace2 = kFullWidthSpace + kFullWidthSpace;
     const string &kInput = kHonKanji + kFullWidthSpace2 + kMuryouKanji;
     Segments segments;
     EXPECT_TRUE(converter->StartReverseConversion(&segments, kInput));
     ASSERT_EQ(3, segments.segments_size());
     ASSERT_LT(0, segments.conversion_segment(0).candidates_size());
-    EXPECT_EQ(kHonHiragana,
-              segments.conversion_segment(0).candidate(0).value);
+    EXPECT_EQ(kHonHiragana, segments.conversion_segment(0).candidate(0).value);
     ASSERT_LT(0, segments.conversion_segment(1).candidates_size());
     EXPECT_EQ(kFullWidthSpace2,
               segments.conversion_segment(1).candidate(0).value);
@@ -1538,15 +1458,13 @@ TEST_F(ConverterTest, StartReverseConversion) {
   }
   {
     // Test for multi terms separated by the mix of full- and half-width spaces.
-    // "本　 無料"
     const string &kFullWidthSpace2 = kFullWidthSpace + " ";
     const string &kInput = kHonKanji + kFullWidthSpace2 + kMuryouKanji;
     Segments segments;
     EXPECT_TRUE(converter->StartReverseConversion(&segments, kInput));
     ASSERT_EQ(3, segments.segments_size());
     ASSERT_LT(0, segments.conversion_segment(0).candidates_size());
-    EXPECT_EQ(kHonHiragana,
-              segments.conversion_segment(0).candidate(0).value);
+    EXPECT_EQ(kHonHiragana, segments.conversion_segment(0).candidate(0).value);
     ASSERT_LT(0, segments.conversion_segment(1).candidates_size());
     EXPECT_EQ(kFullWidthSpace2,
               segments.conversion_segment(1).candidate(0).value);
@@ -1565,12 +1483,7 @@ TEST_F(ConverterTest, StartReverseConversion) {
 
     // Test for full-width characters.
     segments.Clear();
-    // "３６５＊２４＊６０＊６０＊１０００＝"
-    const string &kInputFull =
-        "\xEF\xBC\x93\xEF\xBC\x96\xEF\xBC\x95\xEF\xBC\x8A\xEF\xBC\x92"
-        "\xEF\xBC\x94\xEF\xBC\x8A\xEF\xBC\x96\xEF\xBC\x90\xEF\xBC\x8A"
-        "\xEF\xBC\x96\xEF\xBC\x90\xEF\xBC\x8A\xEF\xBC\x91\xEF\xBC\x90"
-        "\xEF\xBC\x90\xEF\xBC\x90\xEF\xBC\x9D";
+    const string &kInputFull = "３６５＊２４＊６０＊６０＊１０００＝";
     EXPECT_TRUE(converter->StartReverseConversion(&segments, kInputFull));
     ASSERT_EQ(1, segments.segments_size());
     ASSERT_EQ(1, segments.conversion_segment(0).candidates_size());
@@ -1579,7 +1492,7 @@ TEST_F(ConverterTest, StartReverseConversion) {
 }
 
 TEST_F(ConverterTest, GetLastConnectivePart) {
-  scoped_ptr<ConverterAndData> converter_and_data(
+  std::unique_ptr<ConverterAndData> converter_and_data(
       CreateStubbedConverterAndData());
   ConverterImpl *converter = converter_and_data->converter.get();
 
@@ -1599,9 +1512,8 @@ TEST_F(ConverterTest, GetLastConnectivePart) {
     EXPECT_TRUE(converter->GetLastConnectivePart("a", &key, &value, &id));
     EXPECT_EQ("a", key);
     EXPECT_EQ("a", value);
-    EXPECT_EQ(
-        converter_and_data->converter.get()->pos_matcher_->GetUniqueNounId(),
-        id);
+    EXPECT_EQ(converter_and_data->converter->pos_matcher_->GetUniqueNounId(),
+              id);
 
     EXPECT_TRUE(converter->GetLastConnectivePart("a ", &key, &value, &id));
     EXPECT_EQ("a", key);
@@ -1617,11 +1529,9 @@ TEST_F(ConverterTest, GetLastConnectivePart) {
     EXPECT_EQ("a", key);
     EXPECT_EQ("a", value);
 
-    // "ａ"
-    EXPECT_TRUE(converter->GetLastConnectivePart(
-        "\xEF\xBD\x81", &key, &value, &id));
+    EXPECT_TRUE(converter->GetLastConnectivePart("ａ", &key, &value, &id));
     EXPECT_EQ("a", key);
-    EXPECT_EQ("\xEF\xBD\x81", value);
+    EXPECT_EQ("ａ", value);
   }
 
   {
@@ -1631,36 +1541,30 @@ TEST_F(ConverterTest, GetLastConnectivePart) {
     EXPECT_TRUE(converter->GetLastConnectivePart("10", &key, &value, &id));
     EXPECT_EQ("10", key);
     EXPECT_EQ("10", value);
-    EXPECT_EQ(
-        converter_and_data->converter.get()->pos_matcher_->GetNumberId(), id);
+    EXPECT_EQ(converter_and_data->converter->pos_matcher_->GetNumberId(), id);
 
     EXPECT_TRUE(converter->GetLastConnectivePart("10a10", &key, &value, &id));
     EXPECT_EQ("10", key);
     EXPECT_EQ("10", value);
 
-    // "１０"
-    EXPECT_TRUE(converter->GetLastConnectivePart(
-        "\xEF\xBC\x91\xEF\xBC\x90", &key, &value, &id));
+    EXPECT_TRUE(converter->GetLastConnectivePart("１０", &key, &value, &id));
     EXPECT_EQ("10", key);
-    EXPECT_EQ("\xEF\xBC\x91\xEF\xBC\x90", value);
+    EXPECT_EQ("１０", value);
   }
 
   {
     string key;
     string value;
     uint16 id = 0;
-    // "あ"
-    EXPECT_FALSE(converter->GetLastConnectivePart(
-        "\xE3\x81\x82", &key, &value, &id));
+    EXPECT_FALSE(converter->GetLastConnectivePart("あ", &key, &value, &id));
   }
 }
 
 TEST_F(ConverterTest, ReconstructHistory) {
-  scoped_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
   ConverterInterface *converter = engine->GetConverter();
 
-  // "１０"
-  const char kTen[] = "\xEF\xBC\x91\xEF\xBC\x90";
+  const char kTen[] = "１０";
 
   Segments segments;
   EXPECT_TRUE(converter->ReconstructHistory(&segments, kTen));
@@ -1677,6 +1581,244 @@ TEST_F(ConverterTest, ReconstructHistory) {
   EXPECT_EQ(kTen, candidate.value);
   EXPECT_NE(0, candidate.lid);
   EXPECT_NE(0, candidate.rid);
+}
+
+TEST_F(ConverterTest, LimitCandidatesSize) {
+  std::unique_ptr<EngineInterface> engine(MockDataEngineFactory::Create());
+  ConverterInterface *converter = engine->GetConverter();
+
+  composer::Table table;
+  const config::Config &config = config::ConfigHandler::DefaultConfig();
+  mozc::commands::Request request_proto;
+  mozc::composer::Composer composer(&table, &request_proto, &config);
+  composer.InsertCharacterPreedit("あ");
+  ConversionRequest request(&composer, &request_proto, &config);
+
+  Segments segments;
+  ASSERT_TRUE(converter->StartConversionForRequest(request, &segments));
+  ASSERT_EQ(1, segments.conversion_segments_size());
+  const int original_candidates_size =
+      segments.segment(0).candidates_size();
+  const int original_meta_candidates_size =
+      segments.segment(0).meta_candidates_size();
+  EXPECT_LT(0, original_candidates_size - 1 - original_meta_candidates_size)
+      << "original candidates size: " << original_candidates_size
+      << ", original meta candidates size: " << original_meta_candidates_size;
+
+  segments.Clear();
+  request_proto.set_candidates_size_limit(original_candidates_size - 1);
+  ASSERT_TRUE(converter->StartConversionForRequest(request, &segments));
+  ASSERT_EQ(1, segments.conversion_segments_size());
+  EXPECT_GE(original_candidates_size - 1,
+            segments.segment(0).candidates_size());
+  EXPECT_LE(original_candidates_size - 1 - original_meta_candidates_size,
+            segments.segment(0).candidates_size());
+  EXPECT_EQ(original_meta_candidates_size,
+            segments.segment(0).meta_candidates_size());
+
+  segments.Clear();
+  request_proto.set_candidates_size_limit(0);
+  ASSERT_TRUE(converter->StartConversionForRequest(request, &segments));
+  ASSERT_EQ(1, segments.conversion_segments_size());
+  EXPECT_EQ(1, segments.segment(0).candidates_size());
+  EXPECT_EQ(original_meta_candidates_size,
+            segments.segment(0).meta_candidates_size());
+}
+
+TEST_F(ConverterTest, UserEntryShouldBePromoted) {
+  using user_dictionary::UserDictionary;
+  std::vector<UserDefinedEntry> user_defined_entries;
+  // "哀" is not in the test dictionary
+  user_defined_entries.push_back(
+      UserDefinedEntry("あい", "哀", UserDictionary::NOUN));
+
+  std::unique_ptr<ConverterAndData> ret(
+      CreateConverterAndDataWithUserDefinedEntries(
+          user_defined_entries, new StubRewriter, STUB_PREDICTOR));
+
+  ConverterInterface *converter = ret->converter.get();
+  CHECK(converter);
+  {
+    Segments segments;
+    EXPECT_TRUE(converter->StartConversion(&segments, "あい"));
+    ASSERT_EQ(1, segments.conversion_segments_size());
+    ASSERT_LT(1, segments.conversion_segment(0).candidates_size());
+    EXPECT_EQ("哀", segments.conversion_segment(0).candidate(0).value);
+  }
+}
+
+TEST_F(ConverterTest, UserEntryShouldBePromoted_MobilePrediction) {
+  using user_dictionary::UserDictionary;
+  std::vector<UserDefinedEntry> user_defined_entries;
+  // "哀" is not in the test dictionary
+  user_defined_entries.push_back(
+      UserDefinedEntry("あい", "哀", UserDictionary::NOUN));
+
+  std::unique_ptr<ConverterAndData> ret(
+      CreateConverterAndDataWithUserDefinedEntries(
+          user_defined_entries, new StubRewriter, MOBILE_PREDICTOR));
+
+  ConverterInterface *converter = ret->converter.get();
+  CHECK(converter);
+  {
+    Segments segments;
+    EXPECT_TRUE(converter->StartPrediction(&segments, "あい"));
+    ASSERT_EQ(1, segments.conversion_segments_size());
+    ASSERT_LT(1, segments.conversion_segment(0).candidates_size());
+
+    // "哀" should be the top result for the key "あい".
+    int first_ai_index = -1;
+    for (int i = 0; i < segments.conversion_segment(0).candidates_size(); ++i) {
+      if (segments.conversion_segment(0).candidate(i).key == "あい") {
+        first_ai_index = i;
+        break;
+      }
+    }
+    ASSERT_NE(-1, first_ai_index);
+    EXPECT_EQ("哀",
+              segments.conversion_segment(0).candidate(first_ai_index).value);
+  }
+}
+
+TEST_F(ConverterTest, SuppressionEntryShouldBePrioritized) {
+  using user_dictionary::UserDictionary;
+  std::vector<UserDefinedEntry> user_defined_entries;
+  // "哀" is not in the test dictionary
+  user_defined_entries.push_back(
+      UserDefinedEntry("あい", "哀", UserDictionary::NOUN));
+  user_defined_entries.push_back(
+      UserDefinedEntry("あい", "哀", UserDictionary::SUPPRESSION_WORD));
+
+  std::unique_ptr<ConverterAndData> ret(
+      CreateConverterAndDataWithUserDefinedEntries(
+          user_defined_entries, new StubRewriter, STUB_PREDICTOR));
+
+  ConverterInterface *converter = ret->converter.get();
+  CHECK(converter);
+  {
+    Segments segments;
+    EXPECT_TRUE(converter->StartConversion(&segments, "あい"));
+    ASSERT_EQ(1, segments.conversion_segments_size());
+    ASSERT_LT(1, segments.conversion_segment(0).candidates_size());
+    EXPECT_FALSE(FindCandidateByValue("哀", segments.conversion_segment(0)));
+  }
+}
+
+TEST_F(ConverterTest, SuppressionEntryShouldBePrioritized_Prediction) {
+  using user_dictionary::UserDictionary;
+  std::vector<UserDefinedEntry> user_defined_entries;
+  // "哀" is not in the test dictionary
+  user_defined_entries.push_back(
+      UserDefinedEntry("あい", "哀", UserDictionary::NOUN));
+  user_defined_entries.push_back(
+      UserDefinedEntry("あい", "哀", UserDictionary::SUPPRESSION_WORD));
+
+  PredictorType types[] = {DEFAULT_PREDICTOR, MOBILE_PREDICTOR};
+  for (int i = 0; i < arraysize(types); ++i) {
+    std::unique_ptr<ConverterAndData> ret(
+        CreateConverterAndDataWithUserDefinedEntries(
+            user_defined_entries, new StubRewriter, types[i]));
+    ConverterInterface *converter = ret->converter.get();
+    CHECK(converter);
+    {
+      Segments segments;
+      EXPECT_TRUE(converter->StartPrediction(&segments, "あい"));
+      ASSERT_EQ(1, segments.conversion_segments_size());
+      ASSERT_LT(1, segments.conversion_segment(0).candidates_size());
+      EXPECT_FALSE(FindCandidateByValue("哀", segments.conversion_segment(0)));
+    }
+  }
+}
+
+TEST_F(ConverterTest, AbbreviationShouldBeIndependent) {
+  using user_dictionary::UserDictionary;
+  std::vector<UserDefinedEntry> user_defined_entries;
+  user_defined_entries.push_back(
+      UserDefinedEntry("じゅ", "Google+", UserDictionary::ABBREVIATION));
+
+  std::unique_ptr<ConverterAndData> ret(
+      CreateConverterAndDataWithUserDefinedEntries(
+          user_defined_entries, new StubRewriter, STUB_PREDICTOR));
+
+  ConverterInterface *converter = ret->converter.get();
+  CHECK(converter);
+  {
+    Segments segments;
+    EXPECT_TRUE(converter->StartConversion(&segments, "じゅうじか"));
+    ASSERT_EQ(1, segments.conversion_segments_size());
+    EXPECT_FALSE(
+        FindCandidateByValue("Google+うじか", segments.conversion_segment(0)));
+  }
+}
+
+TEST_F(ConverterTest, AbbreviationShouldBeIndependent_Prediction) {
+  using user_dictionary::UserDictionary;
+  std::vector<UserDefinedEntry> user_defined_entries;
+  user_defined_entries.push_back(
+      UserDefinedEntry("じゅ", "Google+", UserDictionary::ABBREVIATION));
+
+  PredictorType types[] = {DEFAULT_PREDICTOR, MOBILE_PREDICTOR};
+  for (int i = 0; i < arraysize(types); ++i) {
+    std::unique_ptr<ConverterAndData> ret(
+        CreateConverterAndDataWithUserDefinedEntries(
+            user_defined_entries, new StubRewriter, types[i]));
+
+    ConverterInterface *converter = ret->converter.get();
+    CHECK(converter);
+
+    {
+      Segments segments;
+      EXPECT_TRUE(converter->StartPrediction(&segments, "じゅうじか"));
+      ASSERT_EQ(1, segments.conversion_segments_size());
+      EXPECT_FALSE(FindCandidateByValue("Google+うじか",
+                                        segments.conversion_segment(0)));
+    }
+  }
+}
+
+TEST_F(ConverterTest, SuggestionOnlyShouldBeIndependent) {
+  using user_dictionary::UserDictionary;
+  std::vector<UserDefinedEntry> user_defined_entries;
+  user_defined_entries.push_back(
+      UserDefinedEntry("じゅ", "Google+", UserDictionary::SUGGESTION_ONLY));
+
+  std::unique_ptr<ConverterAndData> ret(
+      CreateConverterAndDataWithUserDefinedEntries(
+          user_defined_entries, new StubRewriter, STUB_PREDICTOR));
+
+  ConverterInterface *converter = ret->converter.get();
+  CHECK(converter);
+  {
+    Segments segments;
+    EXPECT_TRUE(converter->StartConversion(&segments, "じゅうじか"));
+    ASSERT_EQ(1, segments.conversion_segments_size());
+    EXPECT_FALSE(
+        FindCandidateByValue("Google+うじか", segments.conversion_segment(0)));
+  }
+}
+
+TEST_F(ConverterTest, SuggestionOnlyShouldBeIndependent_Prediction) {
+  using user_dictionary::UserDictionary;
+  std::vector<UserDefinedEntry> user_defined_entries;
+  user_defined_entries.push_back(
+      UserDefinedEntry("じゅ", "Google+", UserDictionary::SUGGESTION_ONLY));
+
+  PredictorType types[] = {DEFAULT_PREDICTOR, MOBILE_PREDICTOR};
+  for (int i = 0; i < arraysize(types); ++i) {
+    std::unique_ptr<ConverterAndData> ret(
+        CreateConverterAndDataWithUserDefinedEntries(
+            user_defined_entries, new StubRewriter, types[i]));
+
+    ConverterInterface *converter = ret->converter.get();
+    CHECK(converter);
+    {
+      Segments segments;
+      EXPECT_TRUE(converter->StartConversion(&segments, "じゅうじか"));
+      ASSERT_EQ(1, segments.conversion_segments_size());
+      EXPECT_FALSE(FindCandidateByValue("Google+うじか",
+                                        segments.conversion_segment(0)));
+    }
+  }
 }
 
 }  // namespace mozc

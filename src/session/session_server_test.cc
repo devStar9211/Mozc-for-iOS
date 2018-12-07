@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,14 +29,14 @@
 
 #include "session/session_server.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "base/scheduler.h"
 #include "base/system_util.h"
+#include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
-
-DECLARE_string(test_tmpdir);
 
 namespace mozc {
 namespace {
@@ -48,23 +48,21 @@ class JobRecorder : public Scheduler::SchedulerInterface {
     job_settings_.push_back(job_setting);
     return true;
   }
-  const vector<Scheduler::JobSetting> &job_settings() const {
+  bool HasJob(const string &name) const {
+    for (size_t i = 0; i < job_settings_.size(); ++i) {
+      if (job_settings_[i].name() == name) {
+        return true;
+      }
+    }
+    return false;
+  }
+  const std::vector<Scheduler::JobSetting> &job_settings() const {
     return job_settings_;
   }
 
  private:
-  vector<Scheduler::JobSetting> job_settings_;
+  std::vector<Scheduler::JobSetting> job_settings_;
 };
-
-bool FindJobByName(const vector<Scheduler::JobSetting> &job_settings,
-                   const string &job_name) {
-  for (size_t i = 0; i < job_settings.size(); ++i) {
-    if (job_settings[i].name() == job_name) {
-      return true;
-    }
-  }
-  return false;
-}
 }  // namespace
 class SessionServerTest : public testing::Test {
  protected:
@@ -74,14 +72,12 @@ class SessionServerTest : public testing::Test {
 };
 
 TEST_F(SessionServerTest, SetSchedulerJobTest) {
-  scoped_ptr<JobRecorder> job_recorder(new JobRecorder);
+  std::unique_ptr<JobRecorder> job_recorder(new JobRecorder);
   Scheduler::SetSchedulerHandler(job_recorder.get());
-  scoped_ptr<SessionServer> session_server(new SessionServer);
-  const vector<Scheduler::JobSetting> &job_settings =
-      job_recorder->job_settings();
-  EXPECT_LE(2, job_settings.size());
-  EXPECT_TRUE(FindJobByName(job_settings, "UsageStatsTimer"));
-  EXPECT_TRUE(FindJobByName(job_settings, "SaveCachedStats"));
+  std::unique_ptr<SessionServer> session_server(new SessionServer);
+  EXPECT_LE(2, job_recorder->job_settings().size());
+  EXPECT_TRUE(job_recorder->HasJob("UsageStatsTimer"));
+  EXPECT_TRUE(job_recorder->HasJob("SaveCachedStats"));
   Scheduler::SetSchedulerHandler(NULL);
 }
 }  // namespace mozc

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,9 +29,6 @@
 
 #include "dictionary/user_dictionary_storage.h"
 
-#include <google/protobuf/io/coded_stream.h>
-#include <google/protobuf/io/zero_copy_stream_impl.h>
-
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -48,7 +45,6 @@
 #include "base/protobuf/protobuf.h"
 #include "base/protobuf/repeated_field.h"
 #include "base/protobuf/zero_copy_stream_impl.h"
-#include "base/scoped_ptr.h"
 #include "base/util.h"
 #include "dictionary/user_dictionary_util.h"
 
@@ -64,14 +60,9 @@ const size_t kDefaultTotalBytesLimit = 512 << 20;
 // saved correctly. Please make the dictionary size smaller"
 const size_t kDefaultWarningTotalBytesLimit = 256 << 20;
 
-// "自動登録単語";
-const char kAutoRegisteredDictionaryName[] =
-  "\xE8\x87\xAA\xE5\x8B\x95\xE7\x99\xBB\xE9\x8C\xB2\xE5\x8D\x98\xE8\xAA\x9E";
-
+const char kAutoRegisteredDictionaryName[] = "自動登録単語";
 const char kDefaultSyncDictionaryName[] = "Sync Dictionary";
-// "同期用辞書"
-const char *kDictionaryNameConvertedFromSyncableDictionary =
-    "\xE5\x90\x8C\xE6\x9C\x9F\xE7\x94\xA8\xE8\xBE\x9E\xE6\x9B\xB8";
+const char *kDictionaryNameConvertedFromSyncableDictionary = "同期用辞書";
 
 }  // namespace
 
@@ -96,8 +87,8 @@ bool UserDictionaryStorage::Exists() const {
   return FileUtil::FileExists(file_name_);
 }
 
-bool UserDictionaryStorage::LoadInternal(bool run_migration) {
-  InputFileStream ifs(file_name_.c_str(), ios::binary);
+bool UserDictionaryStorage::LoadInternal() {
+  InputFileStream ifs(file_name_.c_str(), std::ios::binary);
   if (!ifs) {
     if (Exists()) {
       LOG(ERROR) << file_name_ << " exists but cannot be opened.";
@@ -127,29 +118,17 @@ bool UserDictionaryStorage::LoadInternal(bool run_migration) {
     }
   }
 
-  // Maybe this is just older file format.
-  // Note that the data in older format can be parsed "successfully,"
-  // so that it is necessary to run migration code from the older format to
-  // the newer format.
-  if (run_migration) {
-    if (!UserDictionaryUtil::ResolveUnknownFieldSet(this)) {
-      LOG(ERROR) << "Failed to resolve older fields.";
-      // Do *NOT* return false even if resolving is somehow failed,
-      // because some entries may get succeeded to be migrated.
-    }
-  }
-
   return true;
 }
 
-bool UserDictionaryStorage::LoadAndMigrateDictionaries(bool run_migration) {
+bool UserDictionaryStorage::Load() {
   last_error_type_ = USER_DICTIONARY_STORAGE_NO_ERROR;
 
   bool result = false;
 
   // Check if the user dictionary exists or not.
   if (Exists()) {
-    result = LoadInternal(run_migration);
+    result = LoadInternal();
   } else {
     // This is also an expected scenario: e.g., clean installation, unit tests.
     VLOG(1) << "User dictionary file has not been created.";
@@ -169,42 +148,6 @@ bool UserDictionaryStorage::LoadAndMigrateDictionaries(bool run_migration) {
   return result;
 }
 
-namespace {
-
-const bool kRunMigration = true;
-
-}  // namespace
-
-bool UserDictionaryStorage::Load() {
-  return LoadAndMigrateDictionaries(kRunMigration);
-}
-
-bool UserDictionaryStorage::LoadWithoutMigration() {
-  return LoadAndMigrateDictionaries(!kRunMigration);
-}
-
-namespace {
-
-bool SerializeUserDictionaryStorageToOstream(
-    const user_dictionary::UserDictionaryStorage &input_storage,
-    ostream *stream) {
-#ifdef OS_ANDROID
-  // To keep memory usage low, we do not copy the input storage on mobile.
-  // Fortunately, on mobile, we don't need to think about users who re-install
-  // older version after a new version is installed. So, we don't need to
-  // fill the deprecated field here.
-  return input_storage.SerializeToOstream(stream);
-#else
-  // To support backward compatibility, we set deprecated field temporarily.
-  // TODO(hidehiko): remove this after migration.
-  user_dictionary::UserDictionaryStorage storage(input_storage);
-  UserDictionaryUtil::FillDesktopDeprecatedPosField(&storage);
-  return storage.SerializeToOstream(stream);
-#endif  // OS_ANDROID
-}
-
-}  // namespace
-
 bool UserDictionaryStorage::Save() {
   last_error_type_ = USER_DICTIONARY_STORAGE_NO_ERROR;
 
@@ -221,14 +164,14 @@ bool UserDictionaryStorage::Save() {
   const string tmp_file_name = file_name_ + ".tmp";
   {
     OutputFileStream ofs(tmp_file_name.c_str(),
-                         ios::out|ios::binary|ios::trunc);
+                         std::ios::out | std::ios::binary | std::ios::trunc);
     if (!ofs) {
       LOG(ERROR) << "cannot open file: " << tmp_file_name;
       last_error_type_ = SYNC_FAILURE;
       return false;
     }
 
-    if (!SerializeUserDictionaryStorageToOstream(*this, &ofs)) {
+    if (!SerializeToOstream(&ofs)) {
       LOG(ERROR) << "SerializeToString failed";
       last_error_type_ = SYNC_FAILURE;
       return false;
@@ -287,10 +230,9 @@ bool UserDictionaryStorage::ExportDictionary(
   const UserDictionary &dic = dictionaries(index);
   for (size_t i = 0; i < dic.entries_size(); ++i) {
     const UserDictionaryEntry &entry = dic.entries(i);
-    ofs << entry.key() << "\t"
-        << entry.value() << "\t"
+    ofs << entry.key() << "\t" << entry.value() << "\t"
         << UserDictionaryUtil::GetStringPosType(entry.pos()) << "\t"
-        << entry.comment() << endl;
+        << entry.comment() << std::endl;
   }
 
   return true;
@@ -328,45 +270,6 @@ bool UserDictionaryStorage::CreateDictionary(
 
   return
       status == UserDictionaryCommandStatus::USER_DICTIONARY_COMMAND_SUCCESS;
-}
-
-bool UserDictionaryStorage::CopyDictionary(uint64 dic_id,
-                                           const string &dic_name,
-                                           uint64 *new_dic_id) {
-  last_error_type_ = USER_DICTIONARY_STORAGE_NO_ERROR;
-
-  if (!UserDictionaryStorage::IsValidDictionaryName(dic_name)) {
-    LOG(ERROR) << "Invalid dictionary name is passed";
-    return false;
-  }
-
-  if (UserDictionaryUtil::IsStorageFull(*this)) {
-    last_error_type_ = TOO_MANY_DICTIONARIES;
-    LOG(ERROR) << "too many dictionaries";
-    return false;
-  }
-
-  if (new_dic_id == NULL) {
-    last_error_type_ = UNKNOWN_ERROR;
-    LOG(ERROR) << "new_dic_id is NULL";
-    return false;
-  }
-
-  UserDictionary *dic = GetUserDictionary(dic_id);
-  if (dic == NULL) {
-    last_error_type_ = INVALID_DICTIONARY_ID;
-    LOG(ERROR) << "Invalid dictionary id: " << dic_id;
-    return false;
-  }
-
-  UserDictionary *new_dic = add_dictionaries();
-  new_dic->CopyFrom(*dic);
-
-  *new_dic_id = UserDictionaryUtil::CreateNewDictionaryId(*this);
-  dic->set_id(*new_dic_id);
-  dic->set_name(dic_name);
-
-  return true;
 }
 
 bool UserDictionaryStorage::DeleteDictionary(uint64 dic_id) {

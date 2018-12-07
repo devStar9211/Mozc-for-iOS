@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -37,13 +37,33 @@
         'codec.cc',
       ],
       'dependencies': [
+        'codec_util',
         '../../base/base.gyp:base_core',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
+    },
+    {
+      'target_name': 'codec_factory',
+      'type': 'static_library',
+      'toolsets': ['target', 'host'],
+      'sources': [
+        'codec_factory.cc',
+      ],
+      'dependencies': [
+        'codec',
+        'codec_util',
+        '../../base/base.gyp:base_core',
+      ],
+    },
+    {
+      'target_name': 'codec_util',
+      'type': 'static_library',
+      'toolsets': ['target', 'host'],
+      'sources': [
+        'codec_util.cc',
+      ],
+      'dependencies': [
+        '../../base/base.gyp:base_core',
+      ],
     },
     {
       'target_name': 'dictionary_file',
@@ -56,11 +76,6 @@
         'codec',
         '../../base/base.gyp:base_core',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'dictionary_file_builder',
@@ -73,11 +88,6 @@
         'codec',
         '../../base/base.gyp:base_core',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
   ],
 }

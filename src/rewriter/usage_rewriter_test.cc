@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,27 +27,36 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifndef NO_USAGE_REWRITER
+
 #include "rewriter/usage_rewriter.h"
 
+#include <memory>
 #include <string>
 
 #include "base/system_util.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
 #include "data_manager/testing/mock_data_manager.h"
-#include "data_manager/user_pos_manager.h"
 #include "dictionary/pos_matcher.h"
 #include "dictionary/suppression_dictionary.h"
 #include "dictionary/user_dictionary.h"
 #include "dictionary/user_dictionary_storage.h"
+#include "dictionary/user_pos.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
+#include "request/conversion_request.h"
 #include "testing/base/public/gunit.h"
 
 DECLARE_string(test_tmpdir);
 
 namespace mozc {
 namespace {
+
+using dictionary::SuppressionDictionary;
+using dictionary::UserDictionary;
+using dictionary::UserPOS;
+
 void AddCandidate(const string &key, const string &value,
                   const string &content_key, const string &content_value,
                   Segment *segment) {
@@ -58,30 +67,32 @@ void AddCandidate(const string &key, const string &value,
   candidate->content_key = content_key;
   candidate->content_value = content_value;
 }
+
 }  // namespace
 
 class UsageRewriterTest : public ::testing::Test {
  protected:
-  virtual void SetUp() {
+  UsageRewriterTest() {
+    convreq_.set_request(&request_);
+    convreq_.set_config(&config_);
+  }
+
+  void SetUp() override {
     SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config::ConfigHandler::SetConfig(config);
+    config::ConfigHandler::GetDefaultConfig(&config_);
 
     data_manager_.reset(new testing::MockDataManager);
-
+    pos_matcher_.Set(data_manager_->GetPOSMatcherData());
     suppression_dictionary_.reset(new SuppressionDictionary);
     user_dictionary_.reset(
-        new UserDictionary(new UserPOS(data_manager_->GetUserPOSData()),
-                           data_manager_->GetPOSMatcher(),
+        new UserDictionary(UserPOS::CreateFromDataManager(*data_manager_),
+                           pos_matcher_,
                            suppression_dictionary_.get()));
   }
 
-  virtual void TearDown() {
-    // just in case, reset the config in test_tmpdir
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config::ConfigHandler::SetConfig(config);
+  void TearDown() override {
+    // just in case, reset the config
+    config::ConfigHandler::GetDefaultConfig(&config_);
   }
 
   UsageRewriter *CreateUsageRewriter() const {
@@ -90,233 +101,143 @@ class UsageRewriterTest : public ::testing::Test {
         user_dictionary_.get());
   }
 
-  scoped_ptr<SuppressionDictionary> suppression_dictionary_;
-  scoped_ptr<UserDictionary> user_dictionary_;
-  scoped_ptr<testing::MockDataManager> data_manager_;
+  ConversionRequest convreq_;
+  commands::Request request_;
+  config::Config config_;
+
+  std::unique_ptr<SuppressionDictionary> suppression_dictionary_;
+  std::unique_ptr<UserDictionary> user_dictionary_;
+  std::unique_ptr<testing::MockDataManager> data_manager_;
+  dictionary::POSMatcher pos_matcher_;
 };
 
 TEST_F(UsageRewriterTest, CapabilityTest) {
-  scoped_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
-  const ConversionRequest request;
+  std::unique_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
   EXPECT_EQ(RewriterInterface::CONVERSION |
             RewriterInterface::PREDICTION,
-            rewriter->capability(request));
+            rewriter->capability(convreq_));
 }
 
 TEST_F(UsageRewriterTest, ConjugationTest) {
   Segments segments;
-  scoped_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
+  std::unique_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
   Segment *seg;
 
   segments.Clear();
   seg = segments.push_back_segment();
-  // "うたえば"
-  seg->set_key("\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88\xE3\x81\xB0\x22");
-  // "うたえば", "歌えば", "うたえ", "歌え",
-  AddCandidate("\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88\xE3\x81\xB0\x22",
-               "\xE6\xAD\x8C\xE3\x81\x88\xE3\x81\xB0",
-               "\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88",
-               "\xE6\xAD\x8C\xE3\x81\x88", seg);
-  // "うたえば", "唱えば", "うたえ", "唄え"
-  AddCandidate("\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88\xE3\x81\xB0",
-               "\xE5\x94\xB1\xE3\x81\x88\xE3\x81\xB0",
-               "\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88",
-               "\xE5\x94\x84\xE3\x81\x88", seg);
-  const ConversionRequest default_request;
-  EXPECT_TRUE(rewriter->Rewrite(default_request, &segments));
-  // "歌う"
-  EXPECT_EQ("\xE6\xAD\x8C\xE3\x81\x86",
-            segments.conversion_segment(0).candidate(0).usage_title);
+  seg->set_key("うたえば");
+  AddCandidate("うたえば", "歌えば", "うたえ", "歌え", seg);
+  AddCandidate("うたえば", "唱えば", "うたえ", "唄え", seg);
+  EXPECT_TRUE(rewriter->Rewrite(convreq_, &segments));
+  EXPECT_EQ("歌う", segments.conversion_segment(0).candidate(0).usage_title);
   EXPECT_NE("", segments.conversion_segment(0).candidate(0).usage_description);
-  // "唄う"
-  EXPECT_EQ("\xE5\x94\x84\xE3\x81\x86",
-            segments.conversion_segment(0).candidate(1).usage_title);
+  EXPECT_EQ("唄う", segments.conversion_segment(0).candidate(1).usage_title);
   EXPECT_NE("", segments.conversion_segment(0).candidate(1).usage_description);
 }
 
 TEST_F(UsageRewriterTest, SingleSegmentSingleCandidateTest) {
   Segments segments;
-  scoped_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
+  std::unique_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
   Segment *seg;
-  const ConversionRequest request;
 
   segments.Clear();
   seg = segments.push_back_segment();
-  // "あおい"
-  seg->set_key("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84");
-  // "あおい", "青い", "あおい", "青い"
-  AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE9\x9D\x92\xE3\x81\x84",
-               "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE9\x9D\x92\xE3\x81\x84", seg);
-  EXPECT_TRUE(rewriter->Rewrite(request, &segments));
-  // "青い"
-  EXPECT_EQ("\xE9\x9D\x92\xE3\x81\x84",
-            segments.conversion_segment(0).candidate(0).usage_title);
+  seg->set_key("あおい");
+  AddCandidate("あおい", "青い", "あおい", "青い", seg);
+  EXPECT_TRUE(rewriter->Rewrite(convreq_, &segments));
+  EXPECT_EQ("青い", segments.conversion_segment(0).candidate(0).usage_title);
   EXPECT_NE("", segments.conversion_segment(0).candidate(0).usage_description);
 
   segments.Clear();
   seg = segments.push_back_segment();
-  // "あおい"
-  seg->set_key("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84");
-  // "あおい", "あああ", "あおい", "あああ"
-  AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE3\x81\x82\xE3\x81\x82\xE3\x81\x82",
-               "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE3\x81\x82\xE3\x81\x82\xE3\x81\x82", seg);
-  EXPECT_FALSE(rewriter->Rewrite(request, &segments));
+  seg->set_key("あおい");
+  AddCandidate("あおい", "あああ", "あおい", "あああ", seg);
+  EXPECT_FALSE(rewriter->Rewrite(convreq_, &segments));
   EXPECT_EQ("", segments.conversion_segment(0).candidate(0).usage_title);
   EXPECT_EQ("", segments.conversion_segment(0).candidate(0).usage_description);
 }
 
 TEST_F(UsageRewriterTest, ConfigTest) {
   Segments segments;
-  scoped_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
+  std::unique_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
   Segment *seg;
-  const ConversionRequest request;
 
   // Default setting
   {
     segments.Clear();
     seg = segments.push_back_segment();
-    // "あおい"
-    seg->set_key("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84");
-    // "あおい", "青い", "あおい", "青い"
-    AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-                 "\xE9\x9D\x92\xE3\x81\x84",
-                 "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-                 "\xE9\x9D\x92\xE3\x81\x84", seg);
-    EXPECT_TRUE(rewriter->Rewrite(request, &segments));
+    seg->set_key("あおい");
+    AddCandidate("あおい", "青い", "あおい", "青い", seg);
+    EXPECT_TRUE(rewriter->Rewrite(convreq_, &segments));
   }
 
   {
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config.mutable_information_list_config()->
-        set_use_local_usage_dictionary(false);
-    config::ConfigHandler::SetConfig(config);
+    config_.mutable_information_list_config()->set_use_local_usage_dictionary(
+        false);
 
     segments.Clear();
     seg = segments.push_back_segment();
-    // "あおい"
-    seg->set_key("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84");
-    // "あおい", "青い", "あおい", "青い"
-    AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-                 "\xE9\x9D\x92\xE3\x81\x84",
-                 "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-                 "\xE9\x9D\x92\xE3\x81\x84", seg);
-    EXPECT_FALSE(rewriter->Rewrite(request, &segments));
+    seg->set_key("あおい");
+    AddCandidate("あおい", "青い", "あおい", "青い", seg);
+    EXPECT_FALSE(rewriter->Rewrite(convreq_, &segments));
   }
 
   {
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config.mutable_information_list_config()->
-        set_use_local_usage_dictionary(true);
-    config::ConfigHandler::SetConfig(config);
+    config_.mutable_information_list_config()->set_use_local_usage_dictionary(
+        true);
 
     segments.Clear();
     seg = segments.push_back_segment();
-    // "あおい"
-    seg->set_key("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84");
-    // "あおい", "青い", "あおい", "青い"
-    AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-                 "\xE9\x9D\x92\xE3\x81\x84",
-                 "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-                 "\xE9\x9D\x92\xE3\x81\x84", seg);
-    EXPECT_TRUE(rewriter->Rewrite(request, &segments));
+    seg->set_key("あおい");
+    AddCandidate("あおい", "青い", "あおい", "青い", seg);
+    EXPECT_TRUE(rewriter->Rewrite(convreq_, &segments));
   }
 }
 
 TEST_F(UsageRewriterTest, SingleSegmentMultiCandidatesTest) {
   Segments segments;
-  scoped_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
+  std::unique_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
   Segment *seg;
-  const ConversionRequest request;
 
   segments.Clear();
   seg = segments.push_back_segment();
-  // "あおい"
-  seg->set_key("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84");
-  // "あおい", "青い", "あおい", "青い"
-  AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE9\x9D\x92\xE3\x81\x84",
-               "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE9\x9D\x92\xE3\x81\x84", seg);
-  // "あおい", "蒼い", "あおい", "蒼い"
-  AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE8\x92\xBC\xE3\x81\x84",
-               "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE8\x92\xBC\xE3\x81\x84", seg);
-  EXPECT_TRUE(rewriter->Rewrite(request, &segments));
-  // "青い"
-  EXPECT_EQ("\xE9\x9D\x92\xE3\x81\x84",
-            segments.conversion_segment(0).candidate(0).usage_title);
+  seg->set_key("あおい");
+  AddCandidate("あおい", "青い", "あおい", "青い", seg);
+  AddCandidate("あおい", "蒼い", "あおい", "蒼い", seg);
+  EXPECT_TRUE(rewriter->Rewrite(convreq_, &segments));
+  EXPECT_EQ("青い", segments.conversion_segment(0).candidate(0).usage_title);
   EXPECT_NE("", segments.conversion_segment(0).candidate(0).usage_description);
-  // "蒼い"
-  EXPECT_EQ("\xE8\x92\xBC\xE3\x81\x84",
-            segments.conversion_segment(0).candidate(1).usage_title);
+  EXPECT_EQ("蒼い", segments.conversion_segment(0).candidate(1).usage_title);
   EXPECT_NE("", segments.conversion_segment(0).candidate(1).usage_description);
 
   segments.Clear();
   seg = segments.push_back_segment();
-  // "あおい"
-  seg->set_key("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84");
-  // "あおい", "青い", "あおい", "青い"
-  AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE9\x9D\x92\xE3\x81\x84",
-               "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE9\x9D\x92\xE3\x81\x84", seg);
-  // "あおい", "あああ", "あおい", "あああ"
-  AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE3\x81\x82\xE3\x81\x82\xE3\x81\x82",
-               "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE3\x81\x82\xE3\x81\x82\xE3\x81\x82", seg);
-  EXPECT_TRUE(rewriter->Rewrite(request, &segments));
-  // "青い"
-  EXPECT_EQ("\xE9\x9D\x92\xE3\x81\x84",
-            segments.conversion_segment(0).candidate(0).usage_title);
+  seg->set_key("あおい");
+  AddCandidate("あおい", "青い", "あおい", "青い", seg);
+  AddCandidate("あおい", "あああ", "あおい", "あああ", seg);
+  EXPECT_TRUE(rewriter->Rewrite(convreq_, &segments));
+  EXPECT_EQ("青い", segments.conversion_segment(0).candidate(0).usage_title);
   EXPECT_NE("", segments.conversion_segment(0).candidate(0).usage_description);
   EXPECT_EQ("", segments.conversion_segment(0).candidate(1).usage_title);
   EXPECT_EQ("", segments.conversion_segment(0).candidate(1).usage_description);
 
   segments.Clear();
   seg = segments.push_back_segment();
-  // "あおい"
-  seg->set_key("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84");
-  // "あおい", "あああ", "あおい", "あああ"
-  AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE3\x81\x82\xE3\x81\x82\xE3\x81\x82",
-               "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE3\x81\x82\xE3\x81\x82\xE3\x81\x82", seg);
-  // "あおい", "青い", "あおい", "青い"
-  AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE9\x9D\x92\xE3\x81\x84",
-               "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE9\x9D\x92\xE3\x81\x84", seg);
-  EXPECT_TRUE(rewriter->Rewrite(request, &segments));
+  seg->set_key("あおい");
+  AddCandidate("あおい", "あああ", "あおい", "あああ", seg);
+  AddCandidate("あおい", "青い", "あおい", "青い", seg);
+  EXPECT_TRUE(rewriter->Rewrite(convreq_, &segments));
   EXPECT_EQ("", segments.conversion_segment(0).candidate(0).usage_title);
   EXPECT_EQ("", segments.conversion_segment(0).candidate(0).usage_description);
-  // "青い"
-  EXPECT_EQ("\xE9\x9D\x92\xE3\x81\x84",
-            segments.conversion_segment(0).candidate(1).usage_title);
+  EXPECT_EQ("青い", segments.conversion_segment(0).candidate(1).usage_title);
   EXPECT_NE("", segments.conversion_segment(0).candidate(1).usage_description);
 
   segments.Clear();
   seg = segments.push_back_segment();
-  // "あおい"
-  seg->set_key("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84");
-  // "あおい", "あああ", "あおい", "あああ"
-  AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE3\x81\x82\xE3\x81\x82\xE3\x81\x82",
-               "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE3\x81\x82\xE3\x81\x82\xE3\x81\x82", seg);
-  // "あおい", "いいい", "あおい", "いいい"
-  AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE3\x81\x84\xE3\x81\x84\xE3\x81\x84",
-               "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x84",
-               "\xE3\x81\x84\xE3\x81\x84\xE3\x81\x84", seg);
-  EXPECT_FALSE(rewriter->Rewrite(request, &segments));
+  seg->set_key("あおい");
+  AddCandidate("あおい", "あああ", "あおい", "あああ", seg);
+  AddCandidate("あおい", "いいい", "あおい", "いいい", seg);
+  EXPECT_FALSE(rewriter->Rewrite(convreq_, &segments));
   EXPECT_EQ("", segments.conversion_segment(0).candidate(0).usage_title);
   EXPECT_EQ("", segments.conversion_segment(0).candidate(0).usage_description);
   EXPECT_EQ("", segments.conversion_segment(0).candidate(1).usage_title);
@@ -325,99 +246,48 @@ TEST_F(UsageRewriterTest, SingleSegmentMultiCandidatesTest) {
 
 TEST_F(UsageRewriterTest, MultiSegmentsTest) {
   Segments segments;
-  scoped_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
+  std::unique_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
   Segment *seg;
-  const ConversionRequest request;
 
   segments.Clear();
   seg = segments.push_back_segment();
-  // "あおく"
-  seg->set_key("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x8F");
-  // "あおく", "青く", "あおく", "青く"
-  AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x8F",
-               "\xE9\x9D\x92\xE3\x81\x8F",
-               "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x8F",
-               "\xE9\x9D\x92\xE3\x81\x8F", seg);
-  // "あおく", "蒼く", "あおく", "蒼く"
-  AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x8F",
-               "\xE8\x92\xBC\xE3\x81\x8F",
-               "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x8F",
-               "\xE8\x92\xBC\xE3\x81\x8F", seg);
-  // "あおく", "アオク", "あおく", "アオク"
-  AddCandidate("\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x8F",
-               "\xE3\x82\xA2\xE3\x82\xAA\xE3\x82\xAF",
-               "\xE3\x81\x82\xE3\x81\x8A\xE3\x81\x8F",
-               "\xE3\x82\xA2\xE3\x82\xAA\xE3\x82\xAF", seg);
+  seg->set_key("あおく");
+  AddCandidate("あおく", "青く", "あおく", "青く", seg);
+  AddCandidate("あおく", "蒼く", "あおく", "蒼く", seg);
+  AddCandidate("あおく", "アオク", "あおく", "アオク", seg);
   seg = segments.push_back_segment();
-  // "うたえば"
-  seg->set_key("\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88\xE3\x81\xB0\x22");
-  // "うたえば", "歌えば", "うたえ", "歌え",
-  AddCandidate("\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88\xE3\x81\xB0\x22",
-               "\xE6\xAD\x8C\xE3\x81\x88\xE3\x81\xB0",
-               "\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88",
-               "\xE6\xAD\x8C\xE3\x81\x88", seg);
-  // "うたえば", "唱えば", "うたえ", "唄え"
-  AddCandidate("\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88\xE3\x81\xB0",
-               "\xE5\x94\xB1\xE3\x81\x88\xE3\x81\xB0",
-               "\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88",
-               "\xE5\x94\x84\xE3\x81\x88", seg);
-  EXPECT_TRUE(rewriter->Rewrite(request, &segments));
-  // "青い"
-  EXPECT_EQ("\xE9\x9D\x92\xE3\x81\x84",
-            segments.conversion_segment(0).candidate(0).usage_title);
+  seg->set_key("うたえば");
+  AddCandidate("うたえば", "歌えば", "うたえ", "歌え", seg);
+  AddCandidate("うたえば", "唱えば", "うたえ", "唄え", seg);
+  EXPECT_TRUE(rewriter->Rewrite(convreq_, &segments));
+  EXPECT_EQ("青い", segments.conversion_segment(0).candidate(0).usage_title);
   EXPECT_NE("", segments.conversion_segment(0).candidate(0).usage_description);
-  // "蒼い"
-  EXPECT_EQ("\xE8\x92\xBC\xE3\x81\x84",
-            segments.conversion_segment(0).candidate(1).usage_title);
+  EXPECT_EQ("蒼い", segments.conversion_segment(0).candidate(1).usage_title);
   EXPECT_NE("", segments.conversion_segment(0).candidate(1).usage_description);
   EXPECT_EQ("", segments.conversion_segment(0).candidate(2).usage_title);
   EXPECT_EQ("", segments.conversion_segment(0).candidate(2).usage_description);
-  // "歌う"
-  EXPECT_EQ("\xE6\xAD\x8C\xE3\x81\x86",
-            segments.conversion_segment(1).candidate(0).usage_title);
+  EXPECT_EQ("歌う", segments.conversion_segment(1).candidate(0).usage_title);
   EXPECT_NE("", segments.conversion_segment(1).candidate(0).usage_description);
-  // "唄う"
-  EXPECT_EQ("\xE5\x94\x84\xE3\x81\x86",
-            segments.conversion_segment(1).candidate(1).usage_title);
+  EXPECT_EQ("唄う", segments.conversion_segment(1).candidate(1).usage_title);
   EXPECT_NE("", segments.conversion_segment(1).candidate(1).usage_description);
 }
 
 TEST_F(UsageRewriterTest, SameUsageTest) {
   Segments segments;
-  scoped_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
+  std::unique_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
   Segment *seg;
-  const ConversionRequest request;
 
   seg = segments.push_back_segment();
-  // "うたえば"
-  seg->set_key("\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88\xE3\x81\xB0\x22");
-  // "うたえば", "歌えば", "うたえ", "歌え",
-  AddCandidate("\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88\xE3\x81\xB0\x22",
-               "\xE6\xAD\x8C\xE3\x81\x88\xE3\x81\xB0",
-               "\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88",
-               "\xE6\xAD\x8C\xE3\x81\x88", seg);
-  // "うたえば", "唱えば", "うたえ", "唄え"
-  AddCandidate("\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88\xE3\x81\xB0",
-               "\xE5\x94\xB1\xE3\x81\x88\xE3\x81\xB0",
-               "\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88",
-               "\xE5\x94\x84\xE3\x81\x88", seg);
-  // "うたえば", "唱エバ", "うたえ", "唄え"
-  AddCandidate("\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88\xE3\x81\xB0",
-               "\xE5\x94\xB1\xE3\x82\xA8\xE3\x83\x90",
-               "\xE3\x81\x86\xE3\x81\x9F\xE3\x81\x88",
-               "\xE5\x94\x84\xE3\x81\x88", seg);
-  EXPECT_TRUE(rewriter->Rewrite(request, &segments));
-  // "歌う"
-  EXPECT_EQ("\xE6\xAD\x8C\xE3\x81\x86",
-            segments.conversion_segment(0).candidate(0).usage_title);
+  seg->set_key("うたえば");
+  AddCandidate("うたえば", "歌えば", "うたえ", "歌え", seg);
+  AddCandidate("うたえば", "唱えば", "うたえ", "唄え", seg);
+  AddCandidate("うたえば", "唱エバ", "うたえ", "唄え", seg);
+  EXPECT_TRUE(rewriter->Rewrite(convreq_, &segments));
+  EXPECT_EQ("歌う", segments.conversion_segment(0).candidate(0).usage_title);
   EXPECT_NE("", segments.conversion_segment(0).candidate(0).usage_description);
-  // "唄う"
-  EXPECT_EQ("\xE5\x94\x84\xE3\x81\x86",
-            segments.conversion_segment(0).candidate(1).usage_title);
+  EXPECT_EQ("唄う", segments.conversion_segment(0).candidate(1).usage_title);
   EXPECT_NE("", segments.conversion_segment(0).candidate(1).usage_description);
-  // "唄う"
-  EXPECT_EQ("\xE5\x94\x84\xE3\x81\x86",
-            segments.conversion_segment(0).candidate(2).usage_title);
+  EXPECT_EQ("唄う", segments.conversion_segment(0).candidate(2).usage_title);
   EXPECT_NE("", segments.conversion_segment(0).candidate(2).usage_description);
   EXPECT_NE(segments.conversion_segment(0).candidate(0).usage_id,
             segments.conversion_segment(0).candidate(1).usage_id);
@@ -426,49 +296,16 @@ TEST_F(UsageRewriterTest, SameUsageTest) {
 }
 
 TEST_F(UsageRewriterTest, GetKanjiPrefixAndOneHiragana) {
-  //  EXPECT_EQ("合わ",
-  // UsageRewriter::GetKanjiPrefixAndOneHiragana("合わせる"));
-  EXPECT_EQ("\xE5\x90\x88\xE3\x82\x8F",
-            UsageRewriter::GetKanjiPrefixAndOneHiragana(
-                "\xE5\x90\x88\xE3\x82\x8F\xE3\x81\x9B\xE3\x82\x8B"));
-
-  // EXPECT_EQ("合う",
-  // UsageRewriter::GetKanjiPrefixAndOneHiragana("合う"));
-  EXPECT_EQ("\xE5\x90\x88\xE3\x81\x86",
-            UsageRewriter::GetKanjiPrefixAndOneHiragana(
-                "\xE5\x90\x88\xE3\x81\x86"));
-
-  // EXPECT_EQ("合合わ",
-  // UsageRewriter::GetKanjiPrefixAndOneHiragana("合合わせる"));
-  EXPECT_EQ("\xE5\x90\x88\xE5\x90\x88\xE3\x82\x8F",
-            UsageRewriter::GetKanjiPrefixAndOneHiragana(
-                "\xE5\x90\x88\xE5\x90\x88\xE3\x82\x8F\xE3\x81\x9B"
-                "\xE3\x82\x8B"));
-
-  // EXPECT_EQ("", UsageRewriter::GetKanjiPrefixAndOneHiragana("合"));
-  EXPECT_EQ("", UsageRewriter::GetKanjiPrefixAndOneHiragana("\xE5\x90\x88"));
-
-  // EXPECT_EQ("", UsageRewriter::GetKanjiPrefixAndOneHiragana("京都"));
-  EXPECT_EQ("", UsageRewriter::GetKanjiPrefixAndOneHiragana(
-      "\xE4\xBA\xAC\xE9\x83\xBD"));
-
-  // EXPECT_EQ("",
-  // UsageRewriter::GetKanjiPrefixAndOneHiragana("合合合わせる"));
-  EXPECT_EQ("", UsageRewriter::GetKanjiPrefixAndOneHiragana(
-      "\xE5\x90\x88\xE5\x90\x88\xE5\x90\x88\xE3\x82\x8F"
-      "\xE3\x81\x9B\xE3\x82\x8B"));
-
-  // EXPECT_EQ("",
-  // UsageRewriter::GetKanjiPrefixAndOneHiragana("カタカナ"));
-  EXPECT_EQ("", UsageRewriter::GetKanjiPrefixAndOneHiragana(
-      "\xE3\x82\xAB\xE3\x82\xBF\xE3\x82\xAB\xE3\x83\x8A"));
-
+  EXPECT_EQ("合わ", UsageRewriter::GetKanjiPrefixAndOneHiragana("合わせる"));
+  EXPECT_EQ("合う", UsageRewriter::GetKanjiPrefixAndOneHiragana("合う"));
+  EXPECT_EQ("合合わ",
+            UsageRewriter::GetKanjiPrefixAndOneHiragana("合合わせる"));
+  EXPECT_EQ("", UsageRewriter::GetKanjiPrefixAndOneHiragana("合"));
+  EXPECT_EQ("", UsageRewriter::GetKanjiPrefixAndOneHiragana("京都"));
+  EXPECT_EQ("", UsageRewriter::GetKanjiPrefixAndOneHiragana("合合合わせる"));
+  EXPECT_EQ("", UsageRewriter::GetKanjiPrefixAndOneHiragana("カタカナ"));
   EXPECT_EQ("", UsageRewriter::GetKanjiPrefixAndOneHiragana("abc"));
-
-  // EXPECT_EQ("",
-  // UsageRewriter::GetKanjiPrefixAndOneHiragana("あ合わせる"));
-  EXPECT_EQ("", UsageRewriter::GetKanjiPrefixAndOneHiragana(
-      "\xE3\x81\x82\xE5\x90\x88\xE3\x82\x8F\xE3\x81\x9B\xE3\x82\x8B"));
+  EXPECT_EQ("", UsageRewriter::GetKanjiPrefixAndOneHiragana("あ合わせる"));
 }
 
 TEST_F(UsageRewriterTest, CommentFromUserDictionary) {
@@ -478,12 +315,10 @@ TEST_F(UsageRewriterTest, CommentFromUserDictionary) {
     UserDictionaryStorage::UserDictionary *dic = storage.add_dictionaries();
 
     UserDictionaryStorage::UserDictionaryEntry *entry = dic->add_entries();
-    // key="うま", value="アルパカ", comment="アルパカコメント"
-    entry->set_key("\xE3\x81\x86\xE3\x81\xBE");
-    entry->set_value("\xE3\x82\xA2\xE3\x83\xAB\xE3\x83\x91\xE3\x82\xAB");
+    entry->set_key("うま");
+    entry->set_value("アルパカ");
     entry->set_pos(user_dictionary::UserDictionary::NOUN);
-    entry->set_comment("\xE3\x82\xA2\xE3\x83\xAB\xE3\x83\x91\xE3\x82\xAB\xE3"
-                       "\x82\xB3\xE3\x83\xA1\xE3\x83\xB3\xE3\x83\x88");
+    entry->set_comment("アルパカコメント");
 
     user_dictionary_->Load(storage);
   }
@@ -492,23 +327,12 @@ TEST_F(UsageRewriterTest, CommentFromUserDictionary) {
   Segments segments;
   segments.Clear();
   Segment *seg = segments.push_back_segment();
-  // "うま"
-  seg->set_key("\xE3\x81\x86\xE3\x81\xBE");
-  // "うま", "Horse", "うま", "Horse",
-  AddCandidate("\xE3\x81\x86\xE3\x81\xBE",
-               "Horse",
-               "\xE3\x81\x86\xE3\x81\xBE",
-               "Horse", seg);
-  // "うま", "アルパカ", "うま", "アルパカ"
-  AddCandidate(
-      "\xE3\x81\x86\xE3\x81\xBE",
-      "\xE3\x82\xA2\xE3\x83\xAB\xE3\x83\x91\xE3\x82\xAB",
-      "\xE3\x81\x86\xE3\x81\xBE",
-      "\xE3\x82\xA2\xE3\x83\xAB\xE3\x83\x91\xE3\x82\xAB", seg);
+  seg->set_key("うま");
+  AddCandidate("うま", "Horse", "うま", "Horse", seg);
+  AddCandidate("うま", "アルパカ", "うま", "アルパカ", seg);
 
-  const ConversionRequest request;
-  scoped_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
-  EXPECT_TRUE(rewriter->Rewrite(request, &segments));
+  std::unique_ptr<UsageRewriter> rewriter(CreateUsageRewriter());
+  EXPECT_TRUE(rewriter->Rewrite(convreq_, &segments));
 
   // Result of ("うま", "Horse"). No comment is expected.
   const Segment::Candidate &cand0 = segments.conversion_segment(0).candidate(0);
@@ -517,13 +341,10 @@ TEST_F(UsageRewriterTest, CommentFromUserDictionary) {
 
   // Result of ("うま", "アルパカ"). Comment from user dictionary is expected.
   const Segment::Candidate &cand1 = segments.conversion_segment(0).candidate(1);
-  // "アルパカ"
-  EXPECT_EQ("\xE3\x82\xA2\xE3\x83\xAB\xE3\x83\x91\xE3\x82\xAB",
-            cand1.usage_title);
-  // "アルパカコメント"
-  EXPECT_EQ("\xE3\x82\xA2\xE3\x83\xAB\xE3\x83\x91\xE3\x82\xAB\xE3"
-            "\x82\xB3\xE3\x83\xA1\xE3\x83\xB3\xE3\x83\x88",
-            cand1.usage_description);
+  EXPECT_EQ("アルパカ", cand1.usage_title);
+  EXPECT_EQ("アルパカコメント", cand1.usage_description);
 }
 
 }  // namespace mozc
+
+#endif  // NO_USAGE_REWRITER

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,7 +34,7 @@
 
 #include "base/port.h"
 #include "base/string_piece.h"
-#include "dictionary/user_dictionary_storage.pb.h"
+#include "protocol/user_dictionary_storage.pb.h"
 
 namespace mozc {
 
@@ -197,13 +197,10 @@ class UserDictionaryImporter {
       TextLineIteratorInterface *iter,
       user_dictionary::UserDictionary *dic);
 
-  // Import a dictionary from MS-IME's user dictionary.
-  // Only available on Windows
-  static ErrorType ImportFromMSIME(user_dictionary::UserDictionary *dic);
-
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(UserDictionaryImporter);
 };
 
 }  // namespace mozc
+
 #endif  // MOZC_DICTIONARY_USER_DICTIONARY_IMPORTER_H_

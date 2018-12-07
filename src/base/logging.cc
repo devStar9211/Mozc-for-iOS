@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -41,38 +41,30 @@
 #include <android/log.h>
 #endif  // OS_ANDROID
 
+#ifdef OS_WIN
+#include <codecvt>
+#include <locale>
+#endif  // OS_WIN
+
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
-#ifdef OS_ANDROID
 #include <sstream>
-#endif  // OS_ANDROID
 #include <string>
 
 #ifdef OS_ANDROID
 #include "base/const.h"
 #endif  // OS_ANDROID
-#include "base/file_stream.h"
-#include "base/file_util.h"
+#include "base/clock.h"
 #include "base/flags.h"
 #include "base/mutex.h"
 #include "base/singleton.h"
-#include "base/system_util.h"
-#include "base/util.h"
 
 DEFINE_bool(colored_log, true, "Enables colored log messages on tty devices");
 DEFINE_bool(logtostderr,
             false,
             "log messages go to stderr instead of logfiles");
-
-// Even if log_dir is modified in the middle of the process, the
-// logging directory will not be changed because the logging stream is
-// initialized in the very early initialization stage.
-DEFINE_string(log_dir,
-              "",
-              "If specified, logfiles are written into this directory "
-              "instead of the default logging directory.");
 DEFINE_int32(v, 0, "verbose level");
 
 namespace mozc {
@@ -103,12 +95,12 @@ COMPARE_LOG_LEVEL(LOG_SILENT, ANDROID_LOG_SILENT);
 string Logging::GetLogMessageHeader() {
 #ifndef OS_ANDROID
   tm tm_time;
-  Util::GetCurrentTm(&tm_time);
+  Clock::GetCurrentTm(&tm_time);
 
   char buf[512];
   snprintf(buf, sizeof(buf),
            "%4.4d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d %u "
-#if defined(__native_client__)
+#if defined(OS_NACL)
            "%p",
 #elif defined(OS_LINUX)
            "%lu",
@@ -133,7 +125,7 @@ string Logging::GetLogMessageHeader() {
 #else  // __LP64__
            reinterpret_cast<uint32>(pthread_self())
 #endif  // __LP64__
-#elif defined(__native_client__)
+#elif defined(OS_NACL)
            ::getpid(),
            // pthread_self() returns __nc_basic_thread_data*.
            static_cast<void*>(pthread_self())
@@ -157,14 +149,21 @@ string Logging::GetLogMessageHeader() {
 
 #ifdef NO_LOGGING
 
-void Logging::InitLogStream(const char *argv0) {
+void Logging::InitLogStream(const string &log_file_path) {
 }
 
 void Logging::CloseLogStream() {
 }
 
-ostream &Logging::GetLogStream() {
-  return cerr;
+std::ostream &Logging::GetWorkingLogStream() {
+  // Never called.
+  return *(new std::ostringstream);
+}
+
+void Logging::FinalizeWorkingLogStream(LogSeverity severity,
+                                       std::ostream *working_stream) {
+  // Never called.
+  delete working_stream;
 }
 
 NullLogStream &Logging::GetNullLogStream() {
@@ -199,15 +198,14 @@ namespace {
 
 class LogStreamImpl {
  public:
-  void Init(const char *argv0);
-  void Close();
+  LogStreamImpl();
+  ~LogStreamImpl();
 
-  ostream *stream() {
-     return (stream_ == NULL) ? &cerr : stream_;
-  }
+  void Init(const string &log_file_path);
+  void Reset();
 
   int verbose_level() const {
-    return max(FLAGS_v, config_verbose_level_);
+    return std::max(FLAGS_v, config_verbose_level_);
   }
 
   void set_verbose_level(int level) {
@@ -224,91 +222,133 @@ class LogStreamImpl {
     return support_color_;
   }
 
-  LogStreamImpl();
-  virtual ~LogStreamImpl();
+  void Write(LogSeverity, const string &log);
 
  private:
-  ostream *stream_;
+  // Real backing log stream.
+  // This is not thread-safe so must be guarded.
+  // If std::cerr is real log stream, this is nullptr.
+  std::ostream *real_log_stream_;
   int config_verbose_level_;
   bool support_color_;
+  bool use_cerr_;
   Mutex mutex_;
 };
 
-LogStreamImpl::LogStreamImpl()
-    : stream_(NULL), config_verbose_level_(0), support_color_(false) {
-}
-
-void LogStreamImpl::Init(const char *argv0) {
+void LogStreamImpl::Write(LogSeverity severity, const string &log) {
   scoped_lock l(&mutex_);
-  if (stream_ != NULL) {
-    return;
-  }
-#ifdef __native_client__
-    // In NaCl, we only use stderr to output logs.
-    stream_ = &cerr;
-#else
-  if (FLAGS_logtostderr) {
-    stream_ = &cerr;
-#ifndef OS_WIN
-    // Disables on windows because cmd.exe doesn't support ANSI color escape
-    // sequences.
-    // TODO(team): Considers to use SetConsoleTextAttribute on Windows.
-    support_color_ = FLAGS_colored_log && isatty(fileno(stderr));
-#endif  // OS_WIN
+  if (use_cerr_) {
+    std::cerr << log;
   } else {
-#ifdef OS_ANDROID
-    // Use ostringstream to output logging messages by android's logging
-    // framework.
-    stream_ = new ostringstream();
-#else
-#ifdef OS_WIN
-    const char *slash = ::strrchr(argv0, '\\');
-#else
-    const char *slash = ::strrchr(argv0, '/');
-#endif
-    const char *program_name = (slash == NULL) ? argv0 : slash + 1;
-    const string log_base = string(program_name) + ".log";
-    const string log_dir =
-        FLAGS_log_dir.empty() ? SystemUtil::GetLoggingDirectory() :
-                                FLAGS_log_dir;
-    const string filename = FileUtil::JoinPath(log_dir, log_base);
-    stream_ = new OutputFileStream(filename.c_str(), ios::app);
-#ifndef OS_WIN
-    ::chmod(filename.c_str(), 0600);
-#endif
+#if defined(OS_ANDROID)
+    __android_log_write(severity, kProductPrefix,
+                        const_cast<char*>(log.c_str()));
+#else  // OS_ANDROID
+    // Since our logging mechanism is essentially singleton, it is indeed
+    // possible that this method is called before |Logging::InitLogStream()|.
+    // b/32360767 is an example, where |SystemUtil::GetLoggingDirectory()|
+    // called as a preparation for |Logging::InitLogStream()| internally
+    // triggered |LOG(ERROR)|.
+    if (real_log_stream_) {
+      *real_log_stream_ << log;
+    }
 #endif  // OS_ANDROID
   }
-#endif  // __native_client__
-
-  *stream_ << "Log file created at: "
-           << Logging::GetLogMessageHeader() << endl;
-  *stream_ << "Program name: " << argv0 << endl;
 }
 
-void LogStreamImpl::Close() {
+LogStreamImpl::LogStreamImpl() : real_log_stream_(nullptr) {
+  Reset();
+}
+
+// Initializes real log stream.
+// After initialization, use_cerr_ and real_log_stream_ become like following:
+// OS, --logtostderr => use_cerr_, real_log_stream_
+// Android, *     => false, nullptr
+// NaCl,    *     => true,  nullptr
+// Others,  true  => true,  nullptr
+// Others,  false => true,  non-null
+void LogStreamImpl::Init(const string &log_file_path) {
   scoped_lock l(&mutex_);
-  if (stream_ != &cerr) {
-    delete stream_;
+  Reset();
+
+  if (use_cerr_) {
+    // OS_NACL always reaches here.
+    return;
   }
+#if defined(OS_WIN)
+  // On Windows, just create a stream.
+  // Since Windows uses UTF-16 for internationalized file names, we should
+  // convert the encoding of the given |log_file_path| from UTF-8 to UTF-16.
+  // NOTE: To avoid circular dependency, |Util::UTF8ToWide| shouldn't be used
+  // here.
+  DCHECK_NE(log_file_path.size(), 0);
+  std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t> utf8_to_wide;
+  real_log_stream_ = new std::ofstream(
+      utf8_to_wide.from_bytes(log_file_path).c_str(), std::ios::app);
+#elif !defined(OS_ANDROID)
+  // On non-Android platform, change file mode in addition.
+  // Android uses logcat instead of log file.
+  DCHECK_NE(log_file_path.size(), 0);
+  real_log_stream_ = new std::ofstream(log_file_path.c_str(), std::ios::app);
+  ::chmod(log_file_path.c_str(), 0600);
+#endif  // OS_ANDROID
+  DCHECK(!use_cerr_ || !real_log_stream_);
+}
+
+void LogStreamImpl::Reset() {
+  scoped_lock l(&mutex_);
+  delete real_log_stream_;
+  real_log_stream_ = nullptr;
   config_verbose_level_ = 0;
-  stream_ = NULL;
+#if defined(OS_NACL)
+    // In NaCl, we only use stderr to output logs.
+    use_cerr_ = true;
+    support_color_ = false;
+#elif defined(OS_ANDROID)
+    // Android uses Android's log library.
+    use_cerr_ = false;
+    support_color_ = false;
+#elif defined(OS_WIN)
+    // Coloring is disabled on windows
+    // because cmd.exe doesn't support ANSI color escape sequences.
+    // TODO(team): Considers to use SetConsoleTextAttribute on Windows.
+    use_cerr_ = FLAGS_logtostderr;
+    support_color_ = false;
+#else  // OS_NACL, OS_ANDROID, OS_WIN
+    use_cerr_ = FLAGS_logtostderr;
+    support_color_ = use_cerr_ && FLAGS_colored_log
+        && ::isatty(::fileno(stderr));
+#endif  // OS_NACL, OS_ANDROID, OS_WIN
 }
 
 LogStreamImpl::~LogStreamImpl() {
-  Close();
+  Reset();
 }
 }  // namespace
 
-void Logging::InitLogStream(const char *argv0) {
-  Singleton<LogStreamImpl>::get()->Init(argv0);
+void Logging::InitLogStream(const string &log_file_path) {
+  Singleton<LogStreamImpl>::get()->Init(log_file_path);
+  std::ostream &stream = GetWorkingLogStream();
+  stream << "Log file created at: " << Logging::GetLogMessageHeader();
+  FinalizeWorkingLogStream(LogSeverity::LOG_INFO, &stream);
 }
 
 void Logging::CloseLogStream() {
-  Singleton<LogStreamImpl>::get()->Close();
+  Singleton<LogStreamImpl>::get()->Reset();
 }
 
-ostream &Logging::GetLogStream() {
-  return *(Singleton<LogStreamImpl>::get()->stream());
+std::ostream &Logging::GetWorkingLogStream() {
+  return *(new std::ostringstream);
+}
+
+void Logging::FinalizeWorkingLogStream(LogSeverity severity,
+                                       std::ostream *working_stream) {
+  *working_stream << std::endl;
+  Singleton<LogStreamImpl>::get()->Write(
+      severity, static_cast<std::ostringstream*>(working_stream)->str());
+  // The working stream is new'd in LogStreamImpl::GetWorkingLogStream().
+  // Must be deleted by finalizer.
+  delete working_stream;
 }
 
 NullLogStream &Logging::GetNullLogStream() {
@@ -387,24 +427,12 @@ LogFinalizer::LogFinalizer(LogSeverity severity)
     : severity_(severity) {}
 
 LogFinalizer::~LogFinalizer() {
-  mozc::Logging::GetLogStream() << endl;
-#ifdef OS_ANDROID
-  ostream *log_stream = &mozc::Logging::GetLogStream();
-  if (log_stream != &cerr) {
-    ostringstream *log_stringstream = static_cast<ostringstream*>(log_stream);
-     __android_log_write(severity_,
-                         kProductPrefix,
-                         log_stringstream->str().c_str());
-    log_stringstream->str("");
-  }
-#endif  // OS_ANDROID
+  Logging::FinalizeWorkingLogStream(severity_, working_stream_);
   if (severity_ >= LOG_FATAL) {
     // On windows, call exception handler to
     // make stack trace and minidump
 #ifdef OS_WIN
-    ::RaiseException(::GetLastError(),
-                     EXCEPTION_NONCONTINUABLE,
-                     NULL, NULL);
+    ::RaiseException(::GetLastError(), EXCEPTION_NONCONTINUABLE, 0, nullptr);
 #else
     mozc::Logging::CloseLogStream();
     exit(-1);
@@ -412,13 +440,13 @@ LogFinalizer::~LogFinalizer() {
   }
 }
 
-void LogFinalizer::operator&(ostream&) {}
+void LogFinalizer::operator&(std::ostream& working_stream) {
+  working_stream_ = &working_stream;
+}
 
 void NullLogFinalizer::OnFatal() {
 #ifdef OS_WIN
-  ::RaiseException(::GetLastError(),
-                   EXCEPTION_NONCONTINUABLE,
-                   NULL, NULL);
+  ::RaiseException(::GetLastError(), EXCEPTION_NONCONTINUABLE, 0, nullptr);
 #else
   exit(-1);
 #endif

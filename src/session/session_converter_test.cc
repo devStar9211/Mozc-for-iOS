@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,22 +35,23 @@
 
 #include "session/session_converter.h"
 
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "base/logging.h"
-#include "base/number_util.h"
 #include "base/system_util.h"
 #include "base/util.h"
 #include "composer/composer.h"
 #include "composer/table.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
 #include "converter/converter_mock.h"
 #include "converter/segments.h"
-#include "session/candidates.pb.h"
-#include "session/commands.pb.h"
+#include "data_manager/testing/mock_data_manager.h"
+#include "protocol/candidates.pb.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 #include "session/internal/candidate_list.h"
 #include "session/internal/keymap.h"
 #include "session/request_test_util.h"
@@ -61,61 +62,47 @@
 #include "usage_stats/usage_stats.h"
 #include "usage_stats/usage_stats_testing_util.h"
 
-DECLARE_string(test_tmpdir);
-
 namespace mozc {
 namespace session {
 
-using mozc::commands::Context;
-using mozc::commands::Request;
-using mozc::commands::RequestForUnitTest;
+using ::mozc::commands::Context;
+using ::mozc::commands::Request;
+using ::mozc::commands::RequestForUnitTest;
+using ::mozc::config::Config;
 
-// "あいうえお"
-static const char kChars_Aiueo[] =
-    "\xe3\x81\x82\xe3\x81\x84\xe3\x81\x86\xe3\x81\x88\xe3\x81\x8a";
-// "も"
-static const char kChars_Mo[] = "\xE3\x82\x82";
-// "もずく"
-static const char kChars_Mozuku[] = "\xE3\x82\x82\xE3\x81\x9A\xE3\x81\x8F";
-// "もずくす"
-static const char kChars_Mozukusu[] =
-  "\xE3\x82\x82\xE3\x81\x9A\xE3\x81\x8F\xE3\x81\x99";
-// "ももんが"
-static const char kChars_Momonga[] =
-  "\xE3\x82\x82\xE3\x82\x82\xE3\x82\x93\xE3\x81\x8C";
+static const char kChars_Aiueo[] = "あいうえお";
+static const char kChars_Mo[] = "も";
+static const char kChars_Mozuku[] = "もずく";
+static const char kChars_Mozukusu[] = "もずくす";
+static const char kChars_Momonga[] = "ももんが";
 
 class SessionConverterTest : public ::testing::Test {
  protected:
   // Workaround for C2512 error (no default appropriate constructor) on MSVS.
   SessionConverterTest() {}
-  virtual ~SessionConverterTest() {}
+  ~SessionConverterTest() override {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     convertermock_.reset(new ConverterMock());
     SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config::ConfigHandler::SetConfig(config);
-
     mozc::usage_stats::UsageStats::ClearAllStatsForTest();
 
+    config_.reset(new Config);
+    config_->set_use_cascading_window(true);
+    request_.reset(new Request);
+
     table_.reset(new composer::Table);
-    table_->InitializeWithRequestAndConfig(default_request_, config);
-    composer_.reset(new composer::Composer(table_.get(), &default_request_));
-    mobile_request_.reset(new Request);
-    RequestForUnitTest::FillMobileRequest(mobile_request_.get());
+    table_->InitializeWithRequestAndConfig(*request_, *config_,
+                                           mock_data_manager_);
+    composer_.reset(
+        new composer::Composer(table_.get(), request_.get(), config_.get()));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     table_.reset();
     composer_.reset();
 
     mozc::usage_stats::UsageStats::ClearAllStatsForTest();
-
-    // just in case, reset the config in test_tmpdir
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config::ConfigHandler::SetConfig(config);
   }
 
   static void GetSegments(const SessionConverter &converter, Segments *dest) {
@@ -135,11 +122,6 @@ class SessionConverterTest : public ::testing::Test {
   static const CandidateList &GetCandidateList(
       const SessionConverter &converter) {
     return *converter.candidate_list_;
-  }
-
-  static const OperationPreferences &GetOperationPreferences(
-      const SessionConverter &converter) {
-    return converter.operation_preferences_;
   }
 
   static SessionConverterInterface::State GetState(
@@ -186,21 +168,13 @@ class SessionConverterTest : public ::testing::Test {
     Segment::Candidate *candidate;
 
     segment = segments->add_segment();
-    // "あいうえお"
-    segment->set_key(
-        "\xe3\x81\x82\xe3\x81\x84\xe3\x81\x86\xe3\x81\x88\xe3\x81\x8a");
+    segment->set_key("あいうえお");
     candidate = segment->add_candidate();
-    // "あいうえお"
-    candidate->key =
-      "\xe3\x81\x82\xe3\x81\x84\xe3\x81\x86\xe3\x81\x88\xe3\x81\x8a";
+    candidate->key = "あいうえお";
     candidate->value = candidate->key;
     candidate = segment->add_candidate();
-    // "あいうえお"
-    candidate->key =
-      "\xe3\x81\x82\xe3\x81\x84\xe3\x81\x86\xe3\x81\x88\xe3\x81\x8a";
-    // "アイウエオ"
-    candidate->value =
-      "\xe3\x82\xa2\xe3\x82\xa4\xe3\x82\xa6\xe3\x82\xa8\xe3\x82\xaa";
+    candidate->key = "あいうえお";
+    candidate->value = "アイウエオ";
   }
 
   // set result for "かまぼこのいんぼう"
@@ -211,29 +185,20 @@ class SessionConverterTest : public ::testing::Test {
     segments->Clear();
     segment = segments->add_segment();
 
-    // "かまぼこの"
-    segment->set_key(
-        "\xe3\x81\x8b\xe3\x81\xbe\xe3\x81\xbc\xe3\x81\x93\xe3\x81\xae");
+    segment->set_key("かまぼこの");
     candidate = segment->add_candidate();
-    // "かまぼこの"
-    candidate->value =
-      "\xe3\x81\x8b\xe3\x81\xbe\xe3\x81\xbc\xe3\x81\x93\xe3\x81\xae";
+    candidate->value = "かまぼこの";
     candidate = segment->add_candidate();
-    // "カマボコの"
-    candidate->value =
-      "\xe3\x82\xab\xe3\x83\x9e\xe3\x83\x9c\xe3\x82\xb3\xe3\x81\xae";
+    candidate->value = "カマボコの";
     segment = segments->add_segment();
-    // "いんぼう"
-    segment->set_key("\xe3\x81\x84\xe3\x82\x93\xe3\x81\xbc\xe3\x81\x86");
+    segment->set_key("いんぼう");
     candidate = segment->add_candidate();
-    // "陰謀"
-    candidate->value = "\xe9\x99\xb0\xe8\xac\x80";
+    candidate->value = "陰謀";
     candidate = segment->add_candidate();
-    // "印房"
-    candidate->value = "\xe5\x8d\xb0\xe6\x88\xbf";
+    candidate->value = "印房";
 
     // Set dummy T13Ns
-    vector<Segment::Candidate> *meta_candidates =
+    std::vector<Segment::Candidate> *meta_candidates =
         segment->mutable_meta_candidates();
     meta_candidates->resize(transliteration::NUM_T13N_TYPES);
     for (size_t i = 0; i < transliteration::NUM_T13N_TYPES; ++i) {
@@ -252,10 +217,10 @@ class SessionConverterTest : public ::testing::Test {
       Segment *segment = segments->mutable_conversion_segment(i);
       CHECK(segment);
       const size_t composition_len = Util::CharsLen(segment->key());
-      vector<string> t13ns;
+      std::vector<string> t13ns;
       composer->GetSubTransliterations(
           composition_pos, composition_len, &t13ns);
-      vector<Segment::Candidate> *meta_candidates =
+      std::vector<Segment::Candidate> *meta_candidates =
           segment->mutable_meta_candidates();
       meta_candidates->resize(transliteration::NUM_T13N_TYPES);
       for (size_t j = 0; j < transliteration::NUM_T13N_TYPES; ++j) {
@@ -270,10 +235,8 @@ class SessionConverterTest : public ::testing::Test {
 
   // set result for "like"
   void InitConverterWithLike(Segments *segments) {
-    // "ぃ"
-    composer_->InsertCharacterKeyAndPreedit("li", "\xE3\x81\x83");
-    // "け"
-    composer_->InsertCharacterKeyAndPreedit("ke", "\xE3\x81\x91");
+    composer_->InsertCharacterKeyAndPreedit("li", "ぃ");
+    composer_->InsertCharacterKeyAndPreedit("ke", "け");
 
     Segment *segment;
     Segment::Candidate *candidate;
@@ -281,25 +244,19 @@ class SessionConverterTest : public ::testing::Test {
     segments->Clear();
     segment = segments->add_segment();
 
-    // "ぃ"
-    segment->set_key("\xE3\x81\x83");
+    segment->set_key("ぃ");
     candidate = segment->add_candidate();
-    // "ぃ"
-    candidate->value = "\xE3\x81\x83";
+    candidate->value = "ぃ";
 
     candidate = segment->add_candidate();
-    // "ィ"
-    candidate->value = "\xE3\x82\xA3";
+    candidate->value = "ィ";
 
     segment = segments->add_segment();
-    // "け"
-    segment->set_key("\xE3\x81\x91");
+    segment->set_key("け");
     candidate = segment->add_candidate();
-    // "家"
-    candidate->value = "\xE5\xAE\xB6";
+    candidate->value = "家";
     candidate = segment->add_candidate();
-    // "け"
-    candidate->value = "\xE3\x81\x91";
+    candidate->value = "け";
 
     FillT13Ns(segments, composer_.get());
     convertermock_->SetStartConversionForRequest(segments, true);
@@ -315,15 +272,11 @@ class SessionConverterTest : public ::testing::Test {
   }
 
   static void ExpectSameSessionConverter(const SessionConverter &lhs,
-                                  const SessionConverter &rhs) {
+                                         const SessionConverter &rhs) {
     EXPECT_EQ(lhs.IsActive(), rhs.IsActive());
     EXPECT_EQ(IsCandidateListVisible(lhs), IsCandidateListVisible(rhs));
     EXPECT_EQ(GetSegmentIndex(lhs), GetSegmentIndex(rhs));
 
-    EXPECT_EQ(GetOperationPreferences(lhs).use_cascading_window,
-              GetOperationPreferences(rhs).use_cascading_window);
-    EXPECT_EQ(GetOperationPreferences(lhs).candidate_shortcuts,
-              GetOperationPreferences(rhs).candidate_shortcuts);
     EXPECT_EQ(lhs.conversion_preferences().use_history,
               rhs.conversion_preferences().use_history);
     EXPECT_EQ(lhs.conversion_preferences().max_history_size,
@@ -376,8 +329,8 @@ class SessionConverterTest : public ::testing::Test {
 
   static ::testing::AssertionResult ExpectSelectedCandidateIndices(
       const char *, const char *,
-      const SessionConverter &converter, const vector<int> &expected) {
-    const vector<int> &actual = converter.selected_candidate_indices_;
+      const SessionConverter &converter, const std::vector<int> &expected) {
+    const std::vector<int> &actual = converter.selected_candidate_indices_;
 
     if (expected.size() != actual.size()) {
       return ::testing::AssertionFailure()
@@ -408,25 +361,29 @@ class SessionConverterTest : public ::testing::Test {
         ->mutable_candidate(canidate_index)->command = command;
   }
 
-  scoped_ptr<ConverterMock> convertermock_;
+  std::unique_ptr<ConverterMock> convertermock_;
 
-  scoped_ptr<composer::Composer> composer_;
-  scoped_ptr<composer::Table> table_;
-  scoped_ptr<Request> mobile_request_;
-  const Request default_request_;
+  std::unique_ptr<composer::Composer> composer_;
+  std::unique_ptr<composer::Table> table_;
+  std::unique_ptr<Request> request_;
+  std::unique_ptr<Config> config_;
   mozc::usage_stats::scoped_usage_stats_enabler usage_stats_enabler_;
+
+ private:
+  const testing::MockDataManager mock_data_manager_;
 };
 
 #define EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, indices) \
   EXPECT_PRED_FORMAT2(ExpectSelectedCandidateIndices, converter, indices);
 
 TEST_F(SessionConverterTest, Convert) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   SetAiueo(&segments);
   FillT13Ns(&segments, composer_.get());
   convertermock_->SetStartConversionForRequest(&segments, true);
-  vector<int> expected_indices;
+  std::vector<int> expected_indices;
   EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
 
   composer_->InsertCharacterPreedit(kChars_Aiueo);
@@ -476,7 +433,8 @@ TEST_F(SessionConverterTest, Convert) {
 }
 
 TEST_F(SessionConverterTest, ConvertWithSpellingCorrection) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   SetAiueo(&segments);
   FillT13Ns(&segments, composer_.get());
@@ -491,7 +449,8 @@ TEST_F(SessionConverterTest, ConvertWithSpellingCorrection) {
 }
 
 TEST_F(SessionConverterTest, ConvertToTransliteration) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   SetAiueo(&segments);
 
@@ -501,7 +460,7 @@ TEST_F(SessionConverterTest, ConvertToTransliteration) {
 
   EXPECT_TRUE(converter.ConvertToTransliteration(*composer_,
                                                  transliteration::HALF_ASCII));
-  vector<int> expected_indices;
+  std::vector<int> expected_indices;
   expected_indices.push_back(0);
   {  // Check the conversion #1
     commands::Output output;
@@ -544,8 +503,7 @@ TEST_F(SessionConverterTest, ConvertToTransliteration) {
 
     const commands::Preedit &conversion = output.preedit();
     EXPECT_EQ(1, conversion.segment_size());
-    EXPECT_EQ("\xEF\xBC\xA1\xEF\xBC\xA9\xEF\xBC\xB5\xEF\xBC\xA5\xEF\xBC\xAF",
-              conversion.segment(0).value());
+    EXPECT_EQ("ＡＩＵＥＯ", conversion.segment(0).value());
     EXPECT_FALSE(IsCandidateListVisible(converter));
     EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
   }
@@ -560,11 +518,12 @@ TEST_F(SessionConverterTest, ConvertToTransliteration) {
 TEST_F(SessionConverterTest, ConvertToTransliterationWithMultipleSegments) {
   Segments segments;
   InitConverterWithLike(&segments);
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
 
   // Convert
   EXPECT_TRUE(converter.Convert(*composer_));
-  vector<int> expected_indices;
+  std::vector<int> expected_indices;
   expected_indices.push_back(0);
   expected_indices.push_back(0);
   {  // Check the conversion #1
@@ -576,10 +535,8 @@ TEST_F(SessionConverterTest, ConvertToTransliterationWithMultipleSegments) {
 
     const commands::Preedit &conversion = output.preedit();
     EXPECT_EQ(2, conversion.segment_size());
-    // "ぃ"
-    EXPECT_EQ("\xE3\x81\x83", conversion.segment(0).value());
-    // "家"
-    EXPECT_EQ("\xE5\xAE\xB6", conversion.segment(1).value());
+    EXPECT_EQ("ぃ", conversion.segment(0).value());
+    EXPECT_EQ("家", conversion.segment(1).value());
     EXPECT_FALSE(IsCandidateListVisible(converter));
     EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
   }
@@ -603,7 +560,8 @@ TEST_F(SessionConverterTest, ConvertToTransliterationWithMultipleSegments) {
 }
 
 TEST_F(SessionConverterTest, ConvertToTransliterationWithoutCascadigWindow) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   {
     Segment *segment;
@@ -616,20 +574,16 @@ TEST_F(SessionConverterTest, ConvertToTransliterationWithoutCascadigWindow) {
     candidate->value = "DVD";
   }
   {  // Set OperationPreferences
-    OperationPreferences preferences;
-    preferences.use_cascading_window = false;
-    preferences.candidate_shortcuts = "";
-    converter.SetOperationPreferences(preferences);
+    converter.set_use_cascading_window(false);
+    converter.set_selection_shortcut(config::Config::NO_SHORTCUT);
   }
 
-  // "ｄｖｄ"
-  composer_->InsertCharacterKeyAndPreedit(
-      "dvd", "\xEF\xBD\x84\xEF\xBD\x96\xEF\xBD\x84");
+  composer_->InsertCharacterKeyAndPreedit("dvd", "ｄｖｄ");
   FillT13Ns(&segments, composer_.get());
   convertermock_->SetStartConversionForRequest(&segments, true);
   EXPECT_TRUE(converter.ConvertToTransliteration(*composer_,
                                                  transliteration::FULL_ASCII));
-  vector<int> expected_indices;
+  std::vector<int> expected_indices;
   expected_indices.push_back(0);
   {  // Check the conversion #1
     commands::Output output;
@@ -640,9 +594,7 @@ TEST_F(SessionConverterTest, ConvertToTransliterationWithoutCascadigWindow) {
 
     const commands::Preedit &conversion = output.preedit();
     EXPECT_EQ(1, conversion.segment_size());
-    // "ｄｖｄ"
-    EXPECT_EQ("\xEF\xBD\x84\xEF\xBD\x96\xEF\xBD\x84",
-              conversion.segment(0).value());
+    EXPECT_EQ("ｄｖｄ", conversion.segment(0).value());
     EXPECT_FALSE(IsCandidateListVisible(converter));
     EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
   }
@@ -658,9 +610,7 @@ TEST_F(SessionConverterTest, ConvertToTransliterationWithoutCascadigWindow) {
 
     const commands::Preedit &conversion = output.preedit();
     EXPECT_EQ(1, conversion.segment_size());
-    // "ＤＶＤ"
-    EXPECT_EQ("\xEF\xBC\xA4\xEF\xBC\xB6\xEF\xBC\xA4",
-              conversion.segment(0).value());
+    EXPECT_EQ("ＤＶＤ", conversion.segment(0).value());
     EXPECT_FALSE(IsCandidateListVisible(converter));
     EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
   }
@@ -676,33 +626,29 @@ TEST_F(SessionConverterTest, ConvertToTransliterationWithoutCascadigWindow) {
 
     const commands::Preedit &conversion = output.preedit();
     EXPECT_EQ(1, conversion.segment_size());
-    // "Ｄｖｄ"
-    EXPECT_EQ("\xEF\xBC\xA4\xEF\xBD\x96\xEF\xBD\x84",
-              conversion.segment(0).value());
+    EXPECT_EQ("Ｄｖｄ", conversion.segment(0).value());
     EXPECT_FALSE(IsCandidateListVisible(converter));
     EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
   }
 }
 
 TEST_F(SessionConverterTest, MultiSegmentsConversion) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   SetKamaboko(&segments);
-  const string kKamabokono =
-    "\xe3\x81\x8b\xe3\x81\xbe\xe3\x81\xbc\xe3\x81\x93\xe3\x81\xae";
-  const string kInbou =
-    "\xe3\x81\x84\xe3\x82\x93\xe3\x81\xbc\xe3\x81\x86";
+  const string kKamabokono = "かまぼこの";
+  const string kInbou = "いんぼう";
 
   // Test for conversion
   composer_->InsertCharacterPreedit(kKamabokono + kInbou);
   FillT13Ns(&segments, composer_.get());
   convertermock_->SetStartConversionForRequest(&segments, true);
   EXPECT_TRUE(converter.Convert(*composer_));
-  vector<int> expected_indices;
+  std::vector<int> expected_indices;
   expected_indices.push_back(0);
   expected_indices.push_back(0);
   {
-    // "かまぼこのいんぼう"
     EXPECT_EQ(0, GetSegmentIndex(converter));
     EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
 
@@ -722,8 +668,7 @@ TEST_F(SessionConverterTest, MultiSegmentsConversion) {
     EXPECT_EQ(commands::Preedit::Segment::UNDERLINE,
               conversion.segment(1).annotation());
     EXPECT_EQ(kInbou, conversion.segment(1).key());
-    // "陰謀"
-    EXPECT_EQ("\xe9\x99\xb0\xe8\xac\x80", conversion.segment(1).value());
+    EXPECT_EQ("陰謀", conversion.segment(1).value());
   }
 
   // Test for candidates [CandidateNext]
@@ -751,18 +696,11 @@ TEST_F(SessionConverterTest, MultiSegmentsConversion) {
     EXPECT_TRUE(output.has_candidates());
 
     const commands::Candidates &candidates = output.candidates();
-    EXPECT_EQ(0, candidates.focused_index());
     EXPECT_EQ(3, candidates.size());  // two candidates + one t13n sub list.
     EXPECT_EQ(0, candidates.position());
     EXPECT_EQ(kKamabokono, candidates.candidate(0).value());
-    // "カマボコの"
-    EXPECT_EQ("\xe3\x82\xab\xe3\x83\x9e\xe3\x83\x9c\xe3\x82\xb3\xe3\x81\xae",
-              candidates.candidate(1).value());
-
-    // "そのほかの文字種";
-    EXPECT_EQ("\xe3\x81\x9d\xe3\x81\xae\xe3\x81\xbb\xe3\x81\x8b\xe3\x81\xae"
-              "\xe6\x96\x87\xe5\xad\x97\xe7\xa8\xae",
-              candidates.candidate(2).value());
+    EXPECT_EQ("カマボコの", candidates.candidate(1).value());
+    EXPECT_EQ("そのほかの文字種", candidates.candidate(2).value());
   }
 
   // Test for segment motion. [SegmentFocusRight]
@@ -783,17 +721,9 @@ TEST_F(SessionConverterTest, MultiSegmentsConversion) {
     EXPECT_EQ(0, candidates.focused_index());
     EXPECT_EQ(3, candidates.size());  // two candidates + one t13n sub list.
     EXPECT_EQ(5, candidates.position());
-    // "陰謀"
-    EXPECT_EQ("\xe9\x99\xb0\xe8\xac\x80",
-              candidates.candidate(0).value());
-    // "印房"
-    EXPECT_EQ("\xe5\x8d\xb0\xe6\x88\xbf",
-              candidates.candidate(1).value());
-
-    // "そのほかの文字種";
-    EXPECT_EQ("\xe3\x81\x9d\xe3\x81\xae\xe3\x81\xbb\xe3\x81\x8b\xe3\x81\xae"
-              "\xe6\x96\x87\xe5\xad\x97\xe7\xa8\xae",
-              candidates.candidate(2).value());
+    EXPECT_EQ("陰謀", candidates.candidate(0).value());
+    EXPECT_EQ("印房", candidates.candidate(1).value());
+    EXPECT_EQ("そのほかの文字種", candidates.candidate(2).value());
   }
 
   // Test for segment motion. [SegmentFocusLeft]
@@ -815,14 +745,8 @@ TEST_F(SessionConverterTest, MultiSegmentsConversion) {
     EXPECT_EQ(3, candidates.size());  // two candidates + one t13n sub list.
     EXPECT_EQ(0, candidates.position());
     EXPECT_EQ(kKamabokono, candidates.candidate(0).value());
-    // "カマボコの"
-    EXPECT_EQ("\xe3\x82\xab\xe3\x83\x9e\xe3\x83\x9c\xe3\x82\xb3\xe3\x81\xae",
-              candidates.candidate(1).value());
-
-    // "そのほかの文字種";
-    EXPECT_EQ("\xe3\x81\x9d\xe3\x81\xae\xe3\x81\xbb\xe3\x81\x8b\xe3\x81\xae"
-              "\xe6\x96\x87\xe5\xad\x97\xe7\xa8\xae",
-              candidates.candidate(2).value());
+    EXPECT_EQ("カマボコの", candidates.candidate(1).value());
+    EXPECT_EQ("そのほかの文字種", candidates.candidate(2).value());
   }
 
   // Test for segment motion. [SegmentFocusLeft] at the head of segments.
@@ -846,17 +770,9 @@ TEST_F(SessionConverterTest, MultiSegmentsConversion) {
     EXPECT_EQ(0, candidates.focused_index());
     EXPECT_EQ(3, candidates.size());  // two candidates + one t13n sub list.
     EXPECT_EQ(5, candidates.position());
-    // "陰謀"
-    EXPECT_EQ("\xe9\x99\xb0\xe8\xac\x80",
-              candidates.candidate(0).value());
-    // "印房"
-    EXPECT_EQ("\xe5\x8d\xb0\xe6\x88\xbf",
-              candidates.candidate(1).value());
-
-    // "そのほかの文字種";
-    EXPECT_EQ("\xe3\x81\x9d\xe3\x81\xae\xe3\x81\xbb\xe3\x81\x8b\xe3\x81\xae"
-              "\xe6\x96\x87\xe5\xad\x97\xe7\xa8\xae",
-              candidates.candidate(2).value());
+    EXPECT_EQ("陰謀", candidates.candidate(0).value());
+    EXPECT_EQ("印房", candidates.candidate(1).value());
+    EXPECT_EQ("そのほかの文字種", candidates.candidate(2).value());
   }
 
   // Test for segment motion. [SegmentFocusRight] at the tail of segments.
@@ -881,14 +797,8 @@ TEST_F(SessionConverterTest, MultiSegmentsConversion) {
     EXPECT_EQ(3, candidates.size());  // two candidates + one t13n sub list.
     EXPECT_EQ(0, candidates.position());
     EXPECT_EQ(kKamabokono, candidates.candidate(0).value());
-    // "カマボコの"
-    EXPECT_EQ("\xe3\x82\xab\xe3\x83\x9e\xe3\x83\x9c\xe3\x82\xb3\xe3\x81\xae",
-              candidates.candidate(1).value());
-
-    // "そのほかの文字種";
-    EXPECT_EQ("\xe3\x81\x9d\xe3\x81\xae\xe3\x81\xbb\xe3\x81\x8b\xe3\x81\xae"
-              "\xe6\x96\x87\xe5\xad\x97\xe7\xa8\xae",
-              candidates.candidate(2).value());
+    EXPECT_EQ("カマボコの", candidates.candidate(1).value());
+    EXPECT_EQ("そのほかの文字種", candidates.candidate(2).value());
   }
 
   // Test for candidate motion. [CandidateNext]
@@ -909,20 +819,13 @@ TEST_F(SessionConverterTest, MultiSegmentsConversion) {
     EXPECT_EQ(1, candidates.focused_index());
     EXPECT_EQ(3, candidates.size());  // two candidates + one t13n sub list.
     EXPECT_EQ(5, candidates.position());
-    // "陰謀"
-    EXPECT_EQ("\xe9\x99\xb0\xe8\xac\x80", candidates.candidate(0).value());
-    // "印房"
-    EXPECT_EQ("\xe5\x8d\xb0\xe6\x88\xbf", candidates.candidate(1).value());
-
-    // "そのほかの文字種";
-    EXPECT_EQ("\xe3\x81\x9d\xe3\x81\xae\xe3\x81\xbb\xe3\x81\x8b\xe3\x81\xae"
-              "\xe6\x96\x87\xe5\xad\x97\xe7\xa8\xae",
-              candidates.candidate(2).value());
+    EXPECT_EQ("陰謀", candidates.candidate(0).value());
+    EXPECT_EQ("印房", candidates.candidate(1).value());
+    EXPECT_EQ("そのほかの文字種", candidates.candidate(2).value());
 
     const commands::Preedit &conversion = output.preedit();
     EXPECT_EQ(kKamabokono, conversion.segment(0).value());
-    // "印房"
-    EXPECT_EQ("\xe5\x8d\xb0\xe6\x88\xbf", conversion.segment(1).value());
+    EXPECT_EQ("印房", conversion.segment(1).value());
   }
 
   // Test for segment motion again [SegmentFocusLeftEdge] [SegmentFocusLast]
@@ -932,20 +835,16 @@ TEST_F(SessionConverterTest, MultiSegmentsConversion) {
     SetKamaboko(&fixed_segments);
     EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
 
-    // "陰謀"
-    ASSERT_EQ("\xe9\x99\xb0\xe8\xac\x80",
+    ASSERT_EQ("陰謀",
               fixed_segments.segment(1).candidate(0).value);
-    // "印房"
-    ASSERT_EQ("\xe5\x8d\xb0\xe6\x88\xbf",
+    ASSERT_EQ("印房",
               fixed_segments.segment(1).candidate(1).value);
     // swap the values.
     fixed_segments.mutable_segment(1)->mutable_candidate(0)->value.swap(
         fixed_segments.mutable_segment(1)->mutable_candidate(1)->value);
-    // "印房"
-    ASSERT_EQ("\xe5\x8d\xb0\xe6\x88\xbf",
+    ASSERT_EQ("印房",
               fixed_segments.segment(1).candidate(0).value);
-    // "陰謀"
-    ASSERT_EQ("\xe9\x99\xb0\xe8\xac\x80",
+    ASSERT_EQ("陰謀",
               fixed_segments.segment(1).candidate(1).value);
     convertermock_->SetCommitSegmentValue(&fixed_segments, true);
   }
@@ -968,21 +867,15 @@ TEST_F(SessionConverterTest, MultiSegmentsConversion) {
     EXPECT_EQ(0, candidates.focused_index());
     EXPECT_EQ(3, candidates.size());  // two candidates + one t13n sub list.
     EXPECT_EQ(5, candidates.position());
-    // "印房"
-    EXPECT_EQ("\xe5\x8d\xb0\xe6\x88\xbf", candidates.candidate(0).value());
+    EXPECT_EQ("印房", candidates.candidate(0).value());
 
-    // "陰謀"
-    EXPECT_EQ("\xe9\x99\xb0\xe8\xac\x80", candidates.candidate(1).value());
+    EXPECT_EQ("陰謀", candidates.candidate(1).value());
 
-    // "そのほかの文字種";
-    EXPECT_EQ("\xe3\x81\x9d\xe3\x81\xae\xe3\x81\xbb\xe3\x81\x8b\xe3\x81\xae"
-              "\xe6\x96\x87\xe5\xad\x97\xe7\xa8\xae",
-              candidates.candidate(2).value());
+    EXPECT_EQ("そのほかの文字種", candidates.candidate(2).value());
 
     const commands::Preedit &conversion = output.preedit();
     EXPECT_EQ(kKamabokono, conversion.segment(0).value());
-    // "印房"
-    EXPECT_EQ("\xe5\x8d\xb0\xe6\x88\xbf", conversion.segment(1).value());
+    EXPECT_EQ("印房", conversion.segment(1).value());
   }
 
   converter.Commit(*composer_, Context::default_instance());
@@ -999,37 +892,28 @@ TEST_F(SessionConverterTest, MultiSegmentsConversion) {
     EXPECT_FALSE(output.has_candidates());
 
     const commands::Result &result = output.result();
-    // "かまぼこの印房"
-    EXPECT_EQ("\xe3\x81\x8b\xe3\x81\xbe\xe3\x81\xbc\xe3\x81\x93\xe3\x81\xae"
-              "\xe5\x8d\xb0\xe6\x88\xbf",
-              result.value());
-    // "かまぼこのいんぼう"
-    EXPECT_EQ("\xe3\x81\x8b\xe3\x81\xbe\xe3\x81\xbc\xe3\x81\x93\xe3\x81\xae"
-              "\xe3\x81\x84\xe3\x82\x93\xe3\x81\xbc\xe3\x81\x86",
-              result.key());
+    EXPECT_EQ("かまぼこの印房", result.value());
+    EXPECT_EQ("かまぼこのいんぼう", result.key());
     EXPECT_FALSE(converter.IsActive());
   }
 }
 
 TEST_F(SessionConverterTest, Transliterations) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
-  // "く"
-  composer_->InsertCharacterKeyAndPreedit("h", "\xE3\x81\x8F");
-  // "ま"
-  composer_->InsertCharacterKeyAndPreedit("J", "\xE3\x81\xBE");
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
+  composer_->InsertCharacterKeyAndPreedit("h", "く");
+  composer_->InsertCharacterKeyAndPreedit("J", "ま");
 
   Segments segments;
   {  // Initialize segments.
     Segment *segment = segments.add_segment();
-    // "くま"
-    segment->set_key("\xE3\x81\x8F\xE3\x81\xBE");
-    // "クマー"
-    segment->add_candidate()->value = "\xE3\x82\xAF\xE3\x83\x9E\xE3\x83\xBC";
+    segment->set_key("くま");
+    segment->add_candidate()->value = "クマー";
   }
   FillT13Ns(&segments, composer_.get());
   convertermock_->SetStartConversionForRequest(&segments, true);
   EXPECT_TRUE(converter.Convert(*composer_));
-  vector<int> expected_indices;
+  std::vector<int> expected_indices;
   expected_indices.push_back(0);
   EXPECT_FALSE(IsCandidateListVisible(converter));
   EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
@@ -1049,12 +933,9 @@ TEST_F(SessionConverterTest, Transliterations) {
   const commands::Candidates &candidates = output.candidates();
   EXPECT_EQ(2, candidates.size());  // one candidate + one t13n sub list.
   EXPECT_EQ(1, candidates.focused_index());
-  // "そのほかの文字種";
-  EXPECT_EQ("\xe3\x81\x9d\xe3\x81\xae\xe3\x81\xbb\xe3\x81\x8b\xe3\x81\xae"
-            "\xe6\x96\x87\xe5\xad\x97\xe7\xa8\xae",
-            candidates.candidate(1).value());
+  EXPECT_EQ("そのほかの文字種", candidates.candidate(1).value());
 
-  vector<string> t13ns;
+  std::vector<string> t13ns;
   composer_->GetTransliterations(&t13ns);
 
   EXPECT_TRUE(candidates.has_subcandidates());
@@ -1067,37 +948,31 @@ TEST_F(SessionConverterTest, Transliterations) {
 }
 
 TEST_F(SessionConverterTest, T13NWithResegmentation) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   {
     Segments segments;
     Segment *segment = segments.add_segment();
     Segment::Candidate *candidate;
     CHECK(segment);
-    // "かまぼこの"
-    segment->set_key(
-        "\xe3\x81\x8b\xe3\x81\xbe\xe3\x81\xbc\xe3\x81\x93\xe3\x81\xae");
+    segment->set_key("かまぼこの");
     candidate = segment->add_candidate();
     CHECK(candidate);
-    // "かまぼこの"
-    candidate->value =
-        "\xe3\x81\x8b\xe3\x81\xbe\xe3\x81\xbc\xe3\x81\x93\xe3\x81\xae";
+    candidate->value = "かまぼこの";
 
     segment = segments.add_segment();
     CHECK(segment);
-    // "いんぼう"
-    segment->set_key("\xe3\x81\x84\xe3\x82\x93\xe3\x81\xbc\xe3\x81\x86");
+    segment->set_key("いんぼう");
     candidate = segment->add_candidate();
     CHECK(candidate);
-    // "いんぼう"
-    candidate->value =
-        "\xe3\x81\x84\xe3\x82\x93\xe3\x81\xbc\xe3\x81\x86";
+    candidate->value = "いんぼう";
 
     InsertASCIISequence("kamabokonoinbou", composer_.get());
     FillT13Ns(&segments, composer_.get());
     convertermock_->SetStartConversionForRequest(&segments, true);
   }
   EXPECT_TRUE(converter.Convert(*composer_));
-  vector<int> expected_indices;
+  std::vector<int> expected_indices;
   expected_indices.push_back(0);
   expected_indices.push_back(0);
   EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
@@ -1114,31 +989,21 @@ TEST_F(SessionConverterTest, T13NWithResegmentation) {
     segments.Clear();
     segment = segments.add_segment();
 
-    // "かまぼこの"
-    segment->set_key(
-        "\xe3\x81\x8b\xe3\x81\xbe\xe3\x81\xbc\xe3\x81\x93\xe3\x81\xae");
+    segment->set_key("かまぼこの");
     candidate = segment->add_candidate();
-    // "かまぼこの"
-    candidate->value =
-      "\xe3\x81\x8b\xe3\x81\xbe\xe3\x81\xbc\xe3\x81\x93\xe3\x81\xae";
+    candidate->value = "かまぼこの";
     candidate = segment->add_candidate();
-    // "カマボコの"
-    candidate->value =
-      "\xe3\x82\xab\xe3\x83\x9e\xe3\x83\x9c\xe3\x82\xb3\xe3\x81\xae";
+    candidate->value = "カマボコの";
 
     segment = segments.add_segment();
-    // "いんぼ"
-    segment->set_key("\xe3\x81\x84\xe3\x82\x93\xe3\x81\xbc");
+    segment->set_key("いんぼ");
     candidate = segment->add_candidate();
-    // "インボ"
-    candidate->value = "\xe3\x82\xa4\xe3\x83\xb3\xe3\x83\x9c";
+    candidate->value = "インボ";
 
     segment = segments.add_segment();
-    // "う"
-    segment->set_key("\xe3\x81\x86");
+    segment->set_key("う");
     candidate = segment->add_candidate();
-    // "ウ"
-    candidate->value = "\xe3\x82\xa6";
+    candidate->value = "ウ";
 
     FillT13Ns(&segments, composer_.get());
     convertermock_->SetResizeSegment1(&segments, true);
@@ -1158,30 +1023,25 @@ TEST_F(SessionConverterTest, T13NWithResegmentation) {
     EXPECT_TRUE(output.has_preedit());
     const commands::Preedit &preedit = output.preedit();
     EXPECT_EQ(3, preedit.segment_size());
-    // "ｲﾝﾎﾞ"
-    EXPECT_EQ("\xef\xbd\xb2\xef\xbe\x9d\xef\xbe\x8e\xef\xbe\x9e",
+    EXPECT_EQ("ｲﾝﾎﾞ",
               preedit.segment(1).value());
     EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
   }
 }
 
 TEST_F(SessionConverterTest, ConvertToHalfWidth) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
-  vector<int> expected_indices;
-  // "あ"
-  composer_->InsertCharacterKeyAndPreedit("a", "\xE3\x81\x82");
-  // "ｂ"
-  composer_->InsertCharacterKeyAndPreedit("b", "\xEF\xBD\x82");
-  // "ｃ"
-  composer_->InsertCharacterKeyAndPreedit("c", "\xEF\xBD\x83");
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
+  std::vector<int> expected_indices;
+  composer_->InsertCharacterKeyAndPreedit("a", "あ");
+  composer_->InsertCharacterKeyAndPreedit("b", "ｂ");
+  composer_->InsertCharacterKeyAndPreedit("c", "ｃ");
 
   Segments segments;
   {  // Initialize segments.
     Segment *segment = segments.add_segment();
-    // "あｂｃ"
-    segment->set_key("\xE3\x81\x82\xEF\xBD\x82\xEF\xBD\x83");
-    // "あべし"
-    segment->add_candidate()->value = "\xE3\x81\x82\xE3\x81\xB9\xE3\x81\x97";
+    segment->set_key("あｂｃ");
+    segment->add_candidate()->value = "あべし";
   }
   FillT13Ns(&segments, composer_.get());
   convertermock_->SetStartConversionForRequest(&segments, true);
@@ -1199,8 +1059,7 @@ TEST_F(SessionConverterTest, ConvertToHalfWidth) {
 
     const commands::Preedit &conversion = output.preedit();
     EXPECT_EQ(1, conversion.segment_size());
-    // "ｱbc"
-    EXPECT_EQ("\xEF\xBD\xB1\x62\x63", conversion.segment(0).value());
+    EXPECT_EQ("ｱbc", conversion.segment(0).value());
   }
 
   // Composition will be transliterated to "ａｂｃ".
@@ -1216,8 +1075,7 @@ TEST_F(SessionConverterTest, ConvertToHalfWidth) {
 
     const commands::Preedit &conversion = output.preedit();
     EXPECT_EQ(1, conversion.segment_size());
-    // "ａｂｃ"
-    EXPECT_EQ("\xEF\xBD\x81\xEF\xBD\x82\xEF\xBD\x83",
+    EXPECT_EQ("ａｂｃ",
               conversion.segment(0).value());
   }
 
@@ -1233,7 +1091,6 @@ TEST_F(SessionConverterTest, ConvertToHalfWidth) {
 
     const commands::Preedit &conversion = output.preedit();
     EXPECT_EQ(1, conversion.segment_size());
-    // "abc"
     EXPECT_EQ("abc", conversion.segment(0).value());
   }
 
@@ -1249,7 +1106,6 @@ TEST_F(SessionConverterTest, ConvertToHalfWidth) {
 
     const commands::Preedit &conversion = output.preedit();
     EXPECT_EQ(1, conversion.segment_size());
-    // "ABC"
     EXPECT_EQ("ABC", conversion.segment(0).value());
   }
 }
@@ -1257,27 +1113,23 @@ TEST_F(SessionConverterTest, ConvertToHalfWidth) {
 TEST_F(SessionConverterTest, ConvertToHalfWidth_2) {
   // http://b/2517514
   // ConvertToHalfWidth converts punctuations differently w/ or w/o kana.
-  SessionConverter converter(convertermock_.get(), &default_request_);
-  // "ｑ"
-  composer_->InsertCharacterKeyAndPreedit("q", "\xef\xbd\x91");
-  // "、"
-  composer_->InsertCharacterKeyAndPreedit(",", "\xe3\x80\x81");
-  // "。"
-  composer_->InsertCharacterKeyAndPreedit(".", "\xe3\x80\x82");
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
+  composer_->InsertCharacterKeyAndPreedit("q", "ｑ");
+  composer_->InsertCharacterKeyAndPreedit(",", "、");
+  composer_->InsertCharacterKeyAndPreedit(".", "。");
 
   Segments segments;
   {  // Initialize segments.
     Segment *segment = segments.add_segment();
-    // "ｑ、。"
-    segment->set_key("\xef\xbd\x91\xe3\x80\x81\xe3\x80\x82");
+    segment->set_key("ｑ、。");
     segment->add_candidate()->value = "q,.";
-    // "q､｡"
-    segment->add_candidate()->value = "q\xef\xbd\xa4\xef\xbd\xa1";
+    segment->add_candidate()->value = "q､｡";
   }
   FillT13Ns(&segments, composer_.get());
   convertermock_->SetStartConversionForRequest(&segments, true);
   EXPECT_TRUE(converter.ConvertToHalfWidth(*composer_));
-  vector<int> expected_indices;
+  std::vector<int> expected_indices;
   expected_indices.push_back(0);
   EXPECT_FALSE(IsCandidateListVisible(converter));
   EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
@@ -1291,33 +1143,28 @@ TEST_F(SessionConverterTest, ConvertToHalfWidth_2) {
 
     const commands::Preedit &conversion = output.preedit();
     EXPECT_EQ(1, conversion.segment_size());
-    // "q､｡"
-    EXPECT_EQ("q\xef\xbd\xa4\xef\xbd\xa1", conversion.segment(0).value());
+    EXPECT_EQ("q､｡", conversion.segment(0).value());
   }
 }
 
 TEST_F(SessionConverterTest, SwitchKanaType) {
   {  // From composition mode.
-    SessionConverter converter(convertermock_.get(), &default_request_);
-    // "あ"
-    composer_->InsertCharacterKeyAndPreedit("a", "\xE3\x81\x82");
-    // "ｂ"
-    composer_->InsertCharacterKeyAndPreedit("b", "\xEF\xBD\x82");
-    // "ｃ"
-    composer_->InsertCharacterKeyAndPreedit("c", "\xEF\xBD\x83");
+    SessionConverter converter(
+        convertermock_.get(), request_.get(), config_.get());
+    composer_->InsertCharacterKeyAndPreedit("a", "あ");
+    composer_->InsertCharacterKeyAndPreedit("b", "ｂ");
+    composer_->InsertCharacterKeyAndPreedit("c", "ｃ");
 
     Segments segments;
     {  // Initialize segments.
       Segment *segment = segments.add_segment();
-      // "あｂｃ"
-      segment->set_key("\xE3\x81\x82\xEF\xBD\x82\xEF\xBD\x83");
-      // "あべし"
-      segment->add_candidate()->value = "\xE3\x81\x82\xE3\x81\xB9\xE3\x81\x97";
+      segment->set_key("あｂｃ");
+      segment->add_candidate()->value = "あべし";
     }
     FillT13Ns(&segments, composer_.get());
     convertermock_->SetStartConversionForRequest(&segments, true);
     EXPECT_TRUE(converter.SwitchKanaType(*composer_));
-    vector<int> expected_indices;
+    std::vector<int> expected_indices;
     expected_indices.push_back(0);
     EXPECT_FALSE(IsCandidateListVisible(converter));
     EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
@@ -1331,8 +1178,7 @@ TEST_F(SessionConverterTest, SwitchKanaType) {
 
       const commands::Preedit &conversion = output.preedit();
       EXPECT_EQ(1, conversion.segment_size());
-      // "アｂｃ"
-      EXPECT_EQ("\xE3\x82\xA2\xEF\xBD\x82\xEF\xBD\x83",
+      EXPECT_EQ("アｂｃ",
                 conversion.segment(0).value());
     }
 
@@ -1348,8 +1194,7 @@ TEST_F(SessionConverterTest, SwitchKanaType) {
 
       const commands::Preedit &conversion = output.preedit();
       EXPECT_EQ(1, conversion.segment_size());
-      // "ｱbc"
-      EXPECT_EQ("\xEF\xBD\xB1\x62\x63", conversion.segment(0).value());
+      EXPECT_EQ("ｱbc", conversion.segment(0).value());
     }
 
     EXPECT_TRUE(converter.SwitchKanaType(*composer_));
@@ -1364,34 +1209,29 @@ TEST_F(SessionConverterTest, SwitchKanaType) {
 
       const commands::Preedit &conversion = output.preedit();
       EXPECT_EQ(1, conversion.segment_size());
-      // "あｂｃ"
-      EXPECT_EQ("\xE3\x81\x82\xEF\xBD\x82\xEF\xBD\x83",
+      EXPECT_EQ("あｂｃ",
                 conversion.segment(0).value());
     }
   }
 
   {  // From conversion mode
-    SessionConverter converter(convertermock_.get(), &default_request_);
+    SessionConverter converter(
+        convertermock_.get(), request_.get(), config_.get());
     composer_->EditErase();
-    // "か"
-    composer_->InsertCharacterKeyAndPreedit("ka", "\xE3\x81\x8B");
-    // "ん"
-    composer_->InsertCharacterKeyAndPreedit("n", "\xE3\x82\x93");
-    // "じ"
-    composer_->InsertCharacterKeyAndPreedit("ji", "\xE3\x81\x98");
+    composer_->InsertCharacterKeyAndPreedit("ka", "か");
+    composer_->InsertCharacterKeyAndPreedit("n", "ん");
+    composer_->InsertCharacterKeyAndPreedit("ji", "じ");
 
     Segments segments;
     {  // Initialize segments.
       Segment *segment = segments.add_segment();
-      // "かんじ"
-      segment->set_key("\xE3\x81\x8B\xE3\x82\x93\xE3\x81\x98");
-      // "漢字"
-      segment->add_candidate()->value = "\xE6\xBC\xA2\xE5\xAD\x97";
+      segment->set_key("かんじ");
+      segment->add_candidate()->value = "漢字";
     }
     FillT13Ns(&segments, composer_.get());
     convertermock_->SetStartConversionForRequest(&segments, true);
     EXPECT_TRUE(converter.Convert(*composer_));
-    vector<int> expected_indices;
+    std::vector<int> expected_indices;
     expected_indices.push_back(0);
     EXPECT_FALSE(IsCandidateListVisible(converter));
     EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
@@ -1405,9 +1245,7 @@ TEST_F(SessionConverterTest, SwitchKanaType) {
 
       const commands::Preedit &conversion = output.preedit();
       EXPECT_EQ(1, conversion.segment_size());
-      // "漢字"
-      EXPECT_EQ("\xE6\xBC\xA2\xE5\xAD\x97",
-                conversion.segment(0).value());
+      EXPECT_EQ("漢字", conversion.segment(0).value());
     }
 
     EXPECT_TRUE(converter.SwitchKanaType(*composer_));
@@ -1422,9 +1260,7 @@ TEST_F(SessionConverterTest, SwitchKanaType) {
 
       const commands::Preedit &conversion = output.preedit();
       EXPECT_EQ(1, conversion.segment_size());
-      // "かんじ"
-      EXPECT_EQ("\xE3\x81\x8B\xE3\x82\x93\xE3\x81\x98",
-                conversion.segment(0).value());
+      EXPECT_EQ("かんじ", conversion.segment(0).value());
     }
 
     EXPECT_TRUE(converter.SwitchKanaType(*composer_));
@@ -1439,9 +1275,7 @@ TEST_F(SessionConverterTest, SwitchKanaType) {
 
       const commands::Preedit &conversion = output.preedit();
       EXPECT_EQ(1, conversion.segment_size());
-      // "カンジ"
-      EXPECT_EQ("\xE3\x82\xAB\xE3\x83\xB3\xE3\x82\xB8",
-                conversion.segment(0).value());
+      EXPECT_EQ("カンジ", conversion.segment(0).value());
     }
 
     EXPECT_TRUE(converter.SwitchKanaType(*composer_));
@@ -1456,9 +1290,7 @@ TEST_F(SessionConverterTest, SwitchKanaType) {
 
       const commands::Preedit &conversion = output.preedit();
       EXPECT_EQ(1, conversion.segment_size());
-      // "ｶﾝｼﾞ"
-      EXPECT_EQ("\xEF\xBD\xB6\xEF\xBE\x9D\xEF\xBD\xBC\xEF\xBE\x9E",
-                conversion.segment(0).value());
+      EXPECT_EQ("ｶﾝｼﾞ", conversion.segment(0).value());
     }
 
     EXPECT_TRUE(converter.SwitchKanaType(*composer_));
@@ -1473,31 +1305,25 @@ TEST_F(SessionConverterTest, SwitchKanaType) {
 
       const commands::Preedit &conversion = output.preedit();
       EXPECT_EQ(1, conversion.segment_size());
-      // "かんじ"
-      EXPECT_EQ("\xE3\x81\x8B\xE3\x82\x93\xE3\x81\x98",
-                conversion.segment(0).value());
+      EXPECT_EQ("かんじ", conversion.segment(0).value());
     }
   }
 }
 
 TEST_F(SessionConverterTest, CommitFirstSegment) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   SetKamaboko(&segments);
   FillT13Ns(&segments, composer_.get());
   convertermock_->SetStartConversionForRequest(&segments, true);
 
-  // "かまぼこの"
-  const string kKamabokono =
-    "\xe3\x81\x8b\xe3\x81\xbe\xe3\x81\xbc\xe3\x81\x93\xe3\x81\xae";
-  // "いんぼう"
-  const string kInbou =
-    "\xe3\x81\x84\xe3\x82\x93\xe3\x81\xbc\xe3\x81\x86";
+  const string kKamabokono = "かまぼこの";
+  const string kInbou = "いんぼう";
 
-  // "かまぼこのいんぼう"
   composer_->InsertCharacterPreedit(kKamabokono + kInbou);
   EXPECT_TRUE(converter.Convert(*composer_));
-  vector<int> expected_indices;
+  std::vector<int> expected_indices;
   expected_indices.push_back(0);
   expected_indices.push_back(0);
   EXPECT_FALSE(IsCandidateListVisible(converter));
@@ -1511,13 +1337,10 @@ TEST_F(SessionConverterTest, CommitFirstSegment) {
     EXPECT_FALSE(output.has_candidates());
 
     const commands::Preedit &conversion = output.preedit();
-    // "かまぼこの"
     EXPECT_EQ(kKamabokono, conversion.segment(0).value());
-    // "陰謀"
-    EXPECT_EQ("\xe9\x99\xb0\xe8\xac\x80", conversion.segment(1).value());
+    EXPECT_EQ("陰謀", conversion.segment(1).value());
   }
 
-  // "カマボコの陰謀"
   converter.CandidateNext(*composer_);
   expected_indices[0] += 1;
   EXPECT_TRUE(IsCandidateListVisible(converter));
@@ -1531,20 +1354,16 @@ TEST_F(SessionConverterTest, CommitFirstSegment) {
     EXPECT_TRUE(output.has_candidates());
 
     const commands::Preedit &conversion = output.preedit();
-    // "カマボコの"
-    EXPECT_EQ("\xE3\x82\xAB\xE3\x83\x9E\xE3\x83\x9C\xE3\x82\xB3\xE3\x81\xAE",
-              conversion.segment(0).value());
-    // "陰謀"
-    EXPECT_EQ("\xe9\x99\xb0\xe8\xac\x80", conversion.segment(1).value());
+    EXPECT_EQ("カマボコの", conversion.segment(0).value());
+    EXPECT_EQ("陰謀", conversion.segment(1).value());
   }
 
   {  // Initialization of SetCommitSegments.
     Segments segments_after_submit;
     Segment *segment = segments_after_submit.add_segment();
-    // "いんぼう"
-    segment->set_key("\xe3\x81\x84\xe3\x82\x93\xe3\x81\xbc\xe3\x81\x86");
-    segment->add_candidate()->value = "\xe9\x99\xb0\xe8\xac\x80";  // "陰謀"
-    segment->add_candidate()->value = "\xe5\x8d\xb0\xe6\x88\xbf";  // "印房"
+    segment->set_key("いんぼう");
+    segment->add_candidate()->value = "陰謀";
+    segment->add_candidate()->value = "印房";
     convertermock_->SetCommitSegments(&segments_after_submit, true);
   }
   size_t size;
@@ -1552,7 +1371,6 @@ TEST_F(SessionConverterTest, CommitFirstSegment) {
   expected_indices.erase(expected_indices.begin(),
                          expected_indices.begin() + 1);
   EXPECT_FALSE(IsCandidateListVisible(converter));
-  // "かまぼこの"
   EXPECT_EQ(Util::CharsLen(kKamabokono), size);
   EXPECT_TRUE(converter.IsActive());
   EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
@@ -1564,14 +1382,11 @@ TEST_F(SessionConverterTest, CommitFirstSegment) {
 }
 
 TEST_F(SessionConverterTest, CommitHeadToFocusedSegments) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
-  // "いべりこ"
-  const string kIberiko = "\xE3\x81\x84\xE3\x81\xB9\xE3\x82\x8A\xE3\x81\x93";
-  // "ねこを"
-  const string kNekowo = "\xE3\x81\xAD\xE3\x81\x93\xE3\x82\x92";
-  // "いただいた"
-  const string kItadaita = "\xE3\x81\x84\xE3\x81\x9F\xE3\x81"
-                           "\xA0\xE3\x81\x84\xE3\x81\x9F";
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
+  const string kIberiko = "いべりこ";
+  const string kNekowo = "ねこを";
+  const string kItadaita = "いただいた";
   {  // Three segments as the result of conversion.
     Segments segments;
     Segment *segment;
@@ -1580,20 +1395,17 @@ TEST_F(SessionConverterTest, CommitHeadToFocusedSegments) {
     segment = segments.add_segment();
     segment->set_key(kIberiko);
     candidate = segment->add_candidate();
-    // "イベリコ"
-    candidate->value = "\xE3\x82\xA4\xE3\x83\x99\xE3\x83\xAA\xE3\x82\xB3";
+    candidate->value = "イベリコ";
 
     segment = segments.add_segment();
     segment->set_key(kNekowo);
     candidate = segment->add_candidate();
-    // "猫を"
-    candidate->value = "\xE7\x8C\xAB\xE3\x82\x92";
+    candidate->value = "猫を";
 
     segment = segments.add_segment();
     segment->set_key(kItadaita);
     candidate = segment->add_candidate();
-    // "頂いた"
-    candidate->value = "\xE9\xA0\x82\xE3\x81\x84\xE3\x81\x9F";
+    candidate->value = "頂いた";
     convertermock_->SetStartConversionForRequest(&segments, true);
   }
 
@@ -1612,8 +1424,7 @@ TEST_F(SessionConverterTest, CommitHeadToFocusedSegments) {
     segment = segments.add_segment();
     segment->set_key(kItadaita);
     candidate = segment->add_candidate();
-    // "頂いた"
-    candidate->value = "\xE9\xA0\x82\xE3\x81\x84\xE3\x81\x9F";
+    candidate->value = "頂いた";
     convertermock_->SetStartConversionForRequest(&segments, true);
 
     convertermock_->SetCommitSegments(&segments, true);
@@ -1628,19 +1439,15 @@ TEST_F(SessionConverterTest, CommitHeadToFocusedSegments) {
 }
 
 TEST_F(SessionConverterTest, CommitHeadToFocusedSegments_atLastSegment) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   SetKamaboko(&segments);
   convertermock_->SetStartConversionForRequest(&segments, true);
 
-  // "かまぼこの"
-  const string kKamabokono =
-    "\xe3\x81\x8b\xe3\x81\xbe\xe3\x81\xbc\xe3\x81\x93\xe3\x81\xae";
-  // "いんぼう"
-  const string kInbou =
-    "\xe3\x81\x84\xe3\x82\x93\xe3\x81\xbc\xe3\x81\x86";
+  const string kKamabokono = "かまぼこの";
+  const string kInbou = "いんぼう";
 
-  // "かまぼこのいんぼう"
   composer_->InsertCharacterPreedit(kKamabokono + kInbou);
   EXPECT_TRUE(converter.Convert(*composer_));
   // Here [かまぼこの]|陰謀
@@ -1662,8 +1469,9 @@ TEST_F(SessionConverterTest, CommitHeadToFocusedSegments_atLastSegment) {
 }
 
 TEST_F(SessionConverterTest, CommitPreedit) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
-  vector<int> expected_indices;
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
+  std::vector<int> expected_indices;
   EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
   composer_->InsertCharacterPreedit(kChars_Aiueo);
   EXPECT_SELECTED_CANDIDATE_INDICES_EQ(converter, expected_indices);
@@ -1690,21 +1498,19 @@ TEST_F(SessionConverterTest, CommitPreedit) {
 }
 
 TEST_F(SessionConverterTest, CommitSuggestionByIndex) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   {  // Initialize mock segments for suggestion
     segments.set_request_type(Segments::SUGGESTION);
     Segment *segment = segments.add_segment();
     Segment::Candidate *candidate;
-    // "も"
     segment->set_key(kChars_Mo);
     candidate = segment->add_candidate();
-    // "もずくす"
     candidate->value = kChars_Mozukusu;
     candidate->key = kChars_Mozukusu;
     candidate->content_key = kChars_Mozukusu;
     candidate = segment->add_candidate();
-    // "ももんが"
     candidate->value = kChars_Momonga;
     candidate->key = kChars_Momonga;
     candidate->content_key = kChars_Momonga;
@@ -1714,7 +1520,7 @@ TEST_F(SessionConverterTest, CommitSuggestionByIndex) {
   // Suggestion
   convertermock_->SetStartSuggestionForRequest(&segments, true);
   EXPECT_TRUE(converter.Suggest(*composer_));
-  vector<int> expected_indices;
+  std::vector<int> expected_indices;
   expected_indices.push_back(0);
   EXPECT_TRUE(IsCandidateListVisible(converter));
   EXPECT_TRUE(converter.IsActive());
@@ -1739,7 +1545,7 @@ TEST_F(SessionConverterTest, CommitSuggestionByIndex) {
 
   // FinishConversion is expected to return empty Segments.
   convertermock_->SetFinishConversion(
-      scoped_ptr<Segments>(new Segments).get(), true);
+      std::unique_ptr<Segments>(new Segments).get(), true);
 
   size_t committed_key_size = 0;
   converter.CommitSuggestionByIndex(1, *composer_.get(),
@@ -1772,21 +1578,19 @@ TEST_F(SessionConverterTest, CommitSuggestionByIndex) {
 }
 
 TEST_F(SessionConverterTest, CommitSuggestionById) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   {  // Initialize mock segments for suggestion
     segments.set_request_type(Segments::SUGGESTION);
     Segment *segment = segments.add_segment();
     Segment::Candidate *candidate;
-    // "も"
     segment->set_key(kChars_Mo);
     candidate = segment->add_candidate();
-    // "もずくす"
     candidate->value = kChars_Mozukusu;
     candidate->key = kChars_Mozukusu;
     candidate->content_key = kChars_Mozukusu;
     candidate = segment->add_candidate();
-    // "ももんが"
     candidate->value = kChars_Momonga;
     candidate->key = kChars_Momonga;
     candidate->content_key = kChars_Momonga;
@@ -1796,7 +1600,7 @@ TEST_F(SessionConverterTest, CommitSuggestionById) {
   // Suggestion
   convertermock_->SetStartSuggestionForRequest(&segments, true);
   EXPECT_TRUE(converter.Suggest(*composer_));
-  vector<int> expected_indices;
+  std::vector<int> expected_indices;
   expected_indices.push_back(0);
   EXPECT_TRUE(IsCandidateListVisible(converter));
   EXPECT_TRUE(converter.IsActive());
@@ -1804,7 +1608,7 @@ TEST_F(SessionConverterTest, CommitSuggestionById) {
 
   // FinishConversion is expected to return empty Segments.
   convertermock_->SetFinishConversion(
-      scoped_ptr<Segments>(new Segments).get(), true);
+      std::unique_ptr<Segments>(new Segments).get(), true);
 
   const int kCandidateIndex = 1;
   size_t committed_key_size = 0;
@@ -1844,20 +1648,18 @@ TEST_F(SessionConverterTest, CommitSuggestionById) {
   // Suggestion is counted as Prediction.
   EXPECT_COUNT_STATS("CommitFromPrediction", 1);
   EXPECT_COUNT_STATS("PredictionCandidates" +
-                     NumberUtil::SimpleItoa(kCandidateIndex),
+                     std::to_string(kCandidateIndex),
                      1);
 }
 
 TEST_F(SessionConverterTest, PartialSuggestion) {
-  SessionConverter converter(convertermock_.get(), mobile_request_.get());
+  RequestForUnitTest::FillMobileRequest(request_.get());
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments1, segments2;
   Segments suggestion_segments;
-  // "ここで"
-  const string kChars_Kokode =
-      "\xe3\x81\x93\xe3\x81\x93\xe3\x81\xa7";
-  //  "はきものを"
-  const string kChars_Hakimonowo =
-      "\xe3\x81\xaf\xe3\x81\x8d\xe3\x82\x82\xe3\x81\xae\xe3\x82\x92";
+  const string kChars_Kokode = "ここで";
+  const string kChars_Hakimonowo = "はきものを";
 
   {  // Initialize mock segments for partial suggestion
     segments1.set_request_type(Segments::PARTIAL_SUGGESTION);
@@ -1865,8 +1667,7 @@ TEST_F(SessionConverterTest, PartialSuggestion) {
     Segment::Candidate *candidate;
     segment->set_key(kChars_Kokode);
     candidate = segment->add_candidate();
-    // "此処で"
-    candidate->value = "\xe6\xad\xa4\xe5\x87\xa6\xe3\x81\xa7\xe3\x81\xaf";
+    candidate->value = "此処では";
     candidate->key = kChars_Kokode;
     candidate->content_key = kChars_Kokode;
     candidate->attributes = Segment::Candidate::PARTIALLY_KEY_CONSUMED;
@@ -1881,12 +1682,8 @@ TEST_F(SessionConverterTest, PartialSuggestion) {
     Segment::Candidate *candidate;
     segment->set_key(kChars_Kokode);
     candidate = segment->add_candidate();
-    // "ここでは着物を"
-    candidate->value = "\xe3\x81\x93\xe3\x81\x93\xe3\x81\xa7\xe3\x81"
-        "\xaf\xe7\x9d\x80\xe7\x89\xa9\xe3\x82\x92";
-    // "ここではきものを"
-    candidate->key = "\xe3\x81\x93\xe3\x81\x93\xe3\x81\xa7\xe3\x81"
-        "\xaf\xe3\x81\x8d\xe3\x82\x82\xe3\x81\xae\xe3\x82\x92";
+    candidate->value = "ここでは着物を";
+    candidate->key = "ここではきものを";
     candidate->content_key = candidate->key;
     candidate = segment->add_candidate();
   }
@@ -1897,8 +1694,7 @@ TEST_F(SessionConverterTest, PartialSuggestion) {
     Segment::Candidate *candidate;
     segment->set_key(kChars_Hakimonowo);
     candidate = segment->add_candidate();
-    // "履物を"
-    candidate->value = "\xe6\xad\xa4\xe5\x87\xa6\xe3\x81\xa7\xe3\x81\xaf";
+    candidate->value = "此処では";
     candidate->key = kChars_Hakimonowo;
     candidate->content_key = kChars_Hakimonowo;
   }
@@ -1910,7 +1706,7 @@ TEST_F(SessionConverterTest, PartialSuggestion) {
   convertermock_->SetStartSuggestionForRequest(&suggestion_segments, true);
   convertermock_->SetStartPartialSuggestion(&suggestion_segments, false);
   EXPECT_TRUE(converter.Suggest(*composer_));
-  vector<int> expected_indices;
+  std::vector<int> expected_indices;
   expected_indices.push_back(0);
   EXPECT_TRUE(IsCandidateListVisible(converter));
   EXPECT_TRUE(converter.IsActive());
@@ -1954,9 +1750,7 @@ TEST_F(SessionConverterTest, PartialSuggestion) {
     EXPECT_TRUE(output.has_result());
 
     const commands::Result &result = output.result();
-    // "此処で"
-    EXPECT_EQ("\xe6\xad\xa4\xe5\x87\xa6\xe3\x81\xa7\xe3\x81\xaf",
-              result.value());
+    EXPECT_EQ("此処では", result.value());
     EXPECT_EQ(kChars_Kokode, result.key());
     EXPECT_EQ(SessionConverterInterface::SUGGESTION, GetState(converter));
   }
@@ -1983,20 +1777,18 @@ TEST_F(SessionConverterTest, PartialSuggestion) {
 }
 
 TEST_F(SessionConverterTest, SuggestAndPredict) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   {  // Initialize mock segments for suggestion
     segments.set_request_type(Segments::SUGGESTION);
     Segment *segment = segments.add_segment();
     Segment::Candidate *candidate;
-    // "も"
     segment->set_key(kChars_Mo);
     candidate = segment->add_candidate();
-    // "もずくす"
     candidate->value = kChars_Mozukusu;
     candidate->content_key = kChars_Mozukusu;
     candidate = segment->add_candidate();
-    // "ももんが"
     candidate->value = kChars_Momonga;
     candidate->content_key = kChars_Momonga;
   }
@@ -2005,7 +1797,7 @@ TEST_F(SessionConverterTest, SuggestAndPredict) {
   // Suggestion
   convertermock_->SetStartSuggestionForRequest(&segments, true);
   EXPECT_TRUE(converter.Suggest(*composer_));
-  vector<int> expected_indices;
+  std::vector<int> expected_indices;
   expected_indices.push_back(0);
   EXPECT_TRUE(IsCandidateListVisible(converter));
   EXPECT_TRUE(converter.IsActive());
@@ -2030,7 +1822,6 @@ TEST_F(SessionConverterTest, SuggestAndPredict) {
 
     const commands::Candidates &candidates = output.candidates();
     EXPECT_EQ(2, candidates.size());
-    // "もずくす"
     EXPECT_EQ(kChars_Mozukusu, candidates.candidate(0).value());
     EXPECT_FALSE(candidates.has_focused_index());
   }
@@ -2040,23 +1831,16 @@ TEST_F(SessionConverterTest, SuggestAndPredict) {
     segments.set_request_type(Segments::PREDICTION);
     Segment *segment = segments.add_segment();
     Segment::Candidate *candidate;
-    // "も"
     segment->set_key(kChars_Mo);
     candidate = segment->add_candidate();
-    // "もずく"
     candidate->value = kChars_Mozuku;
     candidate->content_key = kChars_Mozuku;
     candidate = segment->add_candidate();
-    // "ももんが"
     candidate->value = kChars_Momonga;
     candidate->content_key = kChars_Momonga;
     candidate = segment->add_candidate();
-    // "モンドリアン"
-    candidate->value = "\xE3\x83\xA2\xE3\x83\xB3\xE3\x83\x89"
-                       "\xE3\x83\xAA\xE3\x82\xA2\xE3\x83\xB3";
-    // "もんどりあん"
-    candidate->content_key = "\xE3\x82\x82\xE3\x82\x93\xE3\x81\xA9"
-                             "\xE3\x82\x8A\xE3\x81\x82\xE3\x82\x93";
+    candidate->value = "モンドリアン";
+    candidate->content_key = "もんどりあん";
   }
 
   // Prediction
@@ -2108,16 +1892,10 @@ TEST_F(SessionConverterTest, SuggestAndPredict) {
     const commands::Candidates &candidates = output.candidates();
     // Candidates should be merged with the previous suggestions.
     EXPECT_EQ(4, candidates.size());
-    // "もずくす"
     EXPECT_EQ(kChars_Mozukusu, candidates.candidate(0).value());
-    // "ももんが"
     EXPECT_EQ(kChars_Momonga, candidates.candidate(1).value());
-    // "もずく"
     EXPECT_EQ(kChars_Mozuku, candidates.candidate(2).value());
-    // "モンドリアン"
-    EXPECT_EQ("\xE3\x83\xA2\xE3\x83\xB3\xE3\x83\x89"
-              "\xE3\x83\xAA\xE3\x82\xA2\xE3\x83\xB3",
-              candidates.candidate(3).value());
+    EXPECT_EQ("モンドリアン", candidates.candidate(3).value());
     EXPECT_TRUE(candidates.has_focused_index());
   }
 
@@ -2138,14 +1916,8 @@ TEST_F(SessionConverterTest, SuggestAndPredict) {
     EXPECT_FALSE(output.has_candidates());
 
     const commands::Result &result = output.result();
-    // "モンドリアン"
-    EXPECT_EQ("\xE3\x83\xA2\xE3\x83\xB3\xE3\x83\x89"
-              "\xE3\x83\xAA\xE3\x82\xA2\xE3\x83\xB3",
-              result.value());
-    // "もんどりあん"
-    EXPECT_EQ("\xE3\x82\x82\xE3\x82\x93\xE3\x81\xA9"
-              "\xE3\x82\x8A\xE3\x81\x82\xE3\x82\x93",
-              result.key());
+    EXPECT_EQ("モンドリアン", result.value());
+    EXPECT_EQ("もんどりあん", result.key());
   }
 
   segments.Clear();
@@ -2153,23 +1925,16 @@ TEST_F(SessionConverterTest, SuggestAndPredict) {
     segments.set_request_type(Segments::PREDICTION);
     Segment *segment = segments.add_segment();
     Segment::Candidate *candidate;
-    // "も"
     segment->set_key(kChars_Mo);
     candidate = segment->add_candidate();
-    // "もずく"
     candidate->value = kChars_Mozuku;
     candidate->content_key = kChars_Mozuku;
     candidate = segment->add_candidate();
-    // "ももんが"
     candidate->value = kChars_Momonga;
     candidate->content_key = kChars_Momonga;
     candidate = segment->add_candidate();
-    // "モンドリアン"
-    candidate->value = "\xE3\x83\xA2\xE3\x83\xB3\xE3\x83\x89"
-                       "\xE3\x83\xAA\xE3\x82\xA2\xE3\x83\xB3";
-    // "もんどりあん"
-    candidate->content_key = "\xE3\x82\x82\xE3\x82\x93\xE3\x81\xA9"
-                             "\xE3\x82\x8A\xE3\x81\x82\xE3\x82\x93";
+    candidate->value = "モンドリアン";
+    candidate->content_key = "もんどりあん";
   }
 
   // Prediction without suggestion.
@@ -2189,40 +1954,32 @@ TEST_F(SessionConverterTest, SuggestAndPredict) {
     // Check the conversion
     const commands::Preedit &conversion = output.preedit();
     EXPECT_EQ(1, conversion.segment_size());
-    // "もずく"
     EXPECT_EQ(kChars_Mozuku, conversion.segment(0).value());
 
     // Check the candidate list
     const commands::Candidates &candidates = output.candidates();
     // Candidates should NOT be merged with the previous suggestions.
     EXPECT_EQ(3, candidates.size());
-    // "もずく"
     EXPECT_EQ(kChars_Mozuku, candidates.candidate(0).value());
-    // "ももんが"
     EXPECT_EQ(kChars_Momonga, candidates.candidate(1).value());
-    // "モンドリアン"
-    EXPECT_EQ("\xE3\x83\xA2\xE3\x83\xB3\xE3\x83\x89"
-              "\xE3\x83\xAA\xE3\x82\xA2\xE3\x83\xB3",
-              candidates.candidate(2).value());
+    EXPECT_EQ("モンドリアン", candidates.candidate(2).value());
     EXPECT_TRUE(candidates.has_focused_index());
   }
 }
 
 TEST_F(SessionConverterTest, SuppressSuggestionOnPasswordField) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   {  // Initialize mock segments for suggestion
     segments.set_request_type(Segments::SUGGESTION);
     Segment *segment = segments.add_segment();
     Segment::Candidate *candidate;
-    // "も"
     segment->set_key(kChars_Mo);
     candidate = segment->add_candidate();
-    // "もずくす"
     candidate->value = kChars_Mozukusu;
     candidate->content_key = kChars_Mozukusu;
     candidate = segment->add_candidate();
-    // "ももんが"
     candidate->value = kChars_Momonga;
     candidate->content_key = kChars_Momonga;
   }
@@ -2242,20 +1999,18 @@ TEST_F(SessionConverterTest, SuppressSuggestionOnPasswordField) {
 }
 
 TEST_F(SessionConverterTest, SuppressSuggestion) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   {  // Initialize mock segments for suggestion
     segments.set_request_type(Segments::SUGGESTION);
     Segment *segment = segments.add_segment();
     Segment::Candidate *candidate;
-    // "も"
     segment->set_key(kChars_Mo);
     candidate = segment->add_candidate();
-    // "もずくす"
     candidate->value = kChars_Mozukusu;
     candidate->content_key = kChars_Mozukusu;
     candidate = segment->add_candidate();
-    // "ももんが"
     candidate->value = kChars_Momonga;
     candidate->content_key = kChars_Momonga;
   }
@@ -2271,7 +2026,9 @@ TEST_F(SessionConverterTest, SuppressSuggestion) {
 }
 
 TEST_F(SessionConverterTest, ExpandPartialSuggestion) {
-  SessionConverter converter(convertermock_.get(), mobile_request_.get());
+  RequestForUnitTest::FillMobileRequest(request_.get());
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
 
   const char *kSuggestionValues[] = {
       "S0",
@@ -2369,7 +2126,9 @@ TEST_F(SessionConverterTest, ExpandPartialSuggestion) {
 }
 
 TEST_F(SessionConverterTest, ExpandSuggestion) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  RequestForUnitTest::FillMobileRequest(request_.get());
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
 
   const char *kSuggestionValues[] = {
       "S0",
@@ -2463,12 +2222,10 @@ TEST_F(SessionConverterTest, ExpandSuggestion) {
 }
 
 TEST_F(SessionConverterTest, AppendCandidateList) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   SetState(SessionConverterInterface::CONVERSION, &converter);
-  OperationPreferences operation_preferences =
-      GetOperationPreferences(converter);
-  operation_preferences.use_cascading_window = true;
-  converter.SetOperationPreferences(operation_preferences);
+  converter.set_use_cascading_window(true);
   Segments segments;
 
   {
@@ -2493,12 +2250,10 @@ TEST_F(SessionConverterTest, AppendCandidateList) {
   {
     Segment *segment = segments.mutable_conversion_segment(0);
     Segment::Candidate *candidate = segment->add_candidate();
-    // "あいうえお_2"
-    candidate->value =
-      "\xe3\x81\x82\xe3\x81\x84\xe3\x81\x86\xe3\x81\x88\xe3\x81\x8a_2";
+    candidate->value = "あいうえお_2";
     // New meta candidates.
     // They should be ignored.
-    vector<Segment::Candidate> *meta_candidates =
+    std::vector<Segment::Candidate> *meta_candidates =
         segment->mutable_meta_candidates();
     meta_candidates->clear();
     meta_candidates->resize(1);
@@ -2515,7 +2270,7 @@ TEST_F(SessionConverterTest, AppendCandidateList) {
     EXPECT_EQ(4, candidate_list.size());
     EXPECT_TRUE(candidate_list.focused());
     size_t sub_cand_list_count = 0;
-    set<int> id_set;
+    std::set<int> id_set;
     for (size_t i = 0; i < candidate_list.size(); ++i) {
       if (candidate_list.candidate(i).IsSubcandidateList()) {
         ++sub_cand_list_count;
@@ -2534,7 +2289,8 @@ TEST_F(SessionConverterTest, AppendCandidateList) {
 }
 
 TEST_F(SessionConverterTest, AppendCandidateListForRequestTypes) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   SetState(SessionConverterInterface::SUGGESTION, &converter);
   Segments segments;
 
@@ -2572,7 +2328,8 @@ TEST_F(SessionConverterTest, AppendCandidateListForRequestTypes) {
 }
 
 TEST_F(SessionConverterTest, ReloadConfig) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   SetAiueo(&segments);
   FillT13Ns(&segments, composer_.get());
@@ -2583,11 +2340,8 @@ TEST_F(SessionConverterTest, ReloadConfig) {
   converter.SetCandidateListVisible(true);
 
   {  // Set OperationPreferences
-    const char kShortcut123456789[] = "123456789";
-    OperationPreferences preferences;
-    preferences.use_cascading_window = false;
-    preferences.candidate_shortcuts = kShortcut123456789;
-    converter.SetOperationPreferences(preferences);
+    converter.set_use_cascading_window(false);
+    converter.set_selection_shortcut(config::Config::SHORTCUT_123456789);
     EXPECT_TRUE(IsCandidateListVisible(converter));
   }
   {  // Check the config update
@@ -2603,10 +2357,8 @@ TEST_F(SessionConverterTest, ReloadConfig) {
   }
 
   {  // Set OperationPreferences #2
-    OperationPreferences preferences;
-    preferences.use_cascading_window = false;
-    preferences.candidate_shortcuts = "";
-    converter.SetOperationPreferences(preferences);
+    converter.set_use_cascading_window(false);
+    converter.set_selection_shortcut(config::Config::NO_SHORTCUT);
   }
   {  // Check the config update
     commands::Output output;
@@ -2622,15 +2374,12 @@ TEST_F(SessionConverterTest, ReloadConfig) {
 }
 
 TEST_F(SessionConverterTest, OutputAllCandidateWords) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   SetKamaboko(&segments);
-  // "かまぼこの"
-  const string kKamabokono =
-    "\xe3\x81\x8b\xe3\x81\xbe\xe3\x81\xbc\xe3\x81\x93\xe3\x81\xae";
-  // "いんぼう"
-  const string kInbou =
-    "\xe3\x81\x84\xe3\x82\x93\xe3\x81\xbc\xe3\x81\x86";
+  const string kKamabokono = "かまぼこの";
+  const string kInbou = "いんぼう";
   composer_->InsertCharacterPreedit(kKamabokono + kInbou);
 
   FillT13Ns(&segments, composer_.get());
@@ -2723,7 +2472,7 @@ TEST_F(SessionConverterTest, GetPreeditAndGetConversion) {
   {
     // PREDICTION
     SessionConverter converter(
-        convertermock_.get(), &default_request_);
+        convertermock_.get(), request_.get(), config_.get());
     convertermock_->SetStartPredictionForRequest(&segments, true);
     converter.Predict(*composer_);
     converter.CandidateNext(*composer_);
@@ -2737,7 +2486,7 @@ TEST_F(SessionConverterTest, GetPreeditAndGetConversion) {
   {
     // SUGGESTION
     SessionConverter converter(
-        convertermock_.get(), &default_request_);
+        convertermock_.get(), request_.get(), config_.get());
     convertermock_->SetStartSuggestionForRequest(&segments, true);
     converter.Suggest(*composer_);
     string preedit;
@@ -2761,7 +2510,7 @@ TEST_F(SessionConverterTest, GetPreeditAndGetConversion) {
   {
     // CONVERSION
     SessionConverter converter(
-        convertermock_.get(), &default_request_);
+        convertermock_.get(), request_.get(), config_.get());
     convertermock_->SetStartConversionForRequest(&segments, true);
     converter.Convert(*composer_);
     converter.CandidateNext(*composer_);
@@ -2775,15 +2524,12 @@ TEST_F(SessionConverterTest, GetPreeditAndGetConversion) {
 }
 
 TEST_F(SessionConverterTest, GetAndSetSegments) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
 
   // Set history segments.
-  // "車で", "行く"
-  const string kHistoryInput[] = {
-      "\xE8\xBB\x8A\xE3\x81\xA7",
-      "\xE8\xA1\x8C\xE3\x81\x8F"
-  };
+  const string kHistoryInput[] = {"車で", "行く"};
   for (size_t i = 0; i < arraysize(kHistoryInput); ++i) {
     Segment *segment = segments.add_segment();
     segment->set_segment_type(Segment::HISTORY);
@@ -2796,16 +2542,10 @@ TEST_F(SessionConverterTest, GetAndSetSegments) {
   Segments src;
   GetSegments(converter, &src);
   ASSERT_EQ(2, src.history_segments_size());
-  // "車で"
-  EXPECT_EQ("\xE8\xBB\x8A\xE3\x81\xA7",
-            src.history_segment(0).candidate(0).value);
-  // "行く"
-  EXPECT_EQ("\xE8\xA1\x8C\xE3\x81\x8F",
-            src.history_segment(1).candidate(0).value);
+  EXPECT_EQ("車で", src.history_segment(0).candidate(0).value);
+  EXPECT_EQ("行く", src.history_segment(1).candidate(0).value);
 
-  // "歩いて"
-  src.mutable_history_segment(0)->mutable_candidate(0)->value
-      = "\xE6\xAD\xA9\xE3\x81\x84\xE3\x81\xA6";
+  src.mutable_history_segment(0)->mutable_candidate(0)->value = "歩いて";
   Segment *segment = src.add_segment();
   segment->set_segment_type(Segment::FREE);
   Segment::Candidate *candidate = segment->add_candidate();
@@ -2818,29 +2558,21 @@ TEST_F(SessionConverterTest, GetAndSetSegments) {
 
   ASSERT_EQ(2, dest.history_segments_size());
   ASSERT_EQ(1, dest.conversion_segments_size());
-  // "歩いて"
   EXPECT_EQ(src.history_segment(0).candidate(0).value,
             dest.history_segment(0).candidate(0).value);
-  // "行く"
   EXPECT_EQ(src.history_segment(1).candidate(0).value,
             dest.history_segment(1).candidate(0).value);
-  // "?"
   EXPECT_EQ(src.history_segment(2).candidate(0).value,
             dest.history_segment(2).candidate(0).value);
 }
 
 TEST_F(SessionConverterTest, Clone) {
-  SessionConverter src(convertermock_.get(), &default_request_);
+  SessionConverter src(
+      convertermock_.get(), request_.get(), config_.get());
 
-  // "かまぼこの"
-  const string kKamabokono =
-      "\xe3\x81\x8b\xe3\x81\xbe\xe3\x81\xbc\xe3\x81\x93\xe3\x81\xae";
-  // "いんぼう"
-  const string kInbou =
-      "\xe3\x81\x84\xe3\x82\x93\xe3\x81\xbc\xe3\x81\x86";
-  // "陰謀"
-  const string kInbouKanji = "\xE9\x99\xB0\xE8\xAC\x80";
-  const char *kShortcut = "987654321";
+  const string kKamabokono = "かまぼこの";
+  const string kInbou = "いんぼう";
+  const string kInbouKanji = "陰謀";
 
   {  // create source converter
     Segments segments;
@@ -2848,15 +2580,13 @@ TEST_F(SessionConverterTest, Clone) {
 
     convertermock_->SetStartConversionForRequest(&segments, true);
 
-    OperationPreferences operation_preferences;
-    operation_preferences.use_cascading_window = false;
-    operation_preferences.candidate_shortcuts = kShortcut;
-    src.SetOperationPreferences(operation_preferences);
+    src.set_use_cascading_window(false);
+    src.set_selection_shortcut(config::Config::SHORTCUT_123456789);
   }
 
   {  // validation
     // Copy and validate
-    scoped_ptr<SessionConverter> dest(src.Clone());
+    std::unique_ptr<SessionConverter> dest(src.Clone());
     ASSERT_TRUE(dest.get() != NULL);
     ExpectSameSessionConverter(src, *dest);
 
@@ -2877,20 +2607,18 @@ TEST_F(SessionConverterTest, Clone) {
 
 // Suggest() in the suggestion state was not accepted.  (http://b/1948334)
 TEST_F(SessionConverterTest, Issue1948334) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   {  // Initialize mock segments for the first suggestion
     segments.set_request_type(Segments::SUGGESTION);
     Segment *segment = segments.add_segment();
     Segment::Candidate *candidate;
-    // "も"
     segment->set_key(kChars_Mo);
     candidate = segment->add_candidate();
-    // "もずくす"
     candidate->value = kChars_Mozukusu;
     candidate->content_key = kChars_Mozukusu;
     candidate = segment->add_candidate();
-    // "ももんが"
     candidate->value = kChars_Momonga;
     candidate->content_key = kChars_Momonga;
   }
@@ -2906,14 +2634,12 @@ TEST_F(SessionConverterTest, Issue1948334) {
     segments.set_request_type(Segments::SUGGESTION);
     Segment *segment = segments.add_segment();
     Segment::Candidate *candidate;
-    // "もず"
-    segment->set_key("\xE3\x82\x82\xE3\x81\x9A");
+    segment->set_key("もず");
     candidate = segment->add_candidate();
-    // "もずくす"
     candidate->value = kChars_Mozukusu;
     candidate->content_key = kChars_Mozukusu;
   }
-  composer_->InsertCharacterPreedit("\xE3\x82\x82\xE3\x81\x9A");
+  composer_->InsertCharacterPreedit("もず");
 
   // Suggestion
   convertermock_->SetStartSuggestionForRequest(&segments, true);
@@ -2930,7 +2656,6 @@ TEST_F(SessionConverterTest, Issue1948334) {
     const commands::Candidates &candidates = output.candidates();
     // Candidates should be merged with the previous suggestions.
     EXPECT_EQ(1, candidates.size());
-    // "もずくす"
     EXPECT_EQ(kChars_Mozukusu, candidates.candidate(0).value());
     EXPECT_FALSE(candidates.has_focused_index());
   }
@@ -2950,7 +2675,8 @@ TEST_F(SessionConverterTest, Issue1960362) {
   composer_->InsertCharacter("u");
   composer_->InsertCharacter("t");
 
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
 
   Segments segments;
   {
@@ -3002,7 +2728,8 @@ TEST_F(SessionConverterTest, Issue1960362) {
 
 TEST_F(SessionConverterTest, Issue1978201) {
   // This is a unittest against http://b/1978201
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   composer_->InsertCharacterPreedit(kChars_Mo);
 
@@ -3010,14 +2737,11 @@ TEST_F(SessionConverterTest, Issue1978201) {
     segments.set_request_type(Segments::PREDICTION);
     Segment *segment = segments.add_segment();
     Segment::Candidate *candidate;
-    // "も"
     segment->set_key(kChars_Mo);
     candidate = segment->add_candidate();
-    // "もずく"
     candidate->value = kChars_Mozuku;
     candidate->content_key = kChars_Mozuku;
     candidate = segment->add_candidate();
-    // "ももんが"
     candidate->value = kChars_Momonga;
     candidate->content_key = kChars_Momonga;
   }
@@ -3058,25 +2782,36 @@ TEST_F(SessionConverterTest, Issue1978201) {
 }
 
 TEST_F(SessionConverterTest, Issue1981020) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
-  // hiragana "ヴヴヴヴ"
-  composer_->InsertCharacterPreedit(
-      "\xE3\x82\x94\xE3\x82\x94\xE3\x82\x94\xE3\x82\x94");
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
+  // "〜〜〜〜" U+301C * 4
+  const string wave_dash_301c = "〜〜〜〜";
+  composer_->InsertCharacterPreedit(wave_dash_301c);
   Segments segments;
   convertermock_->SetFinishConversion(&segments, true);
   converter.CommitPreedit(*composer_, Context::default_instance());
   convertermock_->GetFinishConversion(&segments);
-  // katakana "ヴヴヴヴ"
-  EXPECT_EQ("\xE3\x83\xB4\xE3\x83\xB4\xE3\x83\xB4\xE3\x83\xB4",
+
+#ifdef OS_WIN
+  // "～～～～" U+FF5E * 4
+  const string fullwidth_tilde_ff5e = "～～～～";
+  EXPECT_EQ(fullwidth_tilde_ff5e,
             segments.conversion_segment(0).candidate(0).value);
-  EXPECT_EQ("\xE3\x83\xB4\xE3\x83\xB4\xE3\x83\xB4\xE3\x83\xB4",
+  EXPECT_EQ(fullwidth_tilde_ff5e,
             segments.conversion_segment(0).candidate(0).content_value);
+#else  // OS_WIN
+  EXPECT_EQ(wave_dash_301c,
+            segments.conversion_segment(0).candidate(0).value);
+  EXPECT_EQ(wave_dash_301c,
+            segments.conversion_segment(0).candidate(0).content_value);
+#endif  // OS_WIN
 }
 
 TEST_F(SessionConverterTest, Issue2029557) {
   // Unittest against http://b/2029557
   // a<tab><F6> raised a DCHECK error.
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   // Composition (as "a")
   composer_->InsertCharacterPreedit("a");
 
@@ -3104,7 +2839,8 @@ TEST_F(SessionConverterTest, Issue2029557) {
 TEST_F(SessionConverterTest, Issue2031986) {
   // Unittest against http://b/2031986
   // aaaaa<Shift+Enter> raised a CRT error.
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
 
   {  // Initialize a suggest result triggered by "aaaa".
     Segments segments;
@@ -3140,7 +2876,8 @@ TEST_F(SessionConverterTest, Issue2040116) {
   // It happens when the first Predict returns results but the next
   // MaybeExpandPrediction does not return any results.  That's a
   // trick by GoogleSuggest.
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   composer_->InsertCharacterPreedit("G");
 
   {
@@ -3212,11 +2949,10 @@ TEST_F(SessionConverterTest, Issue2040116) {
 }
 
 TEST_F(SessionConverterTest, GetReadingText) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
 
-  // "阿伊宇江於"
-  const char *kKanjiAiueo =
-      "\xe9\x98\xbf\xe4\xbc\x8a\xe5\xae\x87\xe6\xb1\x9f\xe6\x96\xbc";
+  const char *kKanjiAiueo = "阿伊宇江於";
   // Set up Segments for reverse conversion.
   Segments reverse_segments;
   Segment *segment;
@@ -3243,7 +2979,8 @@ TEST_F(SessionConverterTest, GetReadingText) {
 }
 
 TEST_F(SessionConverterTest, ZeroQuerySuggestion) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
 
   // Set up a mock suggestion result.
   Segments segments;
@@ -3281,7 +3018,7 @@ class ConverterMockForReset : public ConverterMock {
  public:
   ConverterMockForReset() : reset_conversion_called_(false) {}
 
-  virtual bool ResetConversion(Segments *segments) const {
+  bool ResetConversion(Segments *segments) const override {
     reset_conversion_called_ = true;
     return true;
   }
@@ -3302,7 +3039,7 @@ class ConverterMockForRevert : public ConverterMock {
  public:
   ConverterMockForRevert() : revert_conversion_called_(false) {}
 
-  virtual bool RevertConversion(Segments *segments) const {
+  bool RevertConversion(Segments *segments) const override {
     revert_conversion_called_ = true;
     return true;
   }
@@ -3323,8 +3060,8 @@ class ConverterMockForReconstructHistory : public ConverterMock {
  public:
   ConverterMockForReconstructHistory() : reconstruct_history_called_(false) {}
 
-  virtual bool ReconstructHistory(Segments *segments,
-                                  const string &preceding_text) const {
+  bool ReconstructHistory(Segments *segments,
+                          const string &preceding_text) const override {
     reconstruct_history_called_ = true;
     preceding_text_ = preceding_text;
     ConverterMock::ReconstructHistory(segments, preceding_text);
@@ -3354,7 +3091,8 @@ class ConverterMockForReconstructHistory : public ConverterMock {
 TEST(SessionConverterResetTest, Reset) {
   ConverterMockForReset convertermock;
   Request request;
-  SessionConverter converter(&convertermock, &request);
+  Config config;
+  SessionConverter converter(&convertermock, &request, &config);
   EXPECT_FALSE(convertermock.reset_conversion_called());
   converter.Reset();
   EXPECT_TRUE(convertermock.reset_conversion_called());
@@ -3363,15 +3101,16 @@ TEST(SessionConverterResetTest, Reset) {
 TEST(SessionConverterRevertTest, Revert) {
   ConverterMockForRevert convertermock;
   Request request;
-  SessionConverter converter(&convertermock, &request);
+  Config config;
+  SessionConverter converter(&convertermock, &request, &config);
   EXPECT_FALSE(convertermock.revert_conversion_called());
   converter.Revert();
   EXPECT_TRUE(convertermock.revert_conversion_called());
 }
 
 TEST_F(SessionConverterTest, CommitHead) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
-  // "あいうえお"
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   composer_->InsertCharacterPreedit(kChars_Aiueo);
 
   size_t committed_size;
@@ -3385,12 +3124,11 @@ TEST_F(SessionConverterTest, CommitHead) {
   EXPECT_FALSE(output.has_candidates());
 
   const commands::Result &result = output.result();
-  EXPECT_EQ("\xe3\x81\x82", result.value());  // "あ"
-  EXPECT_EQ("\xe3\x81\x82", result.key());    // "あ"
+  EXPECT_EQ("あ", result.value());
+  EXPECT_EQ("あ", result.key());
   string preedit;
   composer_->GetStringForPreedit(&preedit);
-  // "いうえお"
-  EXPECT_EQ("\xe3\x81\x84\xe3\x81\x86\xe3\x81\x88\xe3\x81\x8a", preedit);
+  EXPECT_EQ("いうえお", preedit);
 
   converter.CommitHead(3, *composer_, &committed_size);
   EXPECT_EQ(3, committed_size);
@@ -3402,19 +3140,18 @@ TEST_F(SessionConverterTest, CommitHead) {
   EXPECT_FALSE(output.has_candidates());
 
   const commands::Result &result2 = output.result();
-  // "いうえ"
-  EXPECT_EQ("\xe3\x81\x84\xe3\x81\x86\xe3\x81\x88", result2.value());
-  // "いうえ"
-  EXPECT_EQ("\xe3\x81\x84\xe3\x81\x86\xe3\x81\x88", result2.key());
+  EXPECT_EQ("いうえ", result2.value());
+  EXPECT_EQ("いうえ", result2.key());
   composer_->GetStringForPreedit(&preedit);
-  EXPECT_EQ("\xe3\x81\x8a", preedit);         // "お"
+  EXPECT_EQ("お", preedit);
 
   EXPECT_STATS_NOT_EXIST("Commit");
   EXPECT_STATS_NOT_EXIST("CommitFromComposition");
 }
 
 TEST_F(SessionConverterTest, CommandCandidate) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
   Segments segments;
   SetAiueo(&segments);
   FillT13Ns(&segments, composer_.get());
@@ -3432,17 +3169,15 @@ TEST_F(SessionConverterTest, CommandCandidate) {
 }
 
 TEST_F(SessionConverterTest, CommandCandidateWithCommitCommands) {
-  const string kKamabokono =
-      "\xe3\x81\x8b\xe3\x81\xbe\xe3\x81\xbc\xe3\x81\x93\xe3\x81\xae";
-  const string kInbou =
-      "\xe3\x81\x84\xe3\x82\x93\xe3\x81\xbc\xe3\x81\x86";
+  const string kKamabokono = "かまぼこの";
+  const string kInbou = "いんぼう";
   composer_->InsertCharacterPreedit(kKamabokono + kInbou);
 
   {
     // The first candidate is a command candidate, so
     // CommitFirstSegment resets all conversion.
     SessionConverter converter(
-        convertermock_.get(), &default_request_);
+        convertermock_.get(), request_.get(), config_.get());
     Segments segments;
     SetKamaboko(&segments);
     SetCommandCandidate(&segments, 0, 0,
@@ -3466,7 +3201,7 @@ TEST_F(SessionConverterTest, CommandCandidateWithCommitCommands) {
     // The second candidate is a command candidate, so
     // CommitFirstSegment commits all conversion.
     SessionConverter converter(
-        convertermock_.get(), &default_request_);
+        convertermock_.get(), request_.get(), config_.get());
     Segments segments;
     SetKamaboko(&segments);
     SetCommandCandidate(&segments, 1, 0,
@@ -3489,7 +3224,7 @@ TEST_F(SessionConverterTest, CommandCandidateWithCommitCommands) {
   {
     // The selected suggestion with Id is a command candidate.
     SessionConverter converter(
-        convertermock_.get(), &default_request_);
+        convertermock_.get(), request_.get(), config_.get());
     Segments segments;
     SetAiueo(&segments);
     SetCommandCandidate(&segments, 0, 0,
@@ -3506,7 +3241,7 @@ TEST_F(SessionConverterTest, CommandCandidateWithCommitCommands) {
   {
     // The selected suggestion with Index is a command candidate.
     SessionConverter converter(
-        convertermock_.get(), &default_request_);
+        convertermock_.get(), request_.get(), config_.get());
     Segments segments;
     SetAiueo(&segments);
     SetCommandCandidate(&segments, 0, 1,
@@ -3524,13 +3259,9 @@ TEST_F(SessionConverterTest, CommandCandidateWithCommitCommands) {
 TEST_F(SessionConverterTest, ExecuteCommandCandidate) {
   // Enable Incognito mode
   {
-    config::Config config;
-    config::ConfigHandler::GetConfig(&config);
-    config.set_incognito_mode(false);
-    config::ConfigHandler::SetConfig(config);
-
+    config_->set_incognito_mode(false);
     SessionConverter converter(
-        convertermock_.get(), &default_request_);
+        convertermock_.get(), request_.get(), config_.get());
     Segments segments;
     SetAiueo(&segments);
     SetCommandCandidate(&segments, 0, 0,
@@ -3545,20 +3276,18 @@ TEST_F(SessionConverterTest, ExecuteCommandCandidate) {
     converter.FillOutput(*composer_, &output);
     EXPECT_FALSE(output.has_result());
 
-    config::ConfigHandler::GetConfig(&config);
-    EXPECT_TRUE(config.incognito_mode())
-        << "Incognito mode should be enabled.";
+    // The config in the |output| has the updated value, but |config_| keeps
+    // the previous value.
+    EXPECT_TRUE(output.has_config());
+    EXPECT_TRUE(output.config().incognito_mode());
+    EXPECT_FALSE(config_->incognito_mode());
   }
 
   // Disable Incognito mode
   {
-    config::Config config;
-    config::ConfigHandler::GetConfig(&config);
-    config.set_incognito_mode(true);
-    config::ConfigHandler::SetConfig(config);
-
+    config_->set_incognito_mode(false);
     SessionConverter converter(
-        convertermock_.get(), &default_request_);
+        convertermock_.get(), request_.get(), config_.get());
     Segments segments;
     SetAiueo(&segments);
     SetCommandCandidate(&segments, 0, 0,
@@ -3573,20 +3302,19 @@ TEST_F(SessionConverterTest, ExecuteCommandCandidate) {
     converter.FillOutput(*composer_, &output);
     EXPECT_FALSE(output.has_result());
 
-    config::ConfigHandler::GetConfig(&config);
-    EXPECT_FALSE(config.incognito_mode())
-        << "Incognito mode should be disabled.";
+    // The config in the |output| has the updated value, but |config_| keeps
+    // the previous value.
+    EXPECT_TRUE(output.has_config());
+    EXPECT_FALSE(output.config().incognito_mode());
+    EXPECT_FALSE(config_->incognito_mode());
   }
 
   // Enable Presentation mode
   {
-    config::Config config;
-    config::ConfigHandler::GetConfig(&config);
-    config.set_presentation_mode(false);
-    config::ConfigHandler::SetConfig(config);
-
+    config_->set_presentation_mode(false);
     SessionConverter converter(
-        convertermock_.get(), &default_request_);
+        convertermock_.get(), request_.get(), config_.get());
+
     Segments segments;
     SetAiueo(&segments);
     SetCommandCandidate(&segments, 0, 0,
@@ -3601,20 +3329,19 @@ TEST_F(SessionConverterTest, ExecuteCommandCandidate) {
     converter.FillOutput(*composer_, &output);
     EXPECT_FALSE(output.has_result());
 
-    config::ConfigHandler::GetConfig(&config);
-    EXPECT_TRUE(config.presentation_mode())
-        << "Presentation mode should be enabled.";
+    // The config in the |output| has the updated value, but |config_| keeps
+    // the previous value.
+    EXPECT_TRUE(output.has_config());
+    EXPECT_TRUE(output.config().presentation_mode());
+    EXPECT_FALSE(config_->presentation_mode());
   }
 
   // Disable Presentation mode
   {
-    config::Config config;
-    config::ConfigHandler::GetConfig(&config);
-    config.set_incognito_mode(true);
-    config::ConfigHandler::SetConfig(config);
-
+    config_->set_incognito_mode(true);
     SessionConverter converter(
-        convertermock_.get(), &default_request_);
+        convertermock_.get(), request_.get(), config_.get());
+
     Segments segments;
     SetAiueo(&segments);
     SetCommandCandidate(&segments, 0, 0,
@@ -3629,20 +3356,19 @@ TEST_F(SessionConverterTest, ExecuteCommandCandidate) {
     converter.FillOutput(*composer_, &output);
     EXPECT_FALSE(output.has_result());
 
-    config::ConfigHandler::GetConfig(&config);
-    EXPECT_FALSE(config.presentation_mode())
-        << "Presentation mode should be disabled.";
+    // The config in the |output| has the updated value, but |config_| keeps
+    // the previous value.
+    EXPECT_TRUE(output.has_config());
+    EXPECT_FALSE(output.config().presentation_mode());
+    EXPECT_FALSE(config_->presentation_mode());
   }
 }
 
 TEST_F(SessionConverterTest, PropageteConfigToRenderer) {
   // Disable information_list_config()
   {
-    config::Config config;
-    config::ConfigHandler::SetConfig(config);
-
     SessionConverter converter(
-        convertermock_.get(), &default_request_);
+        convertermock_.get(), request_.get(), config_.get());
     Segments segments;
     SetAiueo(&segments);
     FillT13Ns(&segments, composer_.get());
@@ -3666,7 +3392,8 @@ TEST_F(SessionConverterTest, PropageteConfigToRenderer) {
 }
 
 TEST_F(SessionConverterTest, ConversionFail) {
-  SessionConverter converter(convertermock_.get(), &default_request_);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
 
   // Conversion fails.
   {
@@ -3731,7 +3458,7 @@ TEST_F(SessionConverterTest, ResetByClientRevision) {
   const int32 kRevision = 0x1234;
 
   ConverterMockForReset convertermock;
-  SessionConverter converter(&convertermock, &default_request_);
+  SessionConverter converter(&convertermock, request_.get(), config_.get());
   Context context;
 
   // Initialize the session converter with given context age.
@@ -3750,7 +3477,7 @@ TEST_F(SessionConverterTest, ResetByClientRevision) {
 
 TEST_F(SessionConverterTest, ResetByPrecedingText) {
   ConverterMockForReset convertermock;
-  SessionConverter converter(&convertermock, &default_request_);
+  SessionConverter converter(&convertermock, request_.get(), config_.get());
 
   // no preceding_text -> Reset should not be called.
   {
@@ -3869,7 +3596,7 @@ TEST_F(SessionConverterTest, ReconstructHistoryByPrecedingText) {
 
   // With revision
   {
-    SessionConverter converter(&convertermock, &default_request_);
+    SessionConverter converter(&convertermock, request_.get(), config_.get());
 
     Context context;
     context.set_revision(0);
@@ -3915,7 +3642,7 @@ TEST_F(SessionConverterTest, ReconstructHistoryByPrecedingText) {
 
   // Without revision
   {
-    SessionConverter converter(&convertermock, &default_request_);
+    SessionConverter converter(&convertermock, request_.get(), config_.get());
 
     Context context;
     context.set_preceding_text(kKey);
@@ -3952,6 +3679,17 @@ TEST_F(SessionConverterTest, ReconstructHistoryByPrecedingText) {
         << "history segments are consistent with the preceding text "
         << "even when the revision number is changed.";
   }
+}
+
+// Test whether Request::candidate_page_size is correctly propagated to
+// CandidateList.page_size in SessionConverter.  The tests for the behavior
+// of CandidateList.page_size is in session/internal/candidate_list_test.cc
+TEST_F(SessionConverterTest, CandidatePageSize) {
+  const size_t kPageSize = 3;
+  request_->set_candidate_page_size(kPageSize);
+  SessionConverter converter(
+      convertermock_.get(), request_.get(), config_.get());
+  EXPECT_EQ(kPageSize, GetCandidateList(converter).page_size());
 }
 
 }  // namespace session

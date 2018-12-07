@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,7 +34,8 @@
 
 namespace mozc {
 
-InputMultiFile::InputMultiFile(const string &filenames, ios_base::openmode mode)
+InputMultiFile::InputMultiFile(const string &filenames,
+                               std::ios_base::openmode mode)
     : mode_(mode) {
   Util::SplitStringUsing(filenames, ",", &filenames_);
   next_iter_ = filenames_.begin();
@@ -46,7 +47,7 @@ InputMultiFile::InputMultiFile(const string &filenames, ios_base::openmode mode)
 }
 
 InputMultiFile::~InputMultiFile() {
-  ifs_.reset(NULL);
+  ifs_.reset();
 }
 
 bool InputMultiFile::ReadLine(string* line) {
@@ -69,7 +70,7 @@ bool InputMultiFile::OpenNext() {
     if (!ifs_->fail()) {
       return true;
     }
-    LOG(ERROR) << "Cannot open " << filename << endl;
+    LOG(ERROR) << "Cannot open " << filename << std::endl;
   }
   ifs_.reset();
   return false;

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,23 +34,28 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "base/init.h"
+#include "base/clock.h"
+#include "base/flags.h"
 #include "base/logging.h"
 #include "base/port.h"
+#ifndef MOZC_DISABLE_SESSION_WATCHDOG
 #include "base/process.h"
+#endif  // MOZC_DISABLE_SESSION_WATCHDOG
 #include "base/singleton.h"
 #include "base/stopwatch.h"
 #include "base/util.h"
 #include "composer/table.h"
-#include "config/config.pb.h"
+#include "config/character_form_manager.h"
 #include "config/config_handler.h"
 #include "dictionary/user_dictionary_session_handler.h"
-#include "dictionary/user_dictionary_storage.pb.h"
 #include "engine/engine_interface.h"
 #include "engine/user_data_manager_interface.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
+#include "protocol/user_dictionary_storage.pb.h"
 #include "session/generic_storage_manager.h"
 #include "session/session.h"
 #include "session/session_observer_handler.h"
@@ -138,19 +143,34 @@ bool IsCarrierEmoji(const string &utf8_str) {
 }
 }  // namespace
 
-SessionHandler::SessionHandler(EngineInterface *engine)
-    : is_available_(false),
-      max_session_size_(0),
-      last_session_empty_time_(Util::GetTime()),
-      last_cleanup_time_(0),
-      last_create_session_time_(0),
-      engine_(engine),
-      observer_handler_(new session::SessionObserverHandler()),
-      stopwatch_(new Stopwatch),
-      user_dictionary_session_handler_(
-          new user_dictionary::UserDictionarySessionHandler),
-      table_manager_(new composer::TableManager),
-      request_(new commands::Request) {
+SessionHandler::SessionHandler(std::unique_ptr<EngineInterface> engine) {
+  Init(std::move(engine), std::unique_ptr<EngineBuilderInterface>());
+}
+
+SessionHandler::SessionHandler(
+    std::unique_ptr<EngineInterface> engine,
+    std::unique_ptr<EngineBuilderInterface> engine_builder) {
+  Init(std::move(engine), std::move(engine_builder));
+}
+
+void SessionHandler::Init(
+    std::unique_ptr<EngineInterface> engine,
+    std::unique_ptr<EngineBuilderInterface> engine_builder) {
+  is_available_ = false;
+  max_session_size_ = 0;
+  last_session_empty_time_ = Clock::GetTime();
+  last_cleanup_time_ = 0;
+  last_create_session_time_ = 0;
+  engine_ = std::move(engine);
+  engine_builder_ = std::move(engine_builder);
+  observer_handler_.reset(new session::SessionObserverHandler());
+  stopwatch_.reset(new Stopwatch);
+  user_dictionary_session_handler_.reset(
+      new user_dictionary::UserDictionarySessionHandler);
+  table_manager_.reset(new composer::TableManager);
+  request_.reset(new commands::Request);
+  config_.reset(new config::Config);
+
   if (FLAGS_restricted) {
     VLOG(1) << "Server starts with restricted mode";
     // --restricted is almost always specified when mozc_client is inside Job.
@@ -173,11 +193,13 @@ SessionHandler::SessionHandler(EngineInterface *engine)
   // enabling session watch dog for android.
 #endif  // MOZC_DISABLE_SESSION_WATCHDOG
 
+  config::ConfigHandler::GetConfig(config_.get());
+
   // allow [2..128] sessions
-  max_session_size_ = max(2, min(FLAGS_max_session_size, 128));
+  max_session_size_ = std::max(2, std::min(FLAGS_max_session_size, 128));
   session_map_.reset(new SessionMap(max_session_size_));
 
-  if (engine_ == NULL) {
+  if (!engine_) {
     return;
   }
 
@@ -188,9 +210,9 @@ SessionHandler::SessionHandler(EngineInterface *engine)
 SessionHandler::~SessionHandler() {
   for (SessionElement *element =
            const_cast<SessionElement *>(session_map_->Head());
-       element != NULL; element = element->next) {
+       element != nullptr; element = element->next) {
     delete element->value;
-    element->value = NULL;
+    element->value = nullptr;
   }
   session_map_->Clear();
 #ifndef MOZC_DISABLE_SESSION_WATCHDOG
@@ -211,7 +233,7 @@ bool SessionHandler::IsAvailable() const {
 bool SessionHandler::StartWatchDog() {
 #ifndef MOZC_DISABLE_SESSION_WATCHDOG
   if (!session_watch_dog_->IsRunning()) {
-    session_watch_dog_->Start();
+    session_watch_dog_->Start("WatchDog");
   }
   return session_watch_dog_->IsRunning();
 #else  // MOZC_DISABLE_SESSION_WATCHDOG
@@ -222,23 +244,20 @@ bool SessionHandler::StartWatchDog() {
 #endif  // MOZC_DISABLE_SESSION_WATCHDOG
 }
 
-void SessionHandler::ReloadSession() {
-  observer_handler_->Reload();
-  ReloadConfig();
-}
-
-void SessionHandler::ReloadConfig() {
+void SessionHandler::SetConfig(const config::Config &config) {
+  *config_ = config;
   const composer::Table *table = table_manager_->GetTable(
-      *request_, config::ConfigHandler::GetConfig());
+      *request_, *config_, *engine_->GetDataManager());
   for (SessionElement *element =
            const_cast<SessionElement *>(session_map_->Head());
        element != NULL; element = element->next) {
     if (element->value != NULL) {
-      element->value->ReloadConfig();
+      element->value->SetConfig(config_.get());
       element->value->SetRequest(request_.get());
       element->value->SetTable(table);
     }
   }
+  config::CharacterFormManager::GetCharacterFormManager()->ReloadConfig(config);
 }
 
 bool SessionHandler::SyncData(commands::Command *command) {
@@ -250,7 +269,6 @@ bool SessionHandler::SyncData(commands::Command *command) {
 bool SessionHandler::Shutdown(commands::Command *command) {
   VLOG(1) << "Shutdown server";
   SyncData(command);
-  ReloadSession();   // for saving log_commands
   is_available_ = false;
   UsageStats::IncrementCount("ShutDown");
   return true;
@@ -258,9 +276,12 @@ bool SessionHandler::Shutdown(commands::Command *command) {
 
 bool SessionHandler::Reload(commands::Command *command) {
   VLOG(1) << "Reloading server";
-  ReloadSession();
+  {
+    config::Config config;
+    config::ConfigHandler::GetConfig(&config);
+    SetConfig(config);
+  }
   engine_->Reload();
-  RunReloaders();  // call all reloaders defined in .cc file
   return true;
 }
 
@@ -287,10 +308,6 @@ bool SessionHandler::ClearUnusedUserPrediction(commands::Command *command) {
 
 bool SessionHandler::GetStoredConfig(commands::Command *command) {
   VLOG(1) << "Getting stored config";
-  // Ensure the onmemory config is same as the locally stored one
-  // because the local data could be changed by sync.
-  ReloadConfig();
-
   // Use GetStoredConfig instead of GetConfig because GET_CONFIG
   // command should return raw stored config, which is not
   // affected by imposed config.
@@ -299,6 +316,11 @@ bool SessionHandler::GetStoredConfig(commands::Command *command) {
     LOG(WARNING) << "cannot get config";
     return false;
   }
+
+  // Ensure the onmemory config is same as the locally stored one
+  // because the local data could be changed by sync.
+  SetConfig(command->output().config());
+
   return true;
 }
 
@@ -309,15 +331,10 @@ bool SessionHandler::SetStoredConfig(commands::Command *command) {
     return false;
   }
 
-  const mozc::config::Config &config = command->input().config();
-  if (!config::ConfigHandler::SetConfig(config)) {
-    return false;
-  }
+  *command->mutable_output()->mutable_config() = command->input().config();
+  MaybeUpdateStoredConfig(command);
 
-  command->mutable_output()->mutable_config()->CopyFrom(config);
-  Reload(command);
   UsageStats::IncrementCount("SetConfig");
-
   return true;
 }
 
@@ -411,7 +428,7 @@ bool SessionHandler::ReadAllFromStorage(commands::Command *command) {
     return false;
   }
 
-  vector<string> result;
+  std::vector<string> result;
   storage->GetAllValues(&result);
   output->mutable_storage_entry()->set_type(storage_type);
   for (size_t i = 0; i < result.size(); ++i) {
@@ -515,6 +532,9 @@ bool SessionHandler::EvalCommand(commands::Command *command) {
     case commands::Input::SEND_USER_DICTIONARY_COMMAND:
       eval_succeeded = SendUserDictionaryCommand(command);
       break;
+    case commands::Input::SEND_ENGINE_RELOAD_REQUEST:
+      eval_succeeded = SendEngineReloadRequest(command);
+      break;
     case commands::Input::NO_OPERATION:
       eval_succeeded = NoOperation(command);
       break;
@@ -548,11 +568,22 @@ bool SessionHandler::EvalCommand(commands::Command *command) {
 }
 
 session::SessionInterface *SessionHandler::NewSession() {
-  return new session::Session(engine_);
+  // Session doesn't take the ownership of engine.
+  return new session::Session(engine_.get());
 }
 
 void SessionHandler::AddObserver(session::SessionObserverInterface *observer) {
   observer_handler_->AddObserver(observer);
+}
+
+void SessionHandler::MaybeUpdateStoredConfig(commands::Command *command) {
+  if (!command->output().has_config()) {
+    return;
+  }
+
+  *config_ = command->output().config();
+  config::ConfigHandler::SetConfig(*config_);
+  Reload(command);
 }
 
 bool SessionHandler::SendKey(commands::Command *command) {
@@ -563,6 +594,7 @@ bool SessionHandler::SendKey(commands::Command *command) {
     return false;
   }
   (*session)->SendKey(command);
+  MaybeUpdateStoredConfig(command);
   return true;
 }
 
@@ -586,6 +618,7 @@ bool SessionHandler::SendCommand(commands::Command *command) {
     return false;
   }
   (*session)->SendCommand(command);
+  MaybeUpdateStoredConfig(command);
   return true;
 }
 
@@ -593,9 +626,9 @@ bool SessionHandler::CreateSession(commands::Command *command) {
   // prevent DOS attack
   // don't allow CreateSession in very short period.
   const int create_session_minimum_interval =
-      max(0, min(FLAGS_create_session_min_interval, 10));
+      std::max(0, std::min(FLAGS_create_session_min_interval, 10));
 
-  uint64 current_time = Util::GetTime();
+  uint64 current_time = Clock::GetTime();
   if (last_create_session_time_ != 0 &&
       (current_time - last_create_session_time_) <
       create_session_minimum_interval) {
@@ -619,6 +652,25 @@ bool SessionHandler::CreateSession(commands::Command *command) {
             << oldest_element->key << " is removed";
   }
 
+  if (engine_builder_ &&
+      session_map_->Size() == 0 &&
+      engine_builder_->HasResponse()) {
+    auto *response =
+        command->mutable_output()->mutable_engine_reload_response();
+    engine_builder_->GetResponse(response);
+    if (response->status() == EngineReloadResponse::RELOAD_READY) {
+      if (engine_->GetUserDataManager()) {
+        engine_->GetUserDataManager()->Wait();
+      }
+      engine_.reset();
+      engine_ = engine_builder_->BuildFromPreparedData();
+      LOG_IF(FATAL, !engine_) << "Critical failure in engine replace";
+      table_manager_->ClearCaches();
+      response->set_status(EngineReloadResponse::RELOADED);
+    }
+    engine_builder_->Clear();
+  }
+
   session::SessionInterface *session = NewSession();
   if (session == NULL) {
     LOG(ERROR) << "Cannot allocate new Session";
@@ -639,17 +691,21 @@ bool SessionHandler::CreateSession(commands::Command *command) {
 
   if (command->input().has_application_info()) {
     session->set_application_info(command->input().application_info());
-#ifdef __native_client__
+#ifdef OS_NACL
     if (command->input().application_info().has_timezone_offset()) {
-      Util::SetTimezoneOffset(
+      Clock::SetTimezoneOffset(
           command->input().application_info().timezone_offset());
     }
-#endif  // __native_client__
+#endif  // OS_NACL
   }
 
   // Ensure the onmemory config is same as the locally stored one
   // because the local data could be changed by sync.
-  ReloadConfig();
+  {
+    config::Config config;
+    config::ConfigHandler::GetConfig(&config);
+    SetConfig(config);
+  }
 
   // session is not empty.
   last_session_empty_time_ = 0;
@@ -661,7 +717,9 @@ bool SessionHandler::CreateSession(commands::Command *command) {
 
 bool SessionHandler::DeleteSession(commands::Command *command) {
   DeleteSessionID(command->input().id());
-  engine_->GetUserDataManager()->Sync();
+  if (engine_->GetUserDataManager()) {
+    engine_->GetUserDataManager()->Sync();
+  }
   return true;
 }
 
@@ -673,7 +731,7 @@ bool SessionHandler::DeleteSession(commands::Command *command) {
 // no active session and client doesn't send any conversion
 // request to the server for FLAGS_timeout sec.
 bool SessionHandler::Cleanup(commands::Command *command) {
-  const uint64 current_time = Util::GetTime();
+  const uint64 current_time = Clock::GetTime();
 
   // suspend/hibernation may happen
   uint64 suspend_time = 0;
@@ -696,14 +754,13 @@ bool SessionHandler::Cleanup(commands::Command *command) {
   // allow [1..600] sec. default: 300
   const uint64 create_session_timeout =
       suspend_time +
-      max(1, min(FLAGS_last_create_session_timeout, 600));
+      std::max(1, std::min(FLAGS_last_create_session_timeout, 600));
 
   // allow [10..7200] sec. default 3600
   const uint64 last_command_timeout =
-      suspend_time +
-      max(10, min(FLAGS_last_command_timeout, 7200));
+      suspend_time + std::max(10, std::min(FLAGS_last_command_timeout, 7200));
 
-  vector<SessionID> remove_ids;
+  std::vector<SessionID> remove_ids;
   for (SessionElement *element =
            const_cast<SessionElement *>(session_map_->Head());
        element != NULL; element = element->next) {
@@ -760,6 +817,16 @@ bool SessionHandler::SendUserDictionaryCommand(commands::Command *command) {
   return result;
 }
 
+bool SessionHandler::SendEngineReloadRequest(commands::Command *command) {
+  if (!engine_builder_ || !command->input().has_engine_reload_request()) {
+    return false;
+  }
+  engine_builder_->PrepareAsync(
+      command->input().engine_reload_request(),
+      command->mutable_output()->mutable_engine_reload_response());
+  return true;
+}
+
 bool SessionHandler::NoOperation(commands::Command *command) {
   return true;
 }
@@ -794,7 +861,7 @@ bool SessionHandler::DeleteSessionID(SessionID id) {
   // if session gets empty, save the timestamp
   if (last_session_empty_time_ == 0 &&
       session_map_->Size() == 0) {
-    last_session_empty_time_ = Util::GetTime();
+    last_session_empty_time_ = Clock::GetTime();
   }
 
   return true;

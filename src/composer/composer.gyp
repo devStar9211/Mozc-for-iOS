@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -50,196 +50,40 @@
         'table.cc',
       ],
       'dependencies': [
-        'embedded_typing_model#host',
         '../base/base.gyp:base',
         '../base/base.gyp:config_file_stream',
+        '../composer/composer.gyp:key_event_util',
+        '../composer/composer.gyp:key_parser',
         '../config/config.gyp:character_form_manager',
         '../config/config.gyp:config_handler',
-        '../config/config.gyp:config_protocol',
+        '../protocol/protocol.gyp:config_proto',
         '../protobuf/protobuf.gyp:protobuf',
-        '../session/session_base.gyp:key_event_util',
-        '../session/session_base.gyp:key_parser',
-        # This is needed. GYP is not smart enough about indirect dependencies.
-        '../session/session_base.gyp:session_protocol',
+        '../protocol/protocol.gyp:commands_proto',
         '../transliteration/transliteration.gyp:transliteration',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
-      'target_name': 'composer_test',
-      'type': 'none',
+      'target_name': 'key_event_util',
+      'type': 'static_library',
       'sources': [
-        'composer_test.cc',
-        'internal/char_chunk_test.cc',
-        'internal/composition_input_test.cc',
-        'internal/composition_test.cc',
-        'internal/converter_test.cc',
-        'internal/mode_switching_handler_test.cc',
-        'internal/transliterators_test.cc',
-        'internal/typing_corrector_test.cc',
-        'table_test.cc',
+        'key_event_util.cc',
       ],
-      'variables': {
-        'test_size': 'small',
-      },
-    },
-    # Test cases meta target: this target is referred from gyp/tests.gyp
-    {
-      'target_name': 'composer_all_test',
-      'type': 'none',
-    },
-    {
-      'target_name': 'gen_typing_model',
-      'type': 'none',
-      'toolsets': ['host'],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-      'actions': [
-        {
-          'action_name': 'gen_qwerty_mobile-hiragana_typing_model',
-          'variables': {
-            'input_files': [
-              '<(mozc_dir)/data/typing/typing_model_qwerty_mobile-hiragana.tsv',
-            ],
-          },
-          'inputs': [
-            '<(mozc_dir)/composer/internal/gen_typing_model.py',
-            '<@(input_files)',
-          ],
-          'outputs': [
-            '<(gen_out_dir)/internal/typing_model_qwerty_mobile-hiragana.h',
-          ],
-          'action': [
-            'python',
-            '<(mozc_dir)/composer/internal/gen_typing_model.py',
-            '--input_path',
-            '<@(input_files)',
-            '--output_path',
-            '<@(_outputs)',
-            '--variable_name',
-            'QwertyMobileHiragana'
-          ],
-        },
-        {
-          'action_name': 'gen_12keys-hiragana_typing_model',
-          'variables': {
-            'input_files': [
-              '<(mozc_dir)/data/typing/typing_model_12keys-hiragana.tsv',
-            ],
-          },
-          'inputs': [
-            '<(mozc_dir)/composer/internal/gen_typing_model.py',
-            '<@(input_files)',
-          ],
-          'outputs': [
-            '<(gen_out_dir)/internal/typing_model_12keys-hiragana.h',
-          ],
-          'action': [
-            'python',
-            '<(mozc_dir)/composer/internal/gen_typing_model.py',
-            '--input_path',
-            '<@(input_files)',
-            '--output_path',
-            '<@(_outputs)',
-            '--variable_name',
-            '12keysHiragana'
-          ],
-        },
-        {
-          'action_name': 'gen_flick-hiragana_typing_model',
-          'variables': {
-            'input_files': [
-              '<(mozc_dir)/data/typing/typing_model_flick-hiragana.tsv',
-            ],
-          },
-          'inputs': [
-            '<(mozc_dir)/composer/internal/gen_typing_model.py',
-            '<@(input_files)',
-          ],
-          'outputs': [
-            '<(gen_out_dir)/internal/typing_model_flick-hiragana.h',
-          ],
-          'action': [
-            'python',
-            '<(mozc_dir)/composer/internal/gen_typing_model.py',
-            '--input_path',
-            '<@(input_files)',
-            '--output_path',
-            '<@(_outputs)',
-            '--variable_name',
-            'FlickHiragana'
-          ],
-        },
-        {
-          'action_name': 'gen_godan-hiragana_typing_model',
-          'variables': {
-            'input_files': [
-              '<(mozc_dir)/data/typing/typing_model_godan-hiragana.tsv',
-            ],
-          },
-          'inputs': [
-            '<(mozc_dir)/composer/internal/gen_typing_model.py',
-            '<@(input_files)',
-          ],
-          'outputs': [
-            '<(gen_out_dir)/internal/typing_model_godan-hiragana.h',
-          ],
-          'action': [
-            'python',
-            '<(mozc_dir)/composer/internal/gen_typing_model.py',
-            '--input_path',
-            '<@(input_files)',
-            '--output_path',
-            '<@(_outputs)',
-            '--variable_name',
-            'GodanHiragana'
-          ],
-        },
-        {
-          'action_name': 'gen_toggle_flick-hiragana_typing_model',
-          'variables': {
-            'input_files': [
-              '<(mozc_dir)/data/typing/typing_model_toggle_flick-hiragana.tsv',
-            ],
-          },
-          'inputs': [
-            '<(mozc_dir)/composer/internal/gen_typing_model.py',
-            '<@(input_files)',
-          ],
-          'outputs': [
-            '<(gen_out_dir)/internal/typing_model_toggle_flick-hiragana.h',
-          ],
-          'action': [
-            'python',
-            '<(mozc_dir)/composer/internal/gen_typing_model.py',
-            '--input_path',
-            '<@(input_files)',
-            '--output_path',
-            '<@(_outputs)',
-            '--variable_name',
-            'ToggleFlickHiragana'
-          ],
-        },
-      ],
-    },
-    {
-      'target_name': 'embedded_typing_model',
-      'type': 'none',
-      'toolsets': ['host'],
-      'hard_dependency': 1,
       'dependencies': [
-        'gen_typing_model#host',
+        '../base/base.gyp:base',
+        '../protocol/protocol.gyp:commands_proto',
       ],
-      'export_dependent_settings': [
-        'gen_typing_model#host',
-      ]
+    },
+    {
+      'target_name': 'key_parser',
+      'type': 'static_library',
+      'sources': [
+        'key_parser.cc',
+      ],
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../protocol/protocol.gyp:config_proto',
+        '../protocol/protocol.gyp:commands_proto',
+      ],
     },
   ],
 }

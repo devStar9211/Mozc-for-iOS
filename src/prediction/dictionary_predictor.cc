@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -45,21 +45,21 @@
 #include "base/number_util.h"
 #include "base/util.h"
 #include "composer/composer.h"
-#include "config/config.pb.h"
-#include "config/config_handler.h"
-#include "converter/connector_interface.h"
-#include "converter/conversion_request.h"
+#include "converter/connector.h"
 #include "converter/converter_interface.h"
 #include "converter/immutable_converter_interface.h"
 #include "converter/node_list_builder.h"
-#include "converter/segmenter_interface.h"
+#include "converter/segmenter.h"
 #include "converter/segments.h"
 #include "dictionary/dictionary_interface.h"
 #include "dictionary/pos_matcher.h"
 #include "prediction/predictor_interface.h"
 #include "prediction/suggestion_filter.h"
-#include "prediction/zero_query_number_data.h"
-#include "session/commands.pb.h"
+#include "prediction/zero_query_dict.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
+#include "request/conversion_request.h"
+#include "usage_stats/usage_stats.h"
 
 // This flag is set by predictor.cc
 // We can remove this after the ambiguity expansion feature get stable.
@@ -67,14 +67,16 @@ DEFINE_bool(enable_expansion_for_dictionary_predictor,
             false,
             "enable ambiguity expansion for dictionary_predictor");
 
-DEFINE_bool(enable_mixed_conversion,
-            false,
-            "Enable mixed conversion feature");
-
 DECLARE_bool(enable_typing_correction);
 
 namespace mozc {
 namespace {
+
+using commands::Request;
+using dictionary::DictionaryInterface;
+using dictionary::POSMatcher;
+using dictionary::Token;
+using usage_stats::UsageStats;
 
 // Used to emulate positive infinity for cost. This value is set for those
 // candidates that are thought to be aggressive; thus we can eliminate such
@@ -89,34 +91,6 @@ const int kInfinity = (2 << 20);
 const size_t kSuggestionMaxResultsSize = 256;
 const size_t kPredictionMaxResultsSize = 100000;
 
-void GetNumberSuffixArray(const string &history_input,
-                          vector<string> *suffixes) {
-  DCHECK(suffixes);
-  const char kDefault[] = "default";
-  const string default_str(kDefault);
-
-  int default_num = -1;
-  int suffix_num = -1;
-
-  for (int i = 0; ZeroQueryNum[i]; ++i) {
-    if (default_str == ZeroQueryNum[i][0]) {
-      default_num = i;
-    } else if (history_input == ZeroQueryNum[i][0]) {
-      suffix_num = i;
-    }
-  }
-  DCHECK_GE(default_num, 0);
-
-  if (suffix_num != -1) {
-    for (int j = 1; ZeroQueryNum[suffix_num][j]; ++j) {
-      suffixes->push_back(ZeroQueryNum[suffix_num][j]);
-    }
-  }
-  for (int j = 1; ZeroQueryNum[default_num][j]; ++j) {
-    suffixes->push_back(ZeroQueryNum[default_num][j]);
-  }
-}
-
 // Returns true if the |target| may be reduncant result.
 bool MaybeRedundant(const string &reference, const string &target) {
   return Util::StartsWith(target, reference);
@@ -126,6 +100,12 @@ bool IsLatinInputMode(const ConversionRequest &request) {
   return (request.has_composer() &&
           (request.composer().GetInputMode() == transliteration::HALF_ASCII ||
            request.composer().GetInputMode() == transliteration::FULL_ASCII));
+}
+
+bool IsQwertyMobileTable(const ConversionRequest &request) {
+  const auto table = request.request().special_romanji_table();
+  return (table == commands::Request::QWERTY_MOBILE_TO_HIRAGANA ||
+          table == commands::Request::QWERTY_MOBILE_TO_HALFWIDTHASCII);
 }
 
 // Returns true if |segments| contains number history.
@@ -155,29 +135,32 @@ bool GetNumberHistory(const Segments &segments, string *number_key) {
 }
 
 bool IsMixedConversionEnabled(const commands::Request& request) {
-  return request.mixed_conversion() || FLAGS_enable_mixed_conversion;
+  return request.mixed_conversion();
 }
 
-bool IsTypingCorrectionEnabled() {
-  return GET_CONFIG(use_typing_correction) ||
+bool IsTypingCorrectionEnabled(const ConversionRequest &request) {
+  return request.config().use_typing_correction() ||
          FLAGS_enable_typing_correction;
 }
 
 }  // namespace
 
-class DictionaryPredictor::PredictiveLookupCallback :
-      public mozc::DictionaryInterface::Callback {
+class DictionaryPredictor::PredictiveLookupCallback
+    : public DictionaryInterface::Callback {
  public:
   PredictiveLookupCallback(DictionaryPredictor::PredictionTypes types,
                            size_t limit, size_t original_key_len,
-                           const set<string> *subsequent_chars,
-                           vector<DictionaryPredictor::Result> *results)
+                           const std::set<string> *subsequent_chars,
+                           bool is_zero_query,
+                           std::vector<DictionaryPredictor::Result> *results)
       : penalty_(0), types_(types), limit_(limit),
         original_key_len_(original_key_len),
-        subsequent_chars_(subsequent_chars), results_(results) {}
+        subsequent_chars_(subsequent_chars),
+        is_zero_query_(is_zero_query),
+        results_(results) {}
 
-  virtual ResultType OnKey(StringPiece key) {
-    if (subsequent_chars_ == NULL) {
+  ResultType OnKey(StringPiece key) override {
+    if (subsequent_chars_ == nullptr) {
       return TRAVERSE_CONTINUE;
     }
     // If |subsequent_chars_| was provided, check if the substring of |key|
@@ -190,58 +173,58 @@ class DictionaryPredictor::PredictiveLookupCallback :
     // than 10.  Thus, this linear order algorithm is fast enough.
     // Theoretically, we can construct a trie of strings in |subsequent_chars_|
     // to get more performance but it's overkill here.
-    // TODO(noriyukit): vector<string> would be better than set<string>.  To
-    // this end, we need to fix Comopser as well.
-    const StringPiece rest(key, original_key_len_);
-    for (set<string>::const_iterator iter = subsequent_chars_->begin();
-         iter != subsequent_chars_->end(); ++iter) {
-      if (Util::StartsWith(rest, *iter)) {
+    // TODO(noriyukit): std::vector<string> would be better than set<string>.
+    // To this end, we need to fix Comopser as well.
+    const StringPiece rest = ClippedSubstr(key, original_key_len_);
+    for (const string &chr : *subsequent_chars_) {
+      if (Util::StartsWith(rest, chr)) {
         return TRAVERSE_CONTINUE;
       }
     }
     return TRAVERSE_NEXT_KEY;
   }
 
-  virtual ResultType OnActualKey(StringPiece key, StringPiece actual_key,
-                                 bool is_expanded) {
+  ResultType OnActualKey(StringPiece key, StringPiece actual_key,
+                         bool is_expanded) override {
     penalty_ = is_expanded ? kKanaModifierInsensitivePenalty : 0;
     return TRAVERSE_CONTINUE;
   }
 
-  virtual ResultType OnToken(StringPiece,  // key
-                             StringPiece,  // actual_key
-                             const Token &token) {
+  ResultType OnToken(StringPiece,  // key
+                     StringPiece,  // actual_key
+                     const Token &token) override {
     results_->push_back(Result());
     results_->back().InitializeByTokenAndTypes(token, types_);
     results_->back().wcost += penalty_;
-    if (results_->size() < limit_) {
-      return TRAVERSE_CONTINUE;
-    } else {
-      return TRAVERSE_DONE;
+    if (is_zero_query_ && (types_ & SUFFIX)) {
+      results_->back().SetSourceInfoForZeroQuery(ZERO_QUERY_SUFFIX);
     }
+    return (results_->size() < limit_) ? TRAVERSE_CONTINUE : TRAVERSE_DONE;
   }
 
- private:
+ protected:
   int32 penalty_;
   const DictionaryPredictor::PredictionTypes types_;
   const size_t limit_;
   const size_t original_key_len_;
-  const set<string> *subsequent_chars_;
-  vector<DictionaryPredictor::Result> *results_;
+  const std::set<string> *subsequent_chars_;
+  const bool is_zero_query_;
+  std::vector<DictionaryPredictor::Result> *results_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(PredictiveLookupCallback);
 };
 
 class DictionaryPredictor::PredictiveBigramLookupCallback :
       public PredictiveLookupCallback {
  public:
-  PredictiveBigramLookupCallback(DictionaryPredictor::PredictionTypes types,
-                                 size_t limit, size_t original_key_len,
-                                 const set<string> *subsequent_chars,
-                                 StringPiece history_value,
-                                 vector<DictionaryPredictor::Result> *results)
+  PredictiveBigramLookupCallback(
+      DictionaryPredictor::PredictionTypes types, size_t limit,
+      size_t original_key_len, const std::set<string> *subsequent_chars,
+      StringPiece history_value, bool is_zero_query,
+      std::vector<DictionaryPredictor::Result> *results)
       : PredictiveLookupCallback(types, limit, original_key_len,
-                                 subsequent_chars, results),
+                                 subsequent_chars, is_zero_query, results),
         history_value_(history_value) {}
 
   virtual ResultType OnToken(StringPiece key, StringPiece expanded_key,
@@ -252,7 +235,13 @@ class DictionaryPredictor::PredictiveBigramLookupCallback :
         token.value.size() <= history_value_.size()) {
       return TRAVERSE_CONTINUE;
     }
-    return PredictiveLookupCallback::OnToken(key, expanded_key, token);
+    ResultType result_type =
+        PredictiveLookupCallback::OnToken(key, expanded_key, token);
+    if (is_zero_query_) {
+      results_->back().SetSourceInfoForZeroQuery(
+          ZERO_QUERY_BIGRAM);
+    }
+    return result_type;
   }
 
  private:
@@ -264,8 +253,7 @@ class DictionaryPredictor::PredictiveBigramLookupCallback :
 // Comparator for sorting prediction candidates.
 // If we have words A and AB, for example "六本木" and "六本木ヒルズ",
 // assume that cost(A) < cost(AB).
-class DictionaryPredictor::ResultWCostLess :
-      public binary_function<Result, Result, bool> {
+class DictionaryPredictor::ResultWCostLess {
  public:
   bool operator() (const DictionaryPredictor::Result &lhs,
                    const DictionaryPredictor::Result &rhs) const {
@@ -273,8 +261,7 @@ class DictionaryPredictor::ResultWCostLess :
   }
 };
 
-class DictionaryPredictor::ResultCostLess :
-      public binary_function<Result, Result, bool> {
+class DictionaryPredictor::ResultCostLess {
  public:
   bool operator() (const DictionaryPredictor::Result &lhs,
                    const DictionaryPredictor::Result &rhs) const {
@@ -283,12 +270,13 @@ class DictionaryPredictor::ResultCostLess :
 };
 
 DictionaryPredictor::DictionaryPredictor(
+    const DataManagerInterface &data_manager,
     const ConverterInterface *converter,
     const ImmutableConverterInterface *immutable_converter,
     const DictionaryInterface *dictionary,
     const DictionaryInterface *suffix_dictionary,
-    const ConnectorInterface *connector,
-    const SegmenterInterface *segmenter,
+    const Connector *connector,
+    const Segmenter *segmenter,
     const POSMatcher *pos_matcher,
     const SuggestionFilter *suggestion_filter)
     : converter_(converter),
@@ -299,9 +287,84 @@ DictionaryPredictor::DictionaryPredictor(
       segmenter_(segmenter),
       suggestion_filter_(suggestion_filter),
       counter_suffix_word_id_(pos_matcher->GetCounterSuffixWordId()),
-      predictor_name_("DictionaryPredictor") {}
+      general_symbol_id_(pos_matcher->GetGeneralSymbolId()),
+      predictor_name_("DictionaryPredictor") {
+  StringPiece zero_query_token_array_data;
+  StringPiece zero_query_string_array_data;
+  StringPiece zero_query_number_token_array_data;
+  StringPiece zero_query_number_string_array_data;
+  data_manager.GetZeroQueryData(&zero_query_token_array_data,
+                                &zero_query_string_array_data,
+                                &zero_query_number_token_array_data,
+                                &zero_query_number_string_array_data);
+  zero_query_dict_.Init(zero_query_token_array_data,
+                        zero_query_string_array_data);
+  zero_query_number_dict_.Init(zero_query_number_token_array_data,
+                               zero_query_number_string_array_data);
+}
 
 DictionaryPredictor::~DictionaryPredictor() {}
+
+void DictionaryPredictor::Finish(
+    const ConversionRequest &request, Segments *segments) {
+  if (segments->request_type() == Segments::REVERSE_CONVERSION) {
+    // Do nothing for REVERSE_CONVERSION.
+    return;
+  }
+
+  const Segment &segment = segments->conversion_segment(0);
+  if (segment.candidates_size() < 1) {
+    VLOG(2) << "candidates size < 1";
+    return;
+  }
+
+  const Segment::Candidate &candidate = segment.candidate(0);
+  if (segment.segment_type() != Segment::FIXED_VALUE) {
+    VLOG(2) << "segment is not FIXED_VALUE" << candidate.value;
+    return;
+  }
+
+  MaybeRecordUsageStats(candidate);
+}
+
+void DictionaryPredictor::MaybeRecordUsageStats(
+    const Segment::Candidate &candidate) const {
+  if (candidate.source_info &
+      Segment::Candidate::DICTIONARY_PREDICTOR_ZERO_QUERY_NONE) {
+    UsageStats::IncrementCount(
+        "CommitDictionaryPredictorZeroQueryTypeNone");
+  }
+
+  if (candidate.source_info &
+      Segment::Candidate::DICTIONARY_PREDICTOR_ZERO_QUERY_NUMBER_SUFFIX) {
+    UsageStats::IncrementCount(
+        "CommitDictionaryPredictorZeroQueryTypeNumberSuffix");
+  }
+
+  if (candidate.source_info &
+      Segment::Candidate::DICTIONARY_PREDICTOR_ZERO_QUERY_EMOTICON) {
+    UsageStats::IncrementCount(
+        "CommitDictionaryPredictorZeroQueryTypeEmoticon");
+  }
+
+  if (candidate.source_info &
+      Segment::Candidate::DICTIONARY_PREDICTOR_ZERO_QUERY_EMOJI) {
+    UsageStats::IncrementCount(
+        "CommitDictionaryPredictorZeroQueryTypeEmoji");
+  }
+
+  if (candidate.source_info &
+      Segment::Candidate::DICTIONARY_PREDICTOR_ZERO_QUERY_BIGRAM) {
+    UsageStats::IncrementCount(
+        "CommitDictionaryPredictorZeroQueryTypeBigram");
+  }
+
+  if (candidate.source_info &
+      Segment::Candidate::DICTIONARY_PREDICTOR_ZERO_QUERY_SUFFIX) {
+    UsageStats::IncrementCount(
+        "CommitDictionaryPredictorZeroQueryTypeSuffix");
+  }
+}
 
 bool DictionaryPredictor::PredictForRequest(const ConversionRequest &request,
                                             Segments *segments) const {
@@ -309,7 +372,7 @@ bool DictionaryPredictor::PredictForRequest(const ConversionRequest &request,
     return false;
   }
 
-  vector<Result> results;
+  std::vector<Result> results;
   if (!AggregatePrediction(request, segments, &results)) {
     return false;
   }
@@ -323,7 +386,7 @@ bool DictionaryPredictor::PredictForRequest(const ConversionRequest &request,
 bool DictionaryPredictor::AggregatePrediction(
     const ConversionRequest &request,
     Segments *segments,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
   DCHECK(segments);
   DCHECK(results);
 
@@ -360,7 +423,7 @@ bool DictionaryPredictor::AggregatePrediction(
 
 void DictionaryPredictor::SetCost(const ConversionRequest &request,
                                   const Segments &segments,
-                                  vector<Result> *results) const {
+                                  std::vector<Result> *results) const {
   DCHECK(results);
 
   if (IsMixedConversionEnabled(request.request())) {
@@ -374,7 +437,7 @@ void DictionaryPredictor::SetCost(const ConversionRequest &request,
 
 void DictionaryPredictor::RemovePrediction(const ConversionRequest &request,
                                            const Segments &segments,
-                                           vector<Result> *results) const {
+                                           std::vector<Result> *results) const {
   DCHECK(results);
 
   if (!IsMixedConversionEnabled(request.request())) {
@@ -388,7 +451,7 @@ void DictionaryPredictor::RemovePrediction(const ConversionRequest &request,
 
 bool DictionaryPredictor::AddPredictionToCandidates(
     const ConversionRequest &request,
-    Segments *segments, vector<Result> *results) const {
+    Segments *segments, std::vector<Result> *results) const {
   DCHECK(segments);
   DCHECK(results);
   const bool mixed_conversion = IsMixedConversionEnabled(request.request());
@@ -408,14 +471,13 @@ bool DictionaryPredictor::AddPredictionToCandidates(
   // Instead of sorting all the results, we construct a heap.
   // This is done in linear time and
   // we can pop as many results as we need efficiently.
-  make_heap(results->begin(), results->end(), ResultCostLess());
+  std::make_heap(results->begin(), results->end(), ResultCostLess());
 
-
-  const size_t size = min(segments->max_prediction_candidates_size(),
-                          results->size());
+  const size_t size =
+      std::min(segments->max_prediction_candidates_size(), results->size());
 
   int added = 0;
-  set<string> seen;
+  std::set<string> seen;
 
   int added_suffix = 0;
   bool cursor_at_tail =
@@ -424,7 +486,7 @@ bool DictionaryPredictor::AddPredictionToCandidates(
 
   for (size_t i = 0; i < results->size(); ++i) {
     // Pop a result from a heap. Please pay attention not to use results->at(i).
-    pop_heap(results->begin(), results->end() - i, ResultCostLess());
+    std::pop_heap(results->begin(), results->end() - i, ResultCostLess());
     const Result &result = results->at(results->size() - i - 1);
 
     if (added >= size || result.cost >= kInfinity) {
@@ -442,7 +504,7 @@ bool DictionaryPredictor::AddPredictionToCandidates(
       continue;
     }
 
-    // don't suggest exactly the same candidate as key.
+    // Don't suggest exactly the same candidate as key.
     // if |mixed_conversion| is true, that's not the case.
     if (!mixed_conversion &&
         !(result.types & REALTIME) &&
@@ -497,8 +559,8 @@ bool DictionaryPredictor::AddPredictionToCandidates(
     candidate->wcost = result.wcost;
     candidate->cost = result.cost;
     candidate->attributes = result.candidate_attributes;
-    if (!(candidate->attributes & Segment::Candidate::SPELLING_CORRECTION) &&
-        IsLatinInputMode(request)) {
+    if ((!(candidate->attributes & Segment::Candidate::SPELLING_CORRECTION) &&
+         IsLatinInputMode(request)) || (result.types & SUFFIX)) {
       candidate->attributes |= Segment::Candidate::NO_VARIANTS_EXPANSION;
       candidate->attributes |= Segment::Candidate::NO_EXTRA_DESCRIPTION;
     }
@@ -516,6 +578,7 @@ bool DictionaryPredictor::AddPredictionToCandidates(
         candidate->attributes |= Segment::Candidate::AUTO_PARTIAL_SUGGESTION;
       }
     }
+    candidate->source_info = result.source_info;
     if (result.types & REALTIME) {
       candidate->inner_segment_boundary = result.inner_segment_boundary;
     }
@@ -538,47 +601,52 @@ void DictionaryPredictor::SetDescription(PredictionTypes types,
                                          uint32 attributes,
                                          string *description) {
   if (types & TYPING_CORRECTION) {
-    // <入力補正>
-    Util::AppendStringWithDelimiter(
-        " ",
-        "<" "\xE5\x85\xA5\xE5\x8A\x9B\xE8\xA3\x9C\xE6\xAD\xA3" ">",
-        description);
+    Util::AppendStringWithDelimiter(" ", "補正", description);
   }
   if (attributes & Segment::Candidate::AUTO_PARTIAL_SUGGESTION) {
-    // <部分確定>
-    Util::AppendStringWithDelimiter(
-        " ",
-        "<" "\xE9\x83\xA8\xE5\x88\x86\xE7\xA2\xBA\xE5\xAE\x9A" ">",
-        description);
+    Util::AppendStringWithDelimiter(" ", "部分", description);
   }
 }
 
 void DictionaryPredictor::SetDebugDescription(PredictionTypes types,
                                               string *description) {
+  string debug_desc;
   if (types & UNIGRAM) {
-    Util::AppendStringWithDelimiter(" ", "Unigram", description);
+    debug_desc.append(1, 'U');
   }
   if (types & BIGRAM) {
-    Util::AppendStringWithDelimiter(" ", "Bigram", description);
+    debug_desc.append(1, 'B');
   }
   if (types & REALTIME_TOP) {
-    Util::AppendStringWithDelimiter(" ", "Realtime Top", description);
+    debug_desc.append("R1");
   } else if (types & REALTIME) {
-    Util::AppendStringWithDelimiter(" ", "Realtime", description);
+    debug_desc.append(1, 'R');
   }
   if (types & SUFFIX) {
-    Util::AppendStringWithDelimiter(" ", "Suffix", description);
+    debug_desc.append(1, 'S');
   }
   if (types & ENGLISH) {
-    Util::AppendStringWithDelimiter(" ", "English", description);
+    debug_desc.append(1, 'E');
   }
   // Note that description for TYPING_CORRECTION is omitted
   // because it is appended by SetDescription.
+  if (!debug_desc.empty()) {
+    Util::AppendStringWithDelimiter(" ", debug_desc, description);
+  }
 }
 
-// return transition_cost[rid][result.lid] + result.wcost (+ penalties).
+// Returns cost for |result| when it's transitioned from |rid|.  Suffix penalty
+// is also added for non-realtime results.
 int DictionaryPredictor::GetLMCost(const Result &result, int rid) const {
-  int lm_cost = connector_->GetTransitionCost(rid, result.lid) + result.wcost;
+  // Sometimes transition cost is too high and causes a bug like b/18112966.
+  // For example, "接続詞 が" -> "始まる 動詞,五段活用,基本形" has very large cost
+  // and "始まる" is demoted.  To prevent such cases, ImmutableConverter
+  // computes transition from BOS/EOS too; see
+  // ImmutableConverterImpl::MakeLatticeNodesForHistorySegments().
+  // Here, taking the minimum of |cost1| and |cost2| has a similar effect.
+  const int cost1 = connector_->GetTransitionCost(rid, result.lid);
+  const int cost2 = connector_->GetTransitionCost(0, result.lid);
+  int lm_cost = std::min(cost1, cost2) + result.wcost;
   if (!(result.types & REALTIME)) {
     // Relatime conversion already adds perfix/suffix penalties to the result.
     // Note that we don't add prefix penalty the role of "bunsetsu" is
@@ -654,6 +722,43 @@ void DictionaryPredictor::Result::SetTypesAndTokenAttributes(
   }
 }
 
+void DictionaryPredictor::Result::SetSourceInfoForZeroQuery(
+    ZeroQueryType type) {
+  switch (type) {
+    case ZERO_QUERY_NONE:
+      source_info |=
+          Segment::Candidate::DICTIONARY_PREDICTOR_ZERO_QUERY_NONE;
+      return;
+    case ZERO_QUERY_NUMBER_SUFFIX:
+      source_info |=
+          Segment::Candidate::DICTIONARY_PREDICTOR_ZERO_QUERY_NUMBER_SUFFIX;
+      return;
+    case ZERO_QUERY_EMOTICON:
+      source_info |=
+          Segment::Candidate::DICTIONARY_PREDICTOR_ZERO_QUERY_EMOTICON;
+      return;
+    case ZERO_QUERY_EMOJI:
+      source_info |=
+          Segment::Candidate::DICTIONARY_PREDICTOR_ZERO_QUERY_EMOJI;
+      return;
+    case ZERO_QUERY_BIGRAM:
+      source_info |=
+          Segment::Candidate::DICTIONARY_PREDICTOR_ZERO_QUERY_BIGRAM;
+      return;
+    case ZERO_QUERY_SUFFIX:
+      source_info |=
+          Segment::Candidate::DICTIONARY_PREDICTOR_ZERO_QUERY_SUFFIX;
+      return;
+    default:
+      LOG(ERROR) << "Should not come here";
+      return;
+  }
+}
+
+bool DictionaryPredictor::Result::IsUserDictionaryResult() const {
+  return (candidate_attributes & Segment::Candidate::USER_DICTIONARY) != 0;
+}
+
 bool DictionaryPredictor::GetHistoryKeyAndValue(
     const Segments &segments, string *key, string *value) const {
   DCHECK(key);
@@ -673,8 +778,8 @@ bool DictionaryPredictor::GetHistoryKeyAndValue(
   return true;
 }
 
-void DictionaryPredictor::SetPredictionCost(const Segments &segments,
-                                            vector<Result> *results) const {
+void DictionaryPredictor::SetPredictionCost(
+    const Segments &segments, std::vector<Result> *results) const {
   DCHECK(results);
 
   int rid = 0;  // 0 (BOS) is default
@@ -764,8 +869,10 @@ void DictionaryPredictor::SetPredictionCost(const Segments &segments,
     //
     // TODO(team): want find the best parameter instread of kCostFactor.
     const int kCostFactor = 500;
-    results->at(i).cost = cost -
-        kCostFactor * log(1.0 + max(0, static_cast<int>(key_len - query_len)));
+    results->at(i).cost =
+        cost -
+        kCostFactor *
+            log(1.0 + std::max(0, static_cast<int>(key_len - query_len)));
 
     // Update the minimum cost for REALTIME candidates that have the same key
     // length as input_key.
@@ -779,12 +886,12 @@ void DictionaryPredictor::SetPredictionCost(const Segments &segments,
   // Ensure that the REALTIME_TOP candidate has relatively smaller cost than
   // those of REALTIME candidates.
   if (realtime_top_result != NULL) {
-    realtime_top_result->cost = max(0, realtime_cost_min - 10);
+    realtime_top_result->cost = std::max(0, realtime_cost_min - 10);
   }
 }
 
 void DictionaryPredictor::SetLMCost(const Segments &segments,
-                                    vector<Result> *results) const {
+                                    std::vector<Result> *results) const {
   DCHECK(results);
 
   // ranking for mobile
@@ -805,9 +912,14 @@ void DictionaryPredictor::SetLMCost(const Segments &segments,
 
   const size_t input_key_len = Util::CharsLen(
       segments.conversion_segment(0).key());
-  for (size_t i = 0; i < results->size(); ++i) {
-    const Result &result = results->at(i);
-
+  for (Result &result : *results) {
+    // TODO(noriyukit): Workaround for a noisy suggestion when "ー" is typed.
+    // Currently it's filtered here but this hack should be removed after fixing
+    // the issue at dictionary level.
+    if (result.value == "ーチャン") {
+      result.cost = kInfinity;
+      continue;
+    }
     int cost = GetLMCost(result, rid);
     // Demote filtered word here, because they are not filtered for exact match.
     // Even for exact match, we don't want to show aggressive words
@@ -849,12 +961,26 @@ void DictionaryPredictor::SetLMCost(const Segments &segments,
       const int kBigramBonus = 800;  // ~= 500*ln(5)
       cost += (kDefaultTransitionCost - kBigramBonus - prev_cost);
     }
-    results->at(i).cost = cost;
+    if (result.candidate_attributes & Segment::Candidate::USER_DICTIONARY &&
+        result.lid != general_symbol_id_) {
+      // Decrease cost for words from user dictionary in order to promote them,
+      // provided that it is not a general symbol (Note: emoticons are mapped to
+      // general symbol).  Currently user dictionary words are evaluated 5 times
+      // bigger in frequency, being capped by 1000 (this number is adhoc, so
+      // feel free to adjust).
+      const int kUserDictionaryPromotionFactor = 804;  // 804 = 500 * log(5)
+      const int kUserDictionaryCostUpperLimit = 1000;
+      cost = std::min(cost - kUserDictionaryPromotionFactor,
+                      kUserDictionaryCostUpperLimit);
+    }
+    // Note that the cost is defined as -500 * log(prob).
+    // Even after the ad hoc manipulations, cost must remain larger than 0.
+    result.cost = std::max(1, cost);
   }
 }
 
 void DictionaryPredictor::ApplyPenaltyForKeyExpansion(
-    const Segments &segments, vector<Result> *results) const {
+    const Segments &segments, std::vector<Result> *results) const {
   if (segments.conversion_segments_size() == 0) {
     return;
   }
@@ -906,7 +1032,7 @@ size_t DictionaryPredictor::GetMissSpelledPosition(
 
 void DictionaryPredictor::RemoveMissSpelledCandidates(
     size_t request_key_len,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
   DCHECK(results);
 
   if (results->size() <= 1) {
@@ -927,7 +1053,7 @@ void DictionaryPredictor::RemoveMissSpelledCandidates(
       return;
     }
 
-    vector<size_t> same_key_index, same_value_index;
+    std::vector<size_t> same_key_index, same_value_index;
     for (size_t j = 0; j < results->size(); ++j) {
       if (i == j) {
         continue;
@@ -997,7 +1123,7 @@ size_t DictionaryPredictor::GetRealtimeCandidateMaxSize(
       Util::CharsLen(segments.segment(0).key()) >= kFewResultThreshold) {
     // We don't make so many realtime conversion prediction
     // even if we have enough margin, as it's expected less useful.
-    max_size = min(max_size, static_cast<size_t>(8));
+    max_size = std::min(max_size, static_cast<size_t>(8));
     default_size = 5;
   }
   size_t size = 0;
@@ -1024,13 +1150,13 @@ size_t DictionaryPredictor::GetRealtimeCandidateMaxSize(
       size = 0;  // Never reach here
   }
 
-  return min(max_size, size);
+  return std::min(max_size, size);
 }
 
 bool DictionaryPredictor::PushBackTopConversionResult(
     const ConversionRequest &request,
     const Segments &segments,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
   DCHECK_EQ(1, segments.conversion_segments_size());
 
   Segments tmp_segments;
@@ -1063,16 +1189,29 @@ bool DictionaryPredictor::PushBackTopConversionResult(
   // construct it manually here.
   // TODO(noriyukit): This is code duplicate in converter/nbest_generator.cc and
   // we should refactor code after finding more good design.
+  bool inner_segment_boundary_success = true;
   for (size_t i = 0; i < tmp_segments.conversion_segments_size(); ++i) {
     const Segment &segment = tmp_segments.conversion_segment(i);
     const Segment::Candidate &candidate = segment.candidate(0);
     result->value.append(candidate.value);
     result->wcost += candidate.cost;
-    result->inner_segment_boundary.push_back(
-        make_pair(Util::CharsLen(candidate.key),
-                  Util::CharsLen(candidate.value)));
-  }
 
+    uint32 encoded_lengths;
+    if (inner_segment_boundary_success &&
+        Segment::Candidate::EncodeLengths(candidate.key.size(),
+                                          candidate.value.size(),
+                                          candidate.content_key.size(),
+                                          candidate.content_value.size(),
+                                          &encoded_lengths)) {
+      result->inner_segment_boundary.push_back(encoded_lengths);
+    } else {
+      inner_segment_boundary_success = false;
+    }
+  }
+  if (!inner_segment_boundary_success) {
+    LOG(WARNING) << "Failed to construct inner segment boundary";
+    result->inner_segment_boundary.clear();
+  }
   return true;
 }
 
@@ -1080,7 +1219,7 @@ void DictionaryPredictor::AggregateRealtimeConversion(
     PredictionTypes types,
     const ConversionRequest &request,
     Segments *segments,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
   if (!(types & REALTIME)) {
     return;
   }
@@ -1178,7 +1317,7 @@ void DictionaryPredictor::AggregateUnigramPrediction(
     PredictionTypes types,
     const ConversionRequest &request,
     const Segments &segments,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
   if (!(types & UNIGRAM)) {
     return;
   }
@@ -1198,7 +1337,7 @@ void DictionaryPredictor::AggregateUnigramPrediction(
 void DictionaryPredictor::AggregateUnigramCandidate(
     const ConversionRequest &request,
     const Segments &segments,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
   DCHECK(results);
   DCHECK(dictionary_);
 
@@ -1220,12 +1359,21 @@ void DictionaryPredictor::AggregateUnigramCandidate(
 void DictionaryPredictor::AggregateUnigramCandidateForMixedConversion(
     const ConversionRequest &request,
     const Segments &segments,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
+  AggregateUnigramCandidateForMixedConversion(*dictionary_, request,
+                                              segments, results);
+}
+
+void DictionaryPredictor::AggregateUnigramCandidateForMixedConversion(
+    const dictionary::DictionaryInterface &dictionary,
+    const ConversionRequest &request,
+    const Segments &segments,
+    std::vector<Result> *results) {
   const size_t cutoff_threshold = kPredictionMaxResultsSize;
 
-  vector<Result> raw_result;
+  std::vector<Result> raw_result;
   // No history key
-  GetPredictiveResults(*dictionary_, "", request, segments, UNIGRAM,
+  GetPredictiveResults(dictionary, "", request, segments, UNIGRAM,
                        cutoff_threshold, &raw_result);
 
   // Hereafter, we split "Needed Results" and "(maybe) Unneeded Results."
@@ -1240,7 +1388,7 @@ void DictionaryPredictor::AggregateUnigramCandidateForMixedConversion(
 
   // min_iter is the beginning of the remaining results (inclusive), and
   // max_iter is the end of the remaining results (exclusive).
-  typedef vector<Result>::iterator Iter;
+  typedef std::vector<Result>::iterator Iter;
   Iter min_iter = raw_result.begin();
   Iter max_iter = raw_result.end();
   for (size_t i = 0; i < kDeleteTrialNum; ++i) {
@@ -1249,7 +1397,8 @@ void DictionaryPredictor::AggregateUnigramCandidateForMixedConversion(
     }
 
     // Find the Result with minimum cost. Swap it with the beginning element.
-    iter_swap(min_iter, min_element(min_iter, max_iter, ResultWCostLess()));
+    std::iter_swap(min_iter,
+                   std::min_element(min_iter, max_iter, ResultWCostLess()));
 
     const Result &reference_result = *min_iter;
 
@@ -1258,10 +1407,11 @@ void DictionaryPredictor::AggregateUnigramCandidateForMixedConversion(
 
     // Traverse all remaining elements and check if each result is redundant.
     for (Iter iter = min_iter; iter != max_iter; ) {
-      if (MaybeRedundant(reference_result.value, iter->value)) {
+      if (!iter->IsUserDictionaryResult() &&
+          MaybeRedundant(reference_result.value, iter->value)) {
         // Swap out the redundant result.
         --max_iter;
-        iter_swap(iter, max_iter);
+        std::iter_swap(iter, max_iter);
       } else {
         ++iter;
       }
@@ -1274,9 +1424,9 @@ void DictionaryPredictor::AggregateUnigramCandidateForMixedConversion(
   // [min_iter, max_iter): remaining results.
   // Here, we revive the redundant results up to five in the result cost order.
   const size_t kDoNotDeleteNum = 5;
-  if (distance(max_iter, raw_result.end()) >= kDoNotDeleteNum) {
-    partial_sort(max_iter, max_iter + kDoNotDeleteNum, raw_result.end(),
-                 ResultWCostLess());
+  if (std::distance(max_iter, raw_result.end()) >= kDoNotDeleteNum) {
+    std::partial_sort(max_iter, max_iter + kDoNotDeleteNum, raw_result.end(),
+                      ResultWCostLess());
     max_iter += kDoNotDeleteNum;
   } else {
     max_iter = raw_result.end();
@@ -1290,7 +1440,7 @@ void DictionaryPredictor::AggregateBigramPrediction(
     PredictionTypes types,
     const ConversionRequest &request,
     const Segments &segments,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
   if (!(types & BIGRAM)) {
     return;
   }
@@ -1313,10 +1463,10 @@ void DictionaryPredictor::AddBigramResultsFromHistory(
     const string &history_value,
     const ConversionRequest &request,
     const Segments &segments,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
   // Check that history_key/history_value are in the dictionary.
   FindValueCallback find_history_callback(history_value);
-  dictionary_->LookupPrefix(history_key, false, &find_history_callback);
+  dictionary_->LookupPrefix(history_key, request, &find_history_callback);
 
   // History value is not found in the dictionary.
   // User may create this the history candidate from T13N or segment
@@ -1353,7 +1503,7 @@ void DictionaryPredictor::AddBigramResultsFromHistory(
                                           history_value_size - 1, 1));
   for (size_t i = prev_results_size; i < results->size(); ++i) {
     CheckBigramResult(find_history_callback.token(), history_ctype,
-                      last_history_ctype, &(*results)[i]);
+                      last_history_ctype, request, &(*results)[i]);
   }
 }
 
@@ -1363,6 +1513,7 @@ void DictionaryPredictor::CheckBigramResult(
     const Token &history_token,
     const Util::ScriptType history_ctype,
     const Util::ScriptType last_history_ctype,
+    const ConversionRequest &request,
     Result *result) const {
   DCHECK(result);
 
@@ -1424,7 +1575,7 @@ void DictionaryPredictor::CheckBigramResult(
   }
 
   FindValueCallback callback(value);
-  dictionary_->LookupPrefix(key, false, &callback);
+  dictionary_->LookupPrefix(key, request, &callback);
   if (!callback.found()) {
     result->types = NO_PREDICTION;
     return;
@@ -1438,13 +1589,16 @@ void DictionaryPredictor::GetPredictiveResults(
     const Segments &segments,
     PredictionTypes types,
     size_t lookup_limit,
-    vector<Result> *results) const {
+    std::vector<Result> *results) {
   if (!request.has_composer() ||
       !FLAGS_enable_expansion_for_dictionary_predictor) {
-    const string input_key = history_key + segments.conversion_segment(0).key();
+    const string &query_key = segments.conversion_segment(0).key();
+    string input_key = history_key;
+    input_key.append(query_key);
+    const bool is_zero_query = query_key.empty();
     PredictiveLookupCallback callback(types, lookup_limit, input_key.size(),
-                                      NULL, results);
-    dictionary.LookupPredictive(input_key, false, &callback);
+                                      nullptr, is_zero_query, results);
+    dictionary.LookupPredictive(input_key, request, &callback);
     return;
   }
 
@@ -1454,14 +1608,26 @@ void DictionaryPredictor::GetPredictiveResults(
   // Example2 kana input: for "あか", we will get |base|, "あ" and |expanded|,
   // "か", and "が".
   string base;
-  set<string> expanded;
+  std::set<string> expanded;
   request.composer().GetQueriesForPrediction(&base, &expanded);
-  const string input_key = history_key + base;
-  PredictiveLookupCallback callback(
-      types, lookup_limit, input_key.size(),
-      expanded.empty() ? NULL : &expanded, results);
-  dictionary.LookupPredictive(
-      input_key, request.IsKanaModifierInsensitiveConversion(), &callback);
+  const bool is_zero_query = base.empty() && expanded.empty();
+  string input_key;
+  if (expanded.empty()) {
+    input_key.assign(history_key).append(base);
+    PredictiveLookupCallback callback(types, lookup_limit, input_key.size(),
+                                      nullptr, is_zero_query, results);
+    dictionary.LookupPredictive(input_key, request, &callback);
+    return;
+  }
+  // |expanded| is a very small set, so calling LookupPredictive multiple times
+  // is not so expensive.  Also, the number of lookup results is limited by
+  // |lookup_limit|.
+  for (const string &expanded_char : expanded) {
+    input_key.assign(history_key).append(base).append(expanded_char);
+    PredictiveLookupCallback callback(types, lookup_limit, input_key.size(),
+                                      nullptr, is_zero_query, results);
+    dictionary.LookupPredictive(input_key, request, &callback);
+  }
 }
 
 void DictionaryPredictor::GetPredictiveResultsForBigram(
@@ -1472,13 +1638,17 @@ void DictionaryPredictor::GetPredictiveResultsForBigram(
     const Segments &segments,
     PredictionTypes types,
     size_t lookup_limit,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
   if (!request.has_composer() ||
       !FLAGS_enable_expansion_for_dictionary_predictor) {
-    const string input_key = history_key + segments.conversion_segment(0).key();
+    const string &query_key = segments.conversion_segment(0).key();
+    string input_key = history_key;
+    input_key.append(query_key);
+    const bool is_zero_query = query_key.empty();
     PredictiveBigramLookupCallback callback(
-        types, lookup_limit, input_key.size(), NULL, history_value, results);
-    dictionary.LookupPredictive(input_key, false, &callback);
+        types, lookup_limit, input_key.size(), NULL, history_value,
+        is_zero_query, results);
+    dictionary.LookupPredictive(input_key, request, &callback);
     return;
   }
 
@@ -1488,14 +1658,16 @@ void DictionaryPredictor::GetPredictiveResultsForBigram(
   // Example2 kana input: for "あか", we will get |base|, "あ" and |expanded|,
   // "か", and "が".
   string base;
-  set<string> expanded;
+  std::set<string> expanded;
   request.composer().GetQueriesForPrediction(&base, &expanded);
-  const string input_key = history_key + base;
+  string input_key = history_key;
+  input_key.append(base);
+  const bool is_zero_query = base.empty();
   PredictiveBigramLookupCallback callback(types, lookup_limit, input_key.size(),
                                           expanded.empty() ? NULL : &expanded,
-                                          history_value, results);
-  dictionary.LookupPredictive(
-      input_key, request.IsKanaModifierInsensitiveConversion(), &callback);
+                                          history_value, is_zero_query,
+                                          results);
+  dictionary.LookupPredictive(input_key, request, &callback);
 }
 
 void DictionaryPredictor::GetPredictiveResultsForEnglish(
@@ -1505,7 +1677,7 @@ void DictionaryPredictor::GetPredictiveResultsForEnglish(
     const Segments &segments,
     PredictionTypes types,
     size_t lookup_limit,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
   if (!request.has_composer()) {
     GetPredictiveResults(dictionary, history_key, request, segments, types,
                          lookup_limit, results);
@@ -1513,7 +1685,7 @@ void DictionaryPredictor::GetPredictiveResultsForEnglish(
   }
 
   string input_key;
-  request.composer().GetQueryForPrediction(&input_key);
+  request.composer().GetRawString(&input_key);
   // We don't look up English words when key length is one.
   if (input_key.size() < 2) {
     return;
@@ -1525,8 +1697,8 @@ void DictionaryPredictor::GetPredictiveResultsForEnglish(
     string key(input_key);
     Util::LowerString(&key);
     PredictiveLookupCallback callback(types, lookup_limit, key.size(), NULL,
-                                      results);
-    dictionary.LookupPredictive(key, false, &callback);
+                                      false, results);
+    dictionary.LookupPredictive(key, request, &callback);
     for (size_t i = prev_results_size; i < results->size(); ++i) {
       Util::UpperString(&results->at(i).value);
     }
@@ -1536,16 +1708,16 @@ void DictionaryPredictor::GetPredictiveResultsForEnglish(
     string key(input_key);
     Util::LowerString(&key);
     PredictiveLookupCallback callback(types, lookup_limit, key.size(), NULL,
-                                      results);
-    dictionary.LookupPredictive(key, false, &callback);
+                                      false, results);
+    dictionary.LookupPredictive(key, request, &callback);
     for (size_t i = prev_results_size; i < results->size(); ++i) {
       Util::CapitalizeString(&results->at(i).value);
     }
   } else {
     // For other cases (lower and as-is), just look up directly.
     PredictiveLookupCallback callback(types, lookup_limit, input_key.size(),
-                                      NULL, results);
-    dictionary.LookupPredictive(input_key, false, &callback);
+                                      NULL, false, results);
+    dictionary.LookupPredictive(input_key, request, &callback);
   }
   // If input mode is FULL_ASCII, then convert the results to full-width.
   if (request.composer().GetInputMode() == transliteration::FULL_ASCII) {
@@ -1564,12 +1736,12 @@ void DictionaryPredictor::GetPredictiveResultsUsingTypingCorrection(
     const Segments &segments,
     PredictionTypes types,
     size_t lookup_limit,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
   if (!request.has_composer()) {
     return;
   }
 
-  vector<composer::TypeCorrectedQuery> queries;
+  std::vector<composer::TypeCorrectedQuery> queries;
   request.composer().GetTypeCorrectedQueriesForPrediction(&queries);
   for (size_t query_index = 0; query_index < queries.size(); ++query_index) {
     const composer::TypeCorrectedQuery &query = queries[query_index];
@@ -1577,9 +1749,8 @@ void DictionaryPredictor::GetPredictiveResultsUsingTypingCorrection(
     const size_t previous_results_size = results->size();
     PredictiveLookupCallback callback(
         types, lookup_limit, input_key.size(),
-        query.expanded.empty() ? NULL : &query.expanded, results);
-    dictionary.LookupPredictive(
-        input_key, request.IsKanaModifierInsensitiveConversion(), &callback);
+        query.expanded.empty() ? NULL : &query.expanded, false, results);
+    dictionary.LookupPredictive(input_key, request, &callback);
 
     for (size_t i = previous_results_size; i < results->size(); ++i) {
       results->at(i).wcost += query.cost;
@@ -1591,11 +1762,136 @@ void DictionaryPredictor::GetPredictiveResultsUsingTypingCorrection(
   }
 }
 
+// static
+bool DictionaryPredictor::GetZeroQueryCandidatesForKey(
+    const ConversionRequest &request, const string &key,
+    const ZeroQueryDict &dict, std::vector<ZeroQueryResult> *results) {
+  const int32 available_emoji_carrier =
+      request.request().available_emoji_carrier();
+
+  DCHECK(results);
+  results->clear();
+
+  auto range = dict.equal_range(key);
+  if (range.first == range.second) {
+    return false;
+  }
+  for (; range.first != range.second; ++range.first) {
+    const auto &entry = range.first;
+    if (entry.type() != ZERO_QUERY_EMOJI) {
+      results->push_back(std::make_pair(entry.value().as_string(),
+                                        entry.type()));
+      continue;
+    }
+    if (available_emoji_carrier & Request::UNICODE_EMOJI &&
+        entry.emoji_type() & EMOJI_UNICODE) {
+      results->push_back(std::make_pair(entry.value().as_string(),
+                                        entry.type()));
+      continue;
+    }
+
+    if ((available_emoji_carrier & Request::DOCOMO_EMOJI &&
+         entry.emoji_type() & EMOJI_DOCOMO) ||
+        (available_emoji_carrier & Request::SOFTBANK_EMOJI &&
+         entry.emoji_type() & EMOJI_SOFTBANK) ||
+        (available_emoji_carrier & Request::KDDI_EMOJI &&
+         entry.emoji_type() & EMOJI_KDDI)) {
+      string android_pua;
+      Util::UCS4ToUTF8(entry.emoji_android_pua(), &android_pua);
+      results->push_back(std::make_pair(android_pua, entry.type()));
+    }
+  }
+  return !results->empty();
+}
+
+// static
+void DictionaryPredictor::AppendZeroQueryToResults(
+    const std::vector<ZeroQueryResult> &candidates, uint16 lid, uint16 rid,
+    std::vector<Result> *results) {
+  int cost = 0;
+
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    // Increment cost to show the candidates in order.
+    const int kSuffixPenalty = 10;
+
+    results->push_back(Result());
+    Result *result = &results->back();
+    result->SetTypesAndTokenAttributes(SUFFIX, Token::NONE);
+    result->SetSourceInfoForZeroQuery(candidates[i].second);
+    result->key = candidates[i].first;
+    result->value = candidates[i].first;
+    result->wcost = cost;
+    result->lid = lid;
+    result->rid = rid;
+
+    cost += kSuffixPenalty;
+  }
+}
+
+// Returns true if we add zero query result.
+bool DictionaryPredictor::AggregateNumberZeroQueryPrediction(
+    const ConversionRequest &request,
+    const Segments &segments, std::vector<Result> *results) const {
+  string number_key;
+  if (!GetNumberHistory(segments, &number_key)) {
+    return false;
+  }
+
+  std::vector<ZeroQueryResult> candidates_for_number_key;
+  GetZeroQueryCandidatesForKey(request,
+                               number_key,
+                               zero_query_number_dict_,
+                               &candidates_for_number_key);
+
+  std::vector<ZeroQueryResult> default_candidates_for_number;
+  GetZeroQueryCandidatesForKey(request,
+                               "default",
+                               zero_query_number_dict_,
+                               &default_candidates_for_number);
+  DCHECK(!default_candidates_for_number.empty());
+
+  AppendZeroQueryToResults(candidates_for_number_key,
+                           counter_suffix_word_id_,
+                           counter_suffix_word_id_,
+                           results);
+  AppendZeroQueryToResults(default_candidates_for_number,
+                           counter_suffix_word_id_,
+                           counter_suffix_word_id_,
+                           results);
+  return true;
+}
+
+// Returns true if we add zero query result.
+bool DictionaryPredictor::AggregateZeroQueryPrediction(
+    const ConversionRequest &request,
+    const Segments &segments, std::vector<Result> *results) const {
+  const size_t history_size = segments.history_segments_size();
+  if (history_size <= 0) {
+    return false;
+  }
+
+  const Segment &last_segment = segments.history_segment(history_size - 1);
+  DCHECK_GT(last_segment.candidates_size(), 0);
+  const string &history_value = last_segment.candidate(0).value;
+
+  std::vector<ZeroQueryResult> candidates;
+  if (!GetZeroQueryCandidatesForKey(request,
+                                    history_value,
+                                    zero_query_dict_,
+                                    &candidates)) {
+    return false;
+  }
+
+  const uint16 kId = 0;  // EOS
+  AppendZeroQueryToResults(candidates, kId, kId, results);
+  return true;
+}
+
 void DictionaryPredictor::AggregateSuffixPrediction(
     PredictionTypes types,
     const ConversionRequest &request,
     const Segments &segments,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
   if (!(types & SUFFIX)) {
     return;
   }
@@ -1604,31 +1900,12 @@ void DictionaryPredictor::AggregateSuffixPrediction(
 
   const bool is_zero_query = segments.conversion_segment(0).key().empty();
   if (is_zero_query) {
-    string number_key;
-    if (GetNumberHistory(segments, &number_key)) {
-      // Use number suffixes and do not add normal zero query.
-      vector<string> suffixes;
-      GetNumberSuffixArray(number_key, &suffixes);
-      DCHECK_GT(suffixes.size(), 0);
-      int cost = 0;
-
-      for (vector<string>::const_iterator it = suffixes.begin();
-           it != suffixes.end(); ++it) {
-        // Increment cost to show the candidates in order.
-        const int kSuffixPenalty = 10;
-
-        results->push_back(Result());
-        Result *result = &results->back();
-        result->SetTypesAndTokenAttributes(SUFFIX, Token::NONE);
-        result->key = *it;
-        result->value = *it;
-        result->wcost = cost;
-        result->lid = counter_suffix_word_id_;
-        result->rid = counter_suffix_word_id_;
-
-        cost += kSuffixPenalty;
-      }
+    if (AggregateNumberZeroQueryPrediction(request, segments, results)) {
       return;
+    }
+    if (AggregateZeroQueryPrediction(request, segments, results)) {
+      // Fall through
+      // Appends normal suffix predictions
     }
     // Fall through
     // Use normal suffix predictions
@@ -1644,7 +1921,7 @@ void DictionaryPredictor::AggregateEnglishPrediction(
     PredictionTypes types,
     const ConversionRequest &request,
     const Segments &segments,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
   if (!(types & ENGLISH)) {
     return;
   }
@@ -1671,7 +1948,7 @@ void DictionaryPredictor::AggregateTypeCorrectingPrediction(
     PredictionTypes types,
     const ConversionRequest &request,
     const Segments &segments,
-    vector<Result> *results) const {
+    std::vector<Result> *results) const {
   if (!(types & TYPING_CORRECTION)) {
     return;
   }
@@ -1717,7 +1994,7 @@ DictionaryPredictor::PredictionTypes DictionaryPredictor::GetPredictionTypes(
 
   const bool zero_query_suggestion = request.request().zero_query_suggestion();
   if (IsLatinInputMode(request) && !zero_query_suggestion) {
-    if (GET_CONFIG(use_dictionary_suggest)) {
+    if (request.config().use_dictionary_suggest()) {
       // By following the dictionary_suggest config, enable English prediction.
       result |= ENGLISH;
     }
@@ -1727,7 +2004,7 @@ DictionaryPredictor::PredictionTypes DictionaryPredictor::GetPredictionTypes(
     return result;
   }
 
-  if (!GET_CONFIG(use_dictionary_suggest) &&
+  if (!request.config().use_dictionary_suggest() &&
       segments.request_type() == Segments::SUGGESTION) {
     VLOG(2) << "no_dictionary_suggest";
     return result;
@@ -1752,6 +2029,12 @@ DictionaryPredictor::PredictionTypes DictionaryPredictor::GetPredictionTypes(
   if ((segments.request_type() == Segments::PREDICTION && key_len >= 1) ||
       key_len >= kMinUnigramKeyLen) {
     result |= UNIGRAM;
+
+    const auto lang_aware = request.request().language_aware_input();
+    if (lang_aware == commands::Request::LANGUAGE_AWARE_SUGGESTION &&
+        IsQwertyMobileTable(request)) {
+      result |= ENGLISH;
+    }
   }
 
   const size_t history_segments_size = segments.history_segments_size();
@@ -1777,7 +2060,7 @@ DictionaryPredictor::PredictionTypes DictionaryPredictor::GetPredictionTypes(
     result |= SUFFIX;
   }
 
-  if (IsTypingCorrectionEnabled() && key_len >= 3) {
+  if (IsTypingCorrectionEnabled(request) && key_len >= 3) {
     result |= TYPING_CORRECTION;
   }
 
@@ -1796,7 +2079,7 @@ bool DictionaryPredictor::ShouldRealTimeConversionEnabled(
   }
 
   return (segments.request_type() == Segments::PARTIAL_SUGGESTION ||
-          GET_CONFIG(use_realtime_conversion) ||
+          request.config().use_realtime_conversion() ||
           IsMixedConversionEnabled(request.request()));
 }
 

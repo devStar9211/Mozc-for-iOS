@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -48,7 +48,7 @@ class HandwritingManagerImpl {
   }
 
   HandwritingStatus Recognize(const Strokes &strokes,
-                              vector<string> *candidates) const {
+                              std::vector<string> *candidates) const {
     DCHECK(module_);
     DCHECK(candidates);
     candidates->clear();
@@ -70,8 +70,8 @@ void HandwritingManager::SetHandwritingModule(HandwritingInterface *module) {
 }
 
 // static
-HandwritingStatus HandwritingManager::Recognize(const Strokes &strokes,
-                                                vector<string> *candidates) {
+HandwritingStatus HandwritingManager::Recognize(
+    const Strokes &strokes, std::vector<string> *candidates) {
   return Singleton<HandwritingManagerImpl>::get()->Recognize(strokes,
                                                              candidates);
 }

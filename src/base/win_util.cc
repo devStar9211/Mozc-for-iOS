@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,12 +34,13 @@
 
 #include <Aux_ulib.h>
 #include <Psapi.h>
+#include <Stringapiset.h>
 #include <Winternl.h>
+#include <shellapi.h>
 
-// Workaround against KB813540
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 
 #include <clocale>
 #include <memory>
@@ -61,78 +62,32 @@ void CallAuxUlibInitialize() {
   ::AuxUlibInitialize();
 }
 
-// Adjusts privileges in the process token to be able to shutdown the machine.
-// Returns true if the operation finishes without error.
-// We do not use LOG functions in this function to avoid dependency to CRT.
-bool AdjustPrivilegesForShutdown() {
-  TOKEN_PRIVILEGES ns;
-  HANDLE htoken;
-  LUID LID;
-  LUID_AND_ATTRIBUTES att;
-
-  if (!::OpenProcessToken(::GetCurrentProcess(),
-                          TOKEN_ADJUST_PRIVILEGES,
-                          &htoken)) {
-    // Cannot open process token
-    return false;
-  }
-
-  if (!::LookupPrivilegeValue(nullptr, SE_SHUTDOWN_NAME, &LID)) {
-    // LookupPrivilegeValue failed
-    return false;
-  }
-
-  att.Attributes = SE_PRIVILEGE_ENABLED;
-  att.Luid = LID;
-  ns.PrivilegeCount = 1;
-  ns.Privileges[0] = att;
-
-  if (!::AdjustTokenPrivileges(htoken, FALSE, &ns, 0, nullptr, nullptr)) {
-    // AdjustTokenPrivileges failed
-    return false;
-  }
-
-  return true;
-}
-
 bool EqualLuid(const LUID &L1, const LUID &L2) {
   return (L1.LowPart == L2.LowPart && L1.HighPart == L2.HighPart);
 }
 
-
-// The registry key for the CUAS setting.
-// Note: We have the same values in win32/base/imm_util.cc
-// TODO(yukawa): Define these constants at the same place.
-const wchar_t kCUASKey[] = L"Software\\Microsoft\\CTF\\SystemShared";
-const wchar_t kCUASValueName[] = L"CUAS";
-
-// Reads CUAS value in the registry keys and returns true if the value is set
-// to 1.
-// The CUAS value is read from 64 bit registry keys if KEY_WOW64_64KEY is
-// specified as |additional_regsam| and read from 32 bit registry keys if
-// KEY_WOW64_32KEY is specified.
-bool IsCuasEnabledInternal(REGSAM additional_regsam) {
-  const REGSAM sam_desired = KEY_QUERY_VALUE | additional_regsam;
-  ATL::CRegKey key;
-  LONG result = key.Open(HKEY_LOCAL_MACHINE, kCUASKey, sam_desired);
-  if (ERROR_SUCCESS != result) {
-    LOG(ERROR) << "Cannot open HKEY_LOCAL_MACHINE\\Software\\Microsoft\\CTF\\"
-                  "SystemShared: "
-               << result;
-    return false;
+bool IsProcessSandboxedImpl() {
+  bool is_restricted = false;
+  if (!WinUtil::IsProcessRestricted(::GetCurrentProcess(), &is_restricted)) {
+    return true;
   }
-  DWORD cuas;
-  result = key.QueryDWORDValue(kCUASValueName, cuas);
-  if (ERROR_SUCCESS != result) {
-    LOG(ERROR) << "Failed to query CUAS value:" << result;
+  if (is_restricted) {
+    return true;
   }
-  return (cuas == 1);
+
+  bool in_appcontainer = false;
+  if (!WinUtil::IsProcessInAppContainer(::GetCurrentProcess(),
+                                        &in_appcontainer)) {
+    return true;
+  }
+
+  return in_appcontainer;
 }
 
 }  // namespace
 
-HMODULE WinUtil::LoadSystemLibrary(const wstring &base_filename) {
-  wstring fullpath = SystemUtil::GetSystemDir();
+HMODULE WinUtil::LoadSystemLibrary(const std::wstring &base_filename) {
+  std::wstring fullpath = SystemUtil::GetSystemDir();
   fullpath += L"\\";
   fullpath += base_filename;
 
@@ -148,9 +103,9 @@ HMODULE WinUtil::LoadSystemLibrary(const wstring &base_filename) {
   return module;
 }
 
-HMODULE WinUtil::LoadMozcLibrary(const wstring &base_filename) {
-  wstring fullpath;
-  Util::UTF8ToWide(SystemUtil::GetServerDirectory().c_str(), &fullpath);
+HMODULE WinUtil::LoadMozcLibrary(const std::wstring &base_filename) {
+  std::wstring fullpath;
+  Util::UTF8ToWide(SystemUtil::GetServerDirectory(), &fullpath);
   fullpath += L"\\";
   fullpath += base_filename;
 
@@ -166,8 +121,8 @@ HMODULE WinUtil::LoadMozcLibrary(const wstring &base_filename) {
   return module;
 }
 
-HMODULE WinUtil::GetSystemModuleHandle(const wstring &base_filename) {
-  wstring fullpath = SystemUtil::GetSystemDir();
+HMODULE WinUtil::GetSystemModuleHandle(const std::wstring &base_filename) {
+  std::wstring fullpath = SystemUtil::GetSystemDir();
   fullpath += L"\\";
   fullpath += base_filename;
 
@@ -183,8 +138,8 @@ HMODULE WinUtil::GetSystemModuleHandle(const wstring &base_filename) {
 }
 
 HMODULE WinUtil::GetSystemModuleHandleAndIncrementRefCount(
-    const wstring &base_filename) {
-  wstring fullpath = SystemUtil::GetSystemDir();
+    const std::wstring &base_filename) {
+  std::wstring fullpath = SystemUtil::GetSystemDir();
   fullpath += L"\\";
   fullpath += base_filename;
 
@@ -218,137 +173,35 @@ bool WinUtil::IsDLLSynchronizationHeld(bool *lock_status) {
   return true;
 }
 
-bool WinUtil::Logoff() {
-  if (!AdjustPrivilegesForShutdown()) {
-    return false;
-  }
-  return (::ExitWindowsEx(EWX_LOGOFF, SHTDN_REASON_MINOR_INSTALLATION) != 0);
+uint32 WinUtil::EncodeWindowHandle(HWND window_handle) {
+  return static_cast<uint32>(reinterpret_cast<uintptr_t>(window_handle));
 }
 
-bool WinUtil::Win32EqualString(const wstring &lhs, const wstring &rhs,
-                               bool ignore_case, bool *are_equal) {
-  // http://msdn.microsoft.com/en-us/library/dd317762.aspx
-  typedef int (WINAPI *FPCompareStringOrdinal)(
-      __in LPCWSTR lpString1,
-      __in int     cchCount1,
-      __in LPCWSTR lpString2,
-      __in int     cchCount2,
-      __in BOOL    bIgnoreCase);
-
-  const HMODULE kernel = WinUtil::GetSystemModuleHandle(L"kernel32.dll");
-  if (kernel == nullptr) {
-    LOG(ERROR) << "GetSystemModuleHandle failed";
-    return false;
-  }
-
-  const FPCompareStringOrdinal compare_string_ordinal =
-      reinterpret_cast<FPCompareStringOrdinal>(
-          ::GetProcAddress(kernel, "CompareStringOrdinal"));
-  if (compare_string_ordinal == nullptr) {
-    return false;
-  }
-  const int compare_result = compare_string_ordinal(
-      lhs.c_str(), lhs.size(), rhs.c_str(), rhs.size(),
-      (ignore_case ? TRUE : FALSE));
-
-  if (are_equal != nullptr) {
-    *are_equal = (compare_result == CSTR_EQUAL);
-  }
-
-  return true;
-}
-
-bool WinUtil::NativeEqualString(const wstring &lhs, const wstring &rhs,
-                                bool ignore_case, bool *are_equal) {
-  // http://msdn.microsoft.com/en-us/library/ff561854.aspx
-  typedef BOOLEAN (NTAPI *FPRtlEqualUnicodeString)(
-      __in PCUNICODE_STRING String1,
-      __in PCUNICODE_STRING String2,
-      __in BOOLEAN CaseInSensitive);
-
-  const HMODULE ntdll = GetSystemModuleHandle(L"ntdll.dll");
-  if (ntdll == nullptr) {
-    LOG(ERROR) << "GetSystemModuleHandle failed";
-    return false;
-  }
-
-  const FPRtlEqualUnicodeString rtl_equal_unicode_string =
-      reinterpret_cast<FPRtlEqualUnicodeString>(
-          ::GetProcAddress(ntdll, "RtlEqualUnicodeString"));
-  if (rtl_equal_unicode_string == nullptr) {
-    return false;
-  }
-
-  const UNICODE_STRING lhs_string = {
-    lhs.size(),                     // Length
-    lhs.size() + sizeof(wchar_t),   // MaximumLength
-    const_cast<PWSTR>(lhs.c_str())  // Buffer
-  };
-  const UNICODE_STRING rhs_string = {
-    rhs.size(),                     // Length
-    rhs.size() + sizeof(wchar_t),   // MaximumLength
-    const_cast<PWSTR>(rhs.c_str())  // Buffer
-  };
-  const BOOL compare_result = rtl_equal_unicode_string(
-    &lhs_string, &rhs_string, (ignore_case ? TRUE : FALSE));
-
-  if (are_equal != nullptr) {
-    *are_equal = (compare_result != FALSE);
-  }
-
-  return true;
-}
-
-void WinUtil::CrtEqualString(const wstring &lhs, const wstring &rhs,
-                             bool ignore_case, bool *are_equal) {
-  if (are_equal == nullptr) {
-    return;
-  }
-
-  if (!ignore_case) {
-    DCHECK_NE(nullptr, are_equal);
-    *are_equal = (rhs == lhs);
-    return;
-  }
-
-  const _locale_t locale_id = _create_locale(LC_ALL, "English");
-  const int compare_result = _wcsicmp_l(lhs.c_str(), rhs.c_str(), locale_id);
-  _free_locale(locale_id);
-
-  DCHECK_NE(nullptr, are_equal);
-  *are_equal = (compare_result == 0);
+HWND WinUtil::DecodeWindowHandle(uint32 window_handle_value) {
+  return reinterpret_cast<HWND>(static_cast<uintptr_t>(window_handle_value));
 }
 
 bool WinUtil::SystemEqualString(
-      const wstring &lhs, const wstring &rhs, bool ignore_case) {
-  bool are_equal = false;
-
+      const std::wstring &lhs, const std::wstring &rhs, bool ignore_case) {
   // We assume a string instance never contains NUL character in principle.
   // So we will raise an error to notify the unexpected situation in debug
   // builds.  In production, however, we will admit such an instance and
   // silently trim it at the first NUL character.
-  const wstring::size_type lhs_null_pos = lhs.find_first_of(L'\0');
-  const wstring::size_type rhs_null_pos = rhs.find_first_of(L'\0');
+  const std::wstring::size_type lhs_null_pos = lhs.find_first_of(L'\0');
+  const std::wstring::size_type rhs_null_pos = rhs.find_first_of(L'\0');
   DCHECK_EQ(lhs.npos, lhs_null_pos)
       << "|lhs| should not contain NUL character.";
   DCHECK_EQ(rhs.npos, rhs_null_pos)
       << "|rhs| should not contain NUL character.";
-  const wstring &lhs_null_trimmed = lhs.substr(0, lhs_null_pos);
-  const wstring &rhs_null_trimmed = rhs.substr(0, rhs_null_pos);
+  const std::wstring &lhs_null_trimmed = lhs.substr(0, lhs_null_pos);
+  const std::wstring &rhs_null_trimmed = rhs.substr(0, rhs_null_pos);
 
-  if (Win32EqualString(
-          lhs_null_trimmed, rhs_null_trimmed, ignore_case, &are_equal)) {
-    return are_equal;
-  }
+  const int compare_result = ::CompareStringOrdinal(
+      lhs_null_trimmed.data(), lhs_null_trimmed.size(),
+      rhs_null_trimmed.data(), rhs_null_trimmed.size(),
+      (ignore_case ? TRUE : FALSE));
 
-  if (NativeEqualString(
-          lhs_null_trimmed, rhs_null_trimmed, ignore_case, &are_equal)) {
-    return are_equal;
-  }
-
-  CrtEqualString(lhs_null_trimmed, rhs_null_trimmed, ignore_case, &are_equal);
-
-  return are_equal;
+  return compare_result == CSTR_EQUAL;
 }
 
 bool WinUtil::IsServiceUser(HANDLE hToken, bool *is_service) {
@@ -385,14 +238,12 @@ bool WinUtil::IsServiceProcess(bool *is_service) {
     return false;
   }
 
-  if (SystemUtil::IsVistaOrLater()) {
-    // Session 0 is dedicated to services
-    DWORD dwSessionId = 0;
-    if (!::ProcessIdToSessionId(::GetCurrentProcessId(), &dwSessionId) ||
-        (dwSessionId == 0)) {
-      *is_service = true;
-      return true;
-    }
+  // Session 0 is dedicated to services
+  DWORD dwSessionId = 0;
+  if (!::ProcessIdToSessionId(::GetCurrentProcessId(), &dwSessionId) ||
+      (dwSessionId == 0)) {
+    *is_service = true;
+    return true;
   }
 
   // Get process token
@@ -566,23 +417,8 @@ bool WinUtil::IsProcessInAppContainer(HANDLE process_handle,
   return true;
 }
 
-bool WinUtil::IsCuasEnabled() {
-  if (SystemUtil::IsVistaOrLater()) {
-    // CUAS is always enabled on Vista or later.
-    return true;
-  }
-
-  if (SystemUtil::IsWindowsX64()) {
-    // see both 64 bit and 32 bit registry keys
-    return IsCuasEnabledInternal(KEY_WOW64_64KEY) &&
-           IsCuasEnabledInternal(KEY_WOW64_32KEY);
-  } else {
-    return IsCuasEnabledInternal(0);
-  }
-}
-
 bool WinUtil::GetFileSystemInfoFromPath(
-    const wstring &path, BY_HANDLE_FILE_INFORMATION *info) {
+    const std::wstring &path, BY_HANDLE_FILE_INFORMATION *info) {
   // no read access is required.
   ScopedHandle handle(::CreateFileW(
       path.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -597,8 +433,8 @@ bool WinUtil::GetFileSystemInfoFromPath(
   return !!::GetFileInformationByHandle(handle.get(), info);
 }
 
-bool WinUtil::AreEqualFileSystemObject(const wstring &left_path,
-                                       const wstring &right_path) {
+bool WinUtil::AreEqualFileSystemObject(const std::wstring &left_path,
+                                       const std::wstring &right_path) {
   BY_HANDLE_FILE_INFORMATION left_info = {};
   if (!GetFileSystemInfoFromPath(left_path, &left_info)) {
     return false;
@@ -611,25 +447,12 @@ bool WinUtil::AreEqualFileSystemObject(const wstring &left_path,
          (left_info.nFileIndexHigh == right_info.nFileIndexHigh);
 }
 
-bool WinUtil::GetNtPath(const wstring &dos_path, wstring *nt_path) {
+bool WinUtil::GetNtPath(const std::wstring &dos_path, std::wstring *nt_path) {
   if (nt_path == nullptr) {
     return false;
   }
 
   nt_path->clear();
-
-  typedef DWORD (WINAPI *GetFinalPathNameByHandleWFunc)(
-      __in HANDLE file,
-      __out wchar_t *buffer,
-      __in DWORD buffer_num_chars,
-      __in DWORD flags);
-  GetFinalPathNameByHandleWFunc get_final_path_name_by_handle =
-      reinterpret_cast<GetFinalPathNameByHandleWFunc>(
-          ::GetProcAddress(WinUtil::GetSystemModuleHandle(L"kernel32.dll"),
-                           "GetFinalPathNameByHandleW"));
-  if (get_final_path_name_by_handle == nullptr) {
-    return false;
-  }
 
   ScopedHandle file_handle(::CreateFileW(
       dos_path.c_str(), 0,
@@ -645,7 +468,7 @@ bool WinUtil::GetNtPath(const wstring &dos_path, wstring *nt_path) {
   const size_t kMaxPath = 4096;
   unique_ptr<wchar_t[]> ntpath_buffer(
       new wchar_t[kMaxPath]);
-  const DWORD copied_len_without_null = get_final_path_name_by_handle(
+  const DWORD copied_len_without_null = ::GetFinalPathNameByHandleW(
       file_handle.get(),
       ntpath_buffer.get(),
       kMaxPath,
@@ -661,16 +484,14 @@ bool WinUtil::GetNtPath(const wstring &dos_path, wstring *nt_path) {
   return true;
 }
 
-bool WinUtil::GetProcessInitialNtPath(DWORD pid, wstring *nt_path) {
+bool WinUtil::GetProcessInitialNtPath(DWORD pid, std::wstring *nt_path) {
   if (nt_path == nullptr) {
     return false;
   }
   nt_path->clear();
 
-  const DWORD required_access =
-      SystemUtil::IsVistaOrLater() ? PROCESS_QUERY_LIMITED_INFORMATION
-                                   : PROCESS_QUERY_INFORMATION;
-  ScopedHandle process_handle(::OpenProcess(required_access, FALSE, pid));
+  ScopedHandle process_handle(::OpenProcess(
+      PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid));
 
   if (process_handle.get() == nullptr) {
     VLOG(1) << "OpenProcess() failed: " << ::GetLastError();
@@ -711,6 +532,27 @@ bool WinUtil::IsPerUserInputSettingsEnabled() {
     return false;
   }
   return !is_thread_local;
+}
+
+bool WinUtil::IsProcessSandboxed() {
+  // Thread safety is not required.
+  static bool sandboxed = IsProcessSandboxedImpl();
+  return sandboxed;
+}
+
+bool WinUtil::ShellExecuteInSystemDir(const wchar_t *verb,
+                                      const wchar_t *file,
+                                      const wchar_t *parameters) {
+  const auto result = static_cast<uint32>(reinterpret_cast<uintptr_t>(
+      ::ShellExecuteW(0, verb, file, parameters, SystemUtil::GetSystemDir(),
+                      SW_SHOW)));
+  LOG_IF(ERROR, result <= 32)
+      << "ShellExecute failed."
+      << ", error:" << result
+      << ", verb: " << verb
+      << ", file: " << file
+      << ", parameters: " << parameters;
+  return result > 32;
 }
 
 ScopedCOMInitializer::ScopedCOMInitializer()

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,8 +27,8 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef MOZC_WIN32_IME_IME_CORE_
-#define MOZC_WIN32_IME_IME_CORE_
+#ifndef MOZC_WIN32_IME_IME_CORE_H_
+#define MOZC_WIN32_IME_IME_CORE_H_
 
 #include <windows.h>
 
@@ -132,12 +132,6 @@ class ImeCore {
   static bool SwitchInputMode(
       HIMC himc, DWORD native_mode, bool generate_message);
 
-  // This function sends callback command to the server which is set in the
-  // response from the server, and updates the input context. If
-  // |generate_message| is false, this function will not generate any UI
-  // message. Returns true if the operation completed successfully.
-  static bool SendCallbackCommand(HIMC himc, bool generate_message);
-
   // Removes and modifies unsupported bits from |raw_conversion_mode|.
   // Returns normalized conversion mode.
   static DWORD GetSupportableConversionMode(DWORD raw_conversion_mode);
@@ -218,13 +212,13 @@ class ImeCore {
   // - [WM_IME_ENDCOMPOSITION]
   // - [IMN_SETOPENSTATUS for IME-Off]
   static void SortIMEMessages(
-      const vector<UIMessage> &composition_messages,
-      const vector<UIMessage> &candidate_messages,
+      const std::vector<UIMessage> &composition_messages,
+      const std::vector<UIMessage> &candidate_messages,
       bool previous_open_status,
       DWORD previous_conversion_mode,
       bool next_open_status,
       DWORD next_conversion_mode,
-      vector<UIMessage> *sorted_messages);
+      std::vector<UIMessage> *sorted_messages);
 
   // Internal use only.
   // This method implements main part of UpdateContext. Note that this method
@@ -248,4 +242,4 @@ class ImeCore {
 
 }  // namespace win32
 }  // namespace mozc
-#endif  // MOZC_WIN32_IME_IME_CORE_
+#endif  // MOZC_WIN32_IME_IME_CORE_H_

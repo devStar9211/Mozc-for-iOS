@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,45 +37,45 @@
 #include "base/port.h"
 
 namespace mozc {
+namespace dictionary {
 
 class SuppressionDictionary {
  public:
   SuppressionDictionary();
   virtual ~SuppressionDictionary();
 
-  // Lock dictionary.
-  // call Lock() before calling AddWord() or Clear();
+  // Locks dictionary.
+  // Need to lock before calling AddEntry() or Clear().
   // When the dictionary is locked, Supress() return false.
   //
   // NOTE:
   // Lock() and SupressWord() must be called synchronously.
   void Lock();
 
-  // Unlock dictionary
+  // Unlocks dictionary.
   void UnLock();
 
-  // return true if the dictionary is locked.
+  // Returns true if the dictionary is locked.
   bool IsLocked() const {
     return locked_;
   }
 
-  // Note that AddWord is not thread safe.
+  // Note: this method is thread unsafe.
   bool AddEntry(const string &key, const string &value);
 
-  // Note that AddWord is not thread safe.
+  // Note: this method is thread unsafe.
   void Clear();
 
-  // return true if SuppressionDictionary doesn't have any entries.
+  // Returns true if SuppressionDictionary doesn't have any entries.
   bool IsEmpty() const;
 
-  // Return true if |word| should be suppressed.
-  // if the current dictionay is "locked" via Lock() method,
-  // this function always return false.
-  // Lock() and SuppressWord() must be called synchronously.
+  // Returns true if |word| should be suppressed.  If the current dictionay is
+  // "locked" via Lock() method, this function always return false.  Lock() and
+  // SuppressWord() must be called synchronously.
   bool SuppressEntry(const string &key, const string &value) const;
 
  private:
-  set<string> dic_;
+  std::set<string> dic_;
   bool locked_;
   bool has_key_empty_;
   bool has_value_empty_;
@@ -84,6 +84,7 @@ class SuppressionDictionary {
   DISALLOW_COPY_AND_ASSIGN(SuppressionDictionary);
 };
 
+}  // namespace dictionary
 }  // namespace mozc
 
 #endif  // MOZC_DICTIONARY_SUPPRESSION_DICTIONARY_H_

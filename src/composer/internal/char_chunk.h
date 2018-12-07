@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -72,7 +72,7 @@ class CharChunk {
                          string *result) const;
 
   // Get possible results from current chunk
-  void GetExpandedResults(set<string> *results) const;
+  void GetExpandedResults(std::set<string> *results) const;
   bool IsFixed() const;
 
   // True if IsAppendable() is true and this object is fixed (|pending_|=="")

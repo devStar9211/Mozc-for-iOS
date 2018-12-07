@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,15 +31,15 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlcom.h>
 #include <atlstr.h>
 #include <msctf.h>
 
-#include "base/hash_tables.h"
-#include "renderer/renderer_command.pb.h"
-#include "session/commands.pb.h"
+#include <unordered_map>
+
+#include "protocol/commands.pb.h"
+#include "protocol/renderer_command.pb.h"
 #include "win32/base/input_state.h"
 #include "win32/tip/tip_input_mode_manager.h"
 #include "win32/tip/tip_private_context.h"
@@ -94,7 +94,8 @@ HRESULT EndUI(ITfUIElementMgr *ui_element_manager, DWORD element_id) {
 }  // namespace
 
 class TipUiElementManager::UiElementMap
-    : public hash_map<TipUiElementManager::UIElementFlags, UIElementInfo> {
+    : public std::unordered_map<TipUiElementManager::UIElementFlags,
+                                UIElementInfo> {
 };
 
 TipUiElementManager::TipUiElementManager()

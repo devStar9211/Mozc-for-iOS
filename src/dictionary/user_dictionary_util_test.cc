@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,16 +30,12 @@
 #include "dictionary/user_dictionary_util.h"
 
 #include "base/util.h"
-#include "base/protobuf/message.h"
-#include "base/protobuf/unknown_field_set.h"
 #include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
 #include "testing/base/public/testing_util.h"
 
 namespace mozc {
 
-using mozc::protobuf::UnknownField;
-using mozc::protobuf::UnknownFieldSet;
 using user_dictionary::UserDictionary;
 using user_dictionary::UserDictionaryCommandStatus;
 
@@ -51,41 +47,22 @@ static void TestNormalizeReading(const string &golden, const string &input) {
 
 TEST(UserDictionaryUtilTest, TestIsValidReading) {
   EXPECT_TRUE(UserDictionaryUtil::IsValidReading("ABYZabyz0189"));
-  // "〜「」"
-  EXPECT_TRUE(UserDictionaryUtil::IsValidReading(
-                  "\xe3\x80\x9c\xe3\x80\x8c\xe3\x80\x8d"));
-  // "あいうわをんゔ"
-  EXPECT_TRUE(UserDictionaryUtil::IsValidReading(
-                  "\xe3\x81\x82\xe3\x81\x84\xe3\x81\x86\xe3\x82\x8f\xe3\x82\x92"
-                  "\xe3\x82\x93\xe3\x82\x94"));
-  // "アイウワヲンヴ"
-  EXPECT_TRUE(UserDictionaryUtil::IsValidReading(
-                  "\xe3\x82\xa2\xe3\x82\xa4\xe3\x82\xa6\xe3\x83\xaf\xe3\x83\xb2"
-                  "\xe3\x83\xb3\xe3\x83\xb4"));
-  // "水雲"
-  EXPECT_FALSE(UserDictionaryUtil::IsValidReading("\xe6\xb0\xb4\xe9\x9b\xb2"));
+  EXPECT_TRUE(UserDictionaryUtil::IsValidReading("〜「」"));
+  EXPECT_TRUE(UserDictionaryUtil::IsValidReading("あいうわをんゔ"));
+  EXPECT_TRUE(UserDictionaryUtil::IsValidReading("アイウワヲンヴ"));
+  EXPECT_FALSE(UserDictionaryUtil::IsValidReading("水雲"));
 
   // COMBINING KATAKANA-HIRAGANA VOICED/SEMI-VOICED SOUND MARK (u3099, u309A)
-  EXPECT_FALSE(UserDictionaryUtil::IsValidReading("\xE3\x82\x99\xE3\x82\x9A"));
+  EXPECT_FALSE(UserDictionaryUtil::IsValidReading("゙゚"));
 
   // KATAKANA-HIRAGANA VOICED/SEMI-VOICED SOUND MARK (u309B, u309C)
-  EXPECT_TRUE(UserDictionaryUtil::IsValidReading("\xE3\x82\x9B\xE3\x82\x9C"));
+  EXPECT_TRUE(UserDictionaryUtil::IsValidReading("゛゜"));
 }
 
 TEST(UserDictionaryUtilTest, TestNormalizeReading) {
-  // "あいうゔゎ", "アイウヴヮ"
-  TestNormalizeReading(
-      "\xe3\x81\x82\xe3\x81\x84\xe3\x81\x86\xe3\x82\x94\xe3\x82\x8e",
-      "\xe3\x82\xa2\xe3\x82\xa4\xe3\x82\xa6\xe3\x83\xb4\xe3\x83\xae");
-  // "あいうゃ", "ｱｲｳｬ"
-  TestNormalizeReading(
-      "\xe3\x81\x82\xe3\x81\x84\xe3\x81\x86\xe3\x82\x83",
-      "\xef\xbd\xb1\xef\xbd\xb2\xef\xbd\xb3\xef\xbd\xac");
-  // "ＡＢａｂ０１＠＆＝｜"
-  TestNormalizeReading(
-      "ABab01@&=|",
-      "\xef\xbc\xa1\xef\xbc\xa2\xef\xbd\x81\xef\xbd\x82\xef\xbc\x90\xef\xbc\x91"
-      "\xef\xbc\xa0\xef\xbc\x86\xef\xbc\x9d\xef\xbd\x9c");
+  TestNormalizeReading("あいうゔゎ", "アイウヴヮ");
+  TestNormalizeReading("あいうゃ", "ｱｲｳｬ");
+  TestNormalizeReading("ABab01@&=|", "ＡＢａｂ０１＠＆＝｜");
 }
 
 namespace {
@@ -147,7 +124,7 @@ TEST(UserDictionaryUtilTest, TestSanitizeEntry) {
 }
 
 TEST(UserDictionaryUtilTest, TestSanitize) {
-  string str('\t', 10);
+  string str(10, '\t');
   EXPECT_TRUE(UserDictionaryUtil::Sanitize(&str, 5));
   EXPECT_EQ("", str);
 
@@ -155,43 +132,34 @@ TEST(UserDictionaryUtilTest, TestSanitize) {
   EXPECT_TRUE(UserDictionaryUtil::Sanitize(&str, 10));
   EXPECT_EQ("abc", str);
 
-  str = "\xE3\x81\x8B\xE3\x81\x97\xE3\x82\x86\xE3\x81\x8B";  // "かしゆか"
+  str = "かしゆか";
   EXPECT_TRUE(UserDictionaryUtil::Sanitize(&str, 3));
-  EXPECT_EQ("\xE3\x81\x8B", str);  // "か"
+  EXPECT_EQ("か", str);
 
-  str = "\xE3\x81\x8B\xE3\x81\x97\xE3\x82\x86\xE3\x81\x8B";  // "かしゆか"
+  str = "かしゆか";
   EXPECT_TRUE(UserDictionaryUtil::Sanitize(&str, 4));
-  EXPECT_EQ("\xE3\x81\x8B", str);  // "か"
+  EXPECT_EQ("か", str);
 
-  str = "\xE3\x81\x8B\xE3\x81\x97\xE3\x82\x86\xE3\x81\x8B";  // "かしゆか"
+  str = "かしゆか";
   EXPECT_TRUE(UserDictionaryUtil::Sanitize(&str, 5));
-  EXPECT_EQ("\xE3\x81\x8B", str);  // "か"
+  EXPECT_EQ("か", str);
 
-  str = "\xE3\x81\x8B\xE3\x81\x97\xE3\x82\x86\xE3\x81\x8B";  // "かしゆか"
+  str = "かしゆか";
   EXPECT_TRUE(UserDictionaryUtil::Sanitize(&str, 6));
-  EXPECT_EQ("\xE3\x81\x8B\xE3\x81\x97", str);  // "かし"
+  EXPECT_EQ("かし", str);
 
-  str = "\xE3\x81\x8B\xE3\x81\x97\xE3\x82\x86\xE3\x81\x8B";  // "かしゆか"
+  str = "かしゆか";
   EXPECT_FALSE(UserDictionaryUtil::Sanitize(&str, 100));
-  // "かしゆか"
-  EXPECT_EQ("\xE3\x81\x8B\xE3\x81\x97\xE3\x82\x86\xE3\x81\x8B", str);
+  EXPECT_EQ("かしゆか", str);
 }
 
 TEST(UserDictionaryUtilTest, ValidateEntry) {
   // Create a valid entry.
   UserDictionary::Entry base_entry;
-  // "よみ"
-  base_entry.set_key("\xE3\x82\x88\xE3\x81\xBF");
-
-  // "単語"
-  base_entry.set_value("\xE5\x8D\x98\xE8\xAA\x9E");
-
-  // "名詞"
+  base_entry.set_key("よみ");
+  base_entry.set_value("単語");
   base_entry.set_pos(UserDictionary::NOUN);
-
-  // "コメント"
-  base_entry.set_comment("\xE3\x82\xB3\xE3\x83\xA1\xE3\x83\xB3\xE3\x83\x88");
-
+  base_entry.set_comment("コメント");
 
   UserDictionary::Entry entry;
   entry.CopyFrom(base_entry);
@@ -330,240 +298,6 @@ TEST(UserDictionaryUtilTest, GetUserDictionaryIndexById) {
   EXPECT_EQ(-1, UserDictionaryUtil::GetUserDictionaryIndexById(storage, -1));
 }
 
-TEST(UserDictionaryUtilTest, ResolveUnknownFieldSet1) {
-  user_dictionary::UserDictionaryStorage storage;
-  {
-    UserDictionary *dictionary = storage.add_dictionaries();
-    UserDictionary::Entry *entry = dictionary->add_entries();
-    entry->set_key("key");
-    entry->set_value("value");
-    entry->set_pos(UserDictionary::NOUN);
-    entry->set_comment("comment");
-  }
-
-  // Do nothing if any entry doesn't have unknown field set.
-  UserDictionaryUtil::ResolveUnknownFieldSet(&storage);
-  EXPECT_PROTO_EQ(
-      "dictionaries <\n"
-      "  entries <\n"
-      "    key: \"key\"\n"
-      "    value: \"value\"\n"
-      "    pos: NOUN\n"
-      "    comment: \"comment\"\n"
-      "  >\n"
-      ">\n",
-      storage);
-}
-
-
-TEST(UserDictionaryUtilTest, ResolveUnknownFieldSet2) {
-  user_dictionary::UserDictionaryStorage storage;
-  {
-    UserDictionary *dictionary = storage.add_dictionaries();
-    UserDictionary::Entry *entry = dictionary->add_entries();
-    entry->set_key("key");
-    entry->set_value("value");
-    entry->set_comment("comment");
-
-    UnknownFieldSet *unknown_field_set = entry->mutable_unknown_fields();
-    unknown_field_set->AddVarint(3, 1);
-  }
-
-  // Migrate old enum formatted pos to the actual Entry::pos.
-  UserDictionaryUtil::ResolveUnknownFieldSet(&storage);
-  EXPECT_PROTO_EQ(
-      "dictionaries <\n"
-      "  entries <\n"
-      "    key: \"key\"\n"
-      "    value: \"value\"\n"
-      "    pos: NOUN\n"
-      "    comment: \"comment\"\n"
-      "  >\n"
-      ">\n",
-      storage);
-}
-
-TEST(UserDictionaryUtilTest, ResolveUnknownFieldSet3) {
-  user_dictionary::UserDictionaryStorage storage;
-  {
-    UserDictionary *dictionary = storage.add_dictionaries();
-    UserDictionary::Entry *entry = dictionary->add_entries();
-    entry->set_key("key");
-    entry->set_value("value");
-    entry->set_comment("comment");
-
-    UnknownFieldSet *unknown_field_set = entry->mutable_unknown_fields();
-    // "名詞"
-    unknown_field_set->AddLengthDelimited(3, "\xE5\x90\x8D\xE8\xA9\x9E");
-  }
-
-  // Migrate old string formatted pos to the actual Entry::pos.
-  UserDictionaryUtil::ResolveUnknownFieldSet(&storage);
-  EXPECT_PROTO_EQ(
-      "dictionaries <\n"
-      "  entries <\n"
-      "    key: \"key\"\n"
-      "    value: \"value\"\n"
-      "    pos: NOUN\n"
-      "    comment: \"comment\"\n"
-      "  >\n"
-      ">\n",
-      storage);
-}
-
-TEST(UserDictionaryUtilTest, ResolveUnknownFieldWithRemovedPosType1) {
-  user_dictionary::UserDictionaryStorage storage;
-  {
-    UserDictionary *dictionary = storage.add_dictionaries();
-    UserDictionary::Entry *entry = dictionary->add_entries();
-    entry->set_key("key");
-    entry->set_value("value");
-    entry->set_comment("comment");
-
-    UnknownFieldSet *unknown_field_set = entry->mutable_unknown_fields();
-    // "名詞副詞可能"
-    unknown_field_set->AddLengthDelimited(
-        3,
-        "\xE5\x90\x8D\xE8\xA9\x9E\xE5\x89\xAF\xE8\xA9\x9E"
-        "\xE5\x8F\xAF\xE8\x83\xBD");
-  }
-
-  // Migrate old string formatted pos to the actual Entry::pos.
-  UserDictionaryUtil::ResolveUnknownFieldSet(&storage);
-  EXPECT_PROTO_EQ(
-      "dictionaries <\n"
-      "  entries <\n"
-      "    key: \"key\"\n"
-      "    value: \"value\"\n"
-      "    pos: NOUN\n"
-      "    comment: \"comment\"\n"
-      "  >\n"
-      ">\n",
-      storage);
-}
-
-TEST(UserDictionaryUtilTest, ResolveUnknownFieldWithRemovedPosType2) {
-  static const char *kTestLengthDelimited[] = {
-    // "接頭形容詞接続"
-    "\xE6\x8E\xA5\xE9\xA0\xAD\xE5\xBD\xA2\xE5\xAE\xB9\xE8\xA9\x9E"
-    "\xE6\x8E\xA5\xE7\xB6\x9A",
-    // "接頭数接続"
-    "\xE6\x8E\xA5\xE9\xA0\xAD\xE6\x95\xB0\xE6\x8E\xA5\xE7\xB6\x9A",
-    // "接頭動詞接続"
-    "\xE6\x8E\xA5\xE9\xA0\xAD\xE5\x8B\x95\xE8\xA9\x9E\xE6\x8E\xA5\xE7\xB6\x9A",
-    // "接頭名詞接続"
-    "\xE6\x8E\xA5\xE9\xA0\xAD\xE5\x90\x8D\xE8\xA9\x9E\xE6\x8E\xA5\xE7\xB6\x9A",
-  };
-
-  for (size_t test_case_index = 0;
-       test_case_index < arraysize(kTestLengthDelimited); ++test_case_index) {
-    user_dictionary::UserDictionaryStorage storage;
-    {
-      UserDictionary *dictionary = storage.add_dictionaries();
-      UserDictionary::Entry *entry = dictionary->add_entries();
-      entry->set_key("key");
-      entry->set_value("value");
-      entry->set_comment("comment");
-
-      UnknownFieldSet *unknown_field_set = entry->mutable_unknown_fields();
-      unknown_field_set->AddLengthDelimited(
-          3, kTestLengthDelimited[test_case_index]);
-    }
-
-    // Migrate old string formatted pos to the actual Entry::pos.
-    UserDictionaryUtil::ResolveUnknownFieldSet(&storage);
-    EXPECT_PROTO_EQ(
-        "dictionaries <\n"
-        "  entries <\n"
-        "    key: \"key\"\n"
-        "    value: \"value\"\n"
-        "    pos: PREFIX\n"
-        "    comment: \"comment\"\n"
-        "  >\n"
-        ">\n",
-        storage);
-  }
-}
-
-TEST(UserDictionaryUtilTest, ResolveUnknownFieldWithRemovedPosType3) {
-  static const char *kTestLengthDelimited[] = {
-    // "形容詞アウオ段"
-    "\xE5\xBD\xA2\xE5\xAE\xB9\xE8\xA9\x9E"
-    "\xE3\x82\xA2\xE3\x82\xA6\xE3\x82\xAA\xE6\xAE\xB5",
-    // "形容詞イ段"
-    "\xE5\xBD\xA2\xE5\xAE\xB9\xE8\xA9\x9E\xE3\x82\xA4\xE6\xAE\xB5",
-  };
-
-  for (size_t test_case_index = 0;
-       test_case_index < arraysize(kTestLengthDelimited); ++test_case_index) {
-    user_dictionary::UserDictionaryStorage storage;
-    {
-      UserDictionary *dictionary = storage.add_dictionaries();
-      UserDictionary::Entry *entry = dictionary->add_entries();
-      entry->set_key("key");
-      entry->set_value("value");
-      entry->set_comment("comment");
-
-      UnknownFieldSet *unknown_field_set = entry->mutable_unknown_fields();
-      unknown_field_set->AddLengthDelimited(
-          3, kTestLengthDelimited[test_case_index]);
-    }
-
-    // Migrate old string formatted pos to the actual Entry::pos.
-    UserDictionaryUtil::ResolveUnknownFieldSet(&storage);
-    EXPECT_PROTO_EQ(
-        "dictionaries <\n"
-        "  entries <\n"
-        "    key: \"key\"\n"
-        "    value: \"value\"\n"
-        "    pos: ADJECTIVE\n"
-        "    comment: \"comment\"\n"
-        "  >\n"
-        ">\n",
-        storage);
-  }
-}
-
-
-TEST(UserDictionaryUtilTest, ResolveUnknownFieldWithRemovedPosType4) {
-  static const char *kTestLengthDelimited[] = {
-    // "括弧開"
-    "\xE6\x8B\xAC\xE5\xBC\xA7\xE9\x96\x8B",
-    // "括弧閉"
-    "\xE6\x8B\xAC\xE5\xBC\xA7\xE9\x96\x89",
-  };
-
-  for (size_t test_case_index = 0;
-       test_case_index < arraysize(kTestLengthDelimited); ++test_case_index) {
-    user_dictionary::UserDictionaryStorage storage;
-    {
-      UserDictionary *dictionary = storage.add_dictionaries();
-      UserDictionary::Entry *entry = dictionary->add_entries();
-      entry->set_key("key");
-      entry->set_value("value");
-      entry->set_comment("comment");
-
-      UnknownFieldSet *unknown_field_set = entry->mutable_unknown_fields();
-      unknown_field_set->AddLengthDelimited(
-          3, kTestLengthDelimited[test_case_index]);
-    }
-
-    // Migrate old string formatted pos to the actual Entry::pos.
-    UserDictionaryUtil::ResolveUnknownFieldSet(&storage);
-    EXPECT_PROTO_EQ(
-        "dictionaries <\n"
-        "  entries <\n"
-        "    key: \"key\"\n"
-        "    value: \"value\"\n"
-        "    pos: SYMBOL\n"
-        "    comment: \"comment\"\n"
-        "  >\n"
-        ">\n",
-        storage);
-  }
-}
-
-
 TEST(UserDictionaryUtilTest, CreateDictionary) {
   user_dictionary::UserDictionaryStorage storage;
   uint64 dictionary_id;
@@ -634,59 +368,6 @@ TEST(UserDictionaryUtilTest, DeleteDictionary) {
 
   // Delete to avoid memoary leaking.
   delete expected_deleted_dictionary;
-}
-
-TEST(UserDictionaryUtilTest, FillDesktopDeprecatedPosField) {
-  user_dictionary::UserDictionaryStorage storage;
-  {
-    UserDictionary *dictionary = storage.add_dictionaries();
-    UserDictionary::Entry *entry = dictionary->add_entries();
-    entry->set_key("key");
-    entry->set_value("value");
-    entry->set_pos(UserDictionary::NOUN);
-    entry->set_comment("comment");
-  }
-
-  UserDictionaryUtil::FillDesktopDeprecatedPosField(&storage);
-  ASSERT_EQ(1, storage.dictionaries_size());
-  const UserDictionary &dictionary = storage.dictionaries(0);
-  ASSERT_EQ(1, dictionary.entries_size());
-  const UserDictionary::Entry &entry = dictionary.entries(0);
-  EXPECT_EQ("key", entry.key());
-  EXPECT_EQ("value", entry.value());
-  EXPECT_EQ(UserDictionary::NOUN, entry.pos());
-  EXPECT_EQ("comment", entry.comment());
-  const UnknownFieldSet &unknown_field_set = entry.unknown_fields();
-  ASSERT_EQ(1, unknown_field_set.field_count());
-  const UnknownField &unknown_field = unknown_field_set.field(0);
-  EXPECT_EQ(3, unknown_field.number());
-  EXPECT_EQ(UnknownField::TYPE_LENGTH_DELIMITED, unknown_field.type());
-  // "名詞"
-  EXPECT_EQ("\xE5\x90\x8D\xE8\xA9\x9E", unknown_field.length_delimited());
-}
-
-TEST(UserDictionaryUtilTest, FillDesktopDeprecatedPosFieldEmptyPos) {
-  user_dictionary::UserDictionaryStorage storage;
-  {
-    UserDictionary *dictionary = storage.add_dictionaries();
-    UserDictionary::Entry *entry = dictionary->add_entries();
-    entry->set_key("key");
-    entry->set_value("value");
-    // Don't add pos.
-    entry->set_comment("comment");
-  }
-
-  UserDictionaryUtil::FillDesktopDeprecatedPosField(&storage);
-  ASSERT_EQ(1, storage.dictionaries_size());
-  const UserDictionary &dictionary = storage.dictionaries(0);
-  ASSERT_EQ(1, dictionary.entries_size());
-  const UserDictionary::Entry &entry = dictionary.entries(0);
-  EXPECT_EQ("key", entry.key());
-  EXPECT_EQ("value", entry.value());
-  EXPECT_EQ(UserDictionary::NOUN, entry.pos());
-  EXPECT_EQ("comment", entry.comment());
-  const UnknownFieldSet &unknown_field_set = entry.unknown_fields();
-  EXPECT_EQ(0, unknown_field_set.field_count());
 }
 
 }  // namespace mozc

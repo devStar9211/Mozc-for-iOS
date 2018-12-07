@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,7 +35,7 @@
 namespace mozc {
 namespace session {
 
-typedef vector<SessionObserverInterface *>::iterator ItObservers;
+typedef std::vector<SessionObserverInterface *>::iterator ItObservers;
 
 SessionObserverHandler::SessionObserverHandler() {}
 SessionObserverHandler::~SessionObserverHandler() {
@@ -50,12 +50,6 @@ void SessionObserverHandler::EvalCommandHandler(
     const commands::Command &command) {
   for (ItObservers it = observers_.begin(); it != observers_.end(); ++it) {
     (*it)->EvalCommandHandler(command);
-  }
-}
-
-void SessionObserverHandler::Reload() {
-  for (ItObservers it = observers_.begin(); it != observers_.end(); ++it) {
-    (*it)->Reload();
   }
 }
 

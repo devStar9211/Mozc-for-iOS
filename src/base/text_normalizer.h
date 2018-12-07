@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -41,10 +41,7 @@ namespace mozc {
 
 class TextNormalizer {
  public:
-  static void NormalizePreeditText(StringPiece input, string *output);
-  static void NormalizeTransliterationText(StringPiece input, string *output);
-  static void NormalizeConversionText(StringPiece input, string *output);
-  static void NormalizeCandidateText(StringPiece input, string *output);
+  static void NormalizeText(StringPiece input, string *output);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(TextNormalizer);

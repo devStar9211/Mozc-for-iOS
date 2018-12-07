@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,8 +30,7 @@
 #include "win32/base/imm_util.h"
 
 #include <windows.h>
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlstr.h>
 #include <imm.h>
 #include <msctf.h>
@@ -58,12 +57,6 @@ namespace {
 
 using std::unique_ptr;
 
-// The registry key for the CUAS setting.
-// Note: We have the same values in base/win_util.cc
-// TODO(yukawa): Define these constants at the same place.
-const wchar_t kCUASKey[] = L"Software\\Microsoft\\CTF\\SystemShared";
-const wchar_t kCUASValueName[] = L"CUAS";
-
 // Timeout value used by a work around against b/5765783. As b/6165722
 // this value is determined to be:
 // - smaller than the default time-out used in IsHungAppWindow API.
@@ -71,20 +64,12 @@ const wchar_t kCUASValueName[] = L"CUAS";
 const uint32 kWaitForAsmCacheReadyEventTimeout = 4500;  // 4.5 sec.
 
 bool GetDefaultLayout(LAYOUTORTIPPROFILE *profile) {
-  if (!InputDll::EnsureInitialized()) {
-    return false;
-  }
-
-  if (InputDll::enum_enabled_layout_or_tip() == nullptr) {
-    return false;
-  }
-
-  const UINT num_element = InputDll::enum_enabled_layout_or_tip()(
+  const UINT num_element = ::EnumEnabledLayoutOrTip(
       nullptr, nullptr, nullptr, nullptr, 0);
 
   unique_ptr<LAYOUTORTIPPROFILE[]> buffer(new LAYOUTORTIPPROFILE[num_element]);
 
-  const UINT num_copied = InputDll::enum_enabled_layout_or_tip()(
+  const UINT num_copied =::EnumEnabledLayoutOrTip(
       nullptr, nullptr, nullptr, buffer.get(), num_element);
 
   for (size_t i = 0; i < num_copied; ++i) {
@@ -95,27 +80,6 @@ bool GetDefaultLayout(LAYOUTORTIPPROFILE *profile) {
   }
 
   return false;
-}
-
-// The CUAS value is set to 64 bit registry keys if KEY_WOW64_64KEY is specified
-// as |additional_regsam| and set to 32 bit registry keys if KEY_WOW64_32KEY is
-// specified.
-bool SetCuasEnabledInternal(bool enable, REGSAM additional_regsam) {
-  REGSAM sam_desired = KEY_WRITE | additional_regsam;
-  CRegKey key;
-  LONG result = key.Open(HKEY_LOCAL_MACHINE, kCUASKey, sam_desired);
-  if (ERROR_SUCCESS != result) {
-    LOG(ERROR) << "Cannot open HKEY_LOCAL_MACHINE\\Software\\Microsoft\\CTF\\"
-                  "SystemShared: "
-               << result;
-    return false;
-  }
-  const DWORD cuas = enable ? 1 : 0;
-  result = key.SetDWORDValue(kCUASValueName, cuas);
-  if (ERROR_SUCCESS != result) {
-    LOG(ERROR) << "Failed to set CUAS value:" << result;
-  }
-  return true;
 }
 
 const wchar_t kTIPKeyboardKey[] = L"Software\\Microsoft\\CTF\\Assemblies\\"
@@ -141,12 +105,6 @@ bool IsDefaultWin8() {
 }
 
 bool SetDefaultWin8() {
-  if (!InputDll::EnsureInitialized()) {
-    return false;
-  }
-  if (InputDll::set_default_layout_or_tip() == nullptr) {
-    return false;
-  }
   wchar_t clsid[64] = {};
   if (!::StringFromGUID2(TsfProfile::GetTextServiceGuid(), clsid,
                          arraysize(clsid))) {
@@ -158,12 +116,12 @@ bool SetDefaultWin8() {
     return E_OUTOFMEMORY;
   }
 
-  const wstring &profile = wstring(L"0x0411:") + clsid + profile_id;
-  if (!InputDll::install_layout_or_tip()(profile.c_str(), 0)) {
+  const std::wstring &profile = std::wstring(L"0x0411:") + clsid + profile_id;
+  if (!::InstallLayoutOrTip(profile.c_str(), 0)) {
     DLOG(ERROR) << "InstallLayoutOrTip failed";
     return false;
   }
-  if (!InputDll::set_default_layout_or_tip()(profile.c_str(), 0)) {
+  if (!::SetDefaultLayoutOrTip(profile.c_str(), 0)) {
     DLOG(ERROR) << "SetDefaultLayoutOrTip failed";
     return false;
   }
@@ -210,7 +168,7 @@ bool ImeUtil::IsDefault() {
       return false;
     }
 
-    const wstring id(profile.szId);
+    const std::wstring id(profile.szId);
     // A valid |profile.szId| should consists of language ID (LANGID) and
     // keyboard layout ID (KILD) as follows.
     //  <LangID 1>:<KLID 1>
@@ -241,14 +199,6 @@ bool ImeUtil::IsDefault() {
     LOG(ERROR) << "SystemParameterInfo failed: " << GetLastError();
     return false;
   }
-  const LANGID langage_id = reinterpret_cast<LANGID>(hkl);
-  const LANGID kJapaneseLangID =
-      MAKELANGID(LANG_JAPANESE, SUBLANG_JAPANESE_JAPAN);
-
-  if (langage_id != kJapaneseLangID) {
-    return false;
-  }
-
   return ImmRegistrar::IsIME(hkl, ImmRegistrar::GetFileNameForIME());
 }
 
@@ -263,29 +213,10 @@ bool ImeUtil::SetDefault() {
     return false;
   }
 
-  if (InputDll::EnsureInitialized() &&
-      InputDll::set_default_layout_or_tip() != nullptr) {
-    // In most cases, we can use this method on Vista or later.
-    const wstring &profile_list = L"0x0411:0x" + mozc_klid.ToString();
-    if (!InputDll::set_default_layout_or_tip()(profile_list.c_str(), 0)) {
-      DLOG(ERROR) << "SetDefaultLayoutOrTip failed";
-      return false;
-    }
-  } else {
-    // We cannot use const HKL because |&mozc_hkl| will be cast into PVOID.
-    HKL hkl = ::LoadKeyboardLayout(mozc_klid.ToString().c_str(), KLF_ACTIVATE);
-    if (0 == ::SystemParametersInfo(SPI_SETDEFAULTINPUTLANG,
-                                    0,
-                                    &hkl,
-                                    SPIF_SENDCHANGE)) {
-      LOG(ERROR) << "SystemParameterInfo failed: " << GetLastError();
-      return false;
-    }
-
-    if (S_OK != ImmRegistrar::MovePreloadValueToTop(mozc_klid)) {
-      LOG(ERROR) << "MovePreloadValueToTop failed";
-      return false;
-    }
+  const std::wstring &profile_list = L"0x0411:0x" + mozc_klid.ToString();
+  if (!::SetDefaultLayoutOrTip(profile_list.c_str(), 0)) {
+    DLOG(ERROR) << "SetDefaultLayoutOrTip failed";
+    return false;
   }
 
   if (!ActivateForCurrentSession()) {
@@ -293,61 +224,6 @@ bool ImeUtil::SetDefault() {
     return false;
   }
   return true;
-}
-
-bool ImeUtil::SetCuasEnabled(bool enable) {
-  if (SystemUtil::IsVistaOrLater()) {
-    // No need to enable CUAS since it is always enabled on Vista or later.
-    return true;
-  }
-
-  if (SystemUtil::IsWindowsX64()) {
-    // see both 64 bit and 32 bit registry keys
-    return SetCuasEnabledInternal(enable, KEY_WOW64_64KEY) &&
-           SetCuasEnabledInternal(enable, KEY_WOW64_32KEY);
-  } else {
-    return SetCuasEnabledInternal(enable, 0);
-  }
-}
-
-// TF_IsCtfmonRunning looks for ctfmon.exe's mutex.
-// Ctfmon.exe is running if TSF is enabled.
-// Most of the implementation and comments are based on a code by
-// thatanaka
-bool ImeUtil::IsCtfmonRunning() {
-#ifdef _M_IX86
-  typedef BOOL (__stdcall *PFN_TF_ISCTFMONRUNNING)();
-
-  // If TSF is enabled and this process has created a window, msctf.dll should
-  // be loaded.
-  HMODULE hMsctfDll = WinUtil::GetSystemModuleHandle(L"msctf.dll");
-  if (!hMsctfDll) {
-    LOG(ERROR) << "WinUtil::GetSystemModuleHandle failed";
-    return false;
-  }
-
-  PFN_TF_ISCTFMONRUNNING pfnTF_IsCtfmonRunning =
-      ::GetProcAddress(hMsctfDll, "TF_IsCtfmonRunning");
-  if (!pfnTF_IsCtfmonRunning) {
-    LOG(ERROR) << "GetProcAddress for TF_IsCtfmonRunning failed";
-    return false;
-  }
-
-  return((*pfnTF_IsCtfmonRunning)() == TRUE);
-#else
-  // TODO(mazda): Check if the function declaration is correct.
-  LOG(ERROR) << "Unsupported platform";
-  return false;
-#endif
-}
-
-bool ImeUtil::ActivateForCurrentProcess() {
-  const KeyboardLayoutID &mozc_hkld = ImmRegistrar::GetKLIDForIME();
-  if (!mozc_hkld.has_id()) {
-    return false;
-  }
-  return (0 != ::LoadKeyboardLayout(mozc_hkld.ToString().c_str(),
-                                    KLF_ACTIVATE | KLF_SETFORPROCESS));
 }
 
 bool ImeUtil::ActivateForCurrentSession() {
@@ -379,7 +255,7 @@ bool ImeUtil::ActivateForCurrentSession() {
 // Wait for "MSCTF.AsmCacheReady.<desktop name><session #>" event signal to
 // work around b/5765783.
 bool ImeUtil::WaitForAsmCacheReady(uint32 timeout_msec) {
-  wstring event_name;
+  std::wstring event_name;
   if (Util::UTF8ToWide(SystemUtil::GetMSCTFAsmCacheReadyEventName(),
                        &event_name) == 0) {
     LOG(ERROR) << "Failed to compose event name.";

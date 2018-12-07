@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,12 +33,12 @@
 
 #ifdef OS_WIN
 #include <Windows.h>
-#include <ShellAPI.h>
 #else
 #include <unistd.h>
 #endif  // OS_WIN
 
 #include <cstddef>
+#include <memory>
 
 #include "base/const.h"
 #include "base/file_stream.h"
@@ -50,9 +50,13 @@
 #include "base/system_util.h"
 #include "base/util.h"
 #include "base/version.h"
-#include "config/config.pb.h"
 #include "ipc/ipc.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
+
+#ifdef OS_WIN
+#include "base/win_util.h"
+#endif  // OS_WIN
 
 #ifdef OS_MACOSX
 #include "base/mac_process.h"
@@ -190,19 +194,19 @@ void Client::DumpQueryOfDeath() {
 }
 
 void Client::DumpHistorySnapshot(const string &filename,
-                                  const string &label) const {
+                                 const string &label) const {
   const string snapshot_file =
       FileUtil::JoinPath(SystemUtil::GetUserProfileDirectory(), filename);
   // open with append mode
-  OutputFileStream output(snapshot_file.c_str(), ios::app);
+  OutputFileStream output(snapshot_file.c_str(), std::ios::app);
 
-  output << "---- Start history snapshot for " << label << endl;
-  output << "Created at " << Logging::GetLogMessageHeader() << endl;
-  output << "Version " << Version::GetMozcVersion() << endl;
+  output << "---- Start history snapshot for " << label << std::endl;
+  output << "Created at " << Logging::GetLogMessageHeader() << std::endl;
+  output << "Version " << Version::GetMozcVersion() << std::endl;
   for (size_t i = 0; i < history_inputs_.size(); ++i) {
     output << history_inputs_[i].DebugString();
   }
-  output << "---- End history snapshot for " << label << endl;
+  output << "---- End history snapshot for " << label << std::endl;
 }
 
 void Client::PlaybackHistory() {
@@ -273,7 +277,7 @@ void Client::ResetHistory() {
 #endif
 }
 
-void Client::GetHistoryInputs(vector<commands::Input> *output) const {
+void Client::GetHistoryInputs(std::vector<commands::Input> *output) const {
   output->clear();
   for (size_t i = 0; i < history_inputs_.size(); ++i) {
     output->push_back(history_inputs_[i]);
@@ -553,7 +557,7 @@ bool Client::PingServer() const {
   input.set_type(commands::Input::NO_OPERATION);
 
   // Call IPC
-  scoped_ptr<IPCClientInterface> client(
+  std::unique_ptr<IPCClientInterface> client(
       client_factory_->NewClient(kServerAddress,
                                  server_launcher_->server_program()));
 
@@ -606,7 +610,8 @@ bool Client::CallAndCheckVersion(const commands::Input &input,
 
 bool Client::Call(const commands::Input &input,
                   commands::Output *output) {
-  VLOG(2) << "commands::Input: " << endl << input.DebugString();
+  VLOG(2) << "commands::Input: " << std::endl
+          << input.DebugString();
 
   // don't repeat Call() if the status is either
   // SERVER_FATAL, SERVER_TIMEOUT, or SERVER_BROKEN_MESSAGE
@@ -624,7 +629,7 @@ bool Client::Call(const commands::Input &input,
   input.SerializeToString(&request);
 
   // Call IPC
-  scoped_ptr<IPCClientInterface> client(
+  std::unique_ptr<IPCClientInterface> client(
       client_factory_->NewClient(kServerAddress,
                                  server_launcher_->server_program()));
 
@@ -694,7 +699,8 @@ bool Client::Call(const commands::Input &input,
          server_status_ == SERVER_UNKNOWN /* during StartServer() */)
              << " " << server_status_;
 
-  VLOG(2) << "commands::Output: " << endl << output->DebugString();
+  VLOG(2) << "commands::Output: " << std::endl
+          << output->DebugString();
 
   return true;
 }
@@ -859,8 +865,8 @@ bool Client::LaunchTool(const string &mode, const string &extra_arg) {
   if (mode == "administration_dialog") {
 #ifdef OS_WIN
     const string &path = mozc::SystemUtil::GetToolPath();
-    wstring wpath;
-    Util::UTF8ToWide(path.c_str(), &wpath);
+    std::wstring wpath;
+    Util::UTF8ToWide(path, &wpath);
     wpath = L"\"" + wpath + L"\"";
     // Run administration dialog with UAC.
     // AFAIK, ShellExecute is only the way to launch process with
@@ -871,24 +877,15 @@ bool Client::LaunchTool(const string &mode, const string &extra_arg) {
     // In Windows XP, cannot use "runas", instead, administration
     // dialog is launched with normal process with "open"
     // http://b/2415191
-    const int result =
-        reinterpret_cast<int>(::ShellExecute(0,
-                                             SystemUtil::IsVistaOrLater() ?
-                                             L"runas" : L"open",
-                                             wpath.c_str(),
-                                             L"--mode=administration_dialog",
-                                             SystemUtil::GetSystemDir(),
-                                             SW_SHOW));
-    if (result <= 32) {
-      LOG(ERROR) << "::ShellExecute failed: " << result;
-      return false;
-    }
+    return WinUtil::ShellExecuteInSystemDir(
+        L"runas", wpath.c_str(), L"--mode=administration_dialog");
 #endif  // OS_WIN
 
     return false;
   }
 
-#if defined(OS_WIN) || defined(OS_LINUX)
+#if defined(OS_WIN) || defined(OS_LINUX) || defined(OS_ANDROID)\
+    || defined(OS_NACL)
   string arg = "--mode=" + mode;
   if (!extra_arg.empty()) {
     arg += " ";
@@ -898,7 +895,7 @@ bool Client::LaunchTool(const string &mode, const string &extra_arg) {
     LOG(ERROR) << "Cannot execute: " << kMozcTool << " " << arg;
     return false;
   }
-#endif  // OS_WIN || OS_LINUX
+#endif  // OS_WIN || OS_LINUX || OS_ANDROID || OS_NACL
 
   // TODO(taku): move MacProcess inside SpawnMozcProcess.
   // TODO(taku): support extra_arg.

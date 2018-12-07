@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,20 +30,22 @@
 #ifndef MOZC_GUI_DICTIONARY_TOOL_DICTIONARY_TOOL_H_
 #define MOZC_GUI_DICTIONARY_TOOL_DICTIONARY_TOOL_H_
 
+#include <QtWidgets/QLabel>
+#include <QtWidgets/QPushButton>
+#include <QtWidgets/QSplitterHandle>
+#include <QtWidgets/QSplitter>
+
+#include <memory>
 #include <string>
-#include <QtGui/QLabel>
-#include <QtGui/QPushButton>
-#include <QtGui/QSplitterHandle>
-#include <QtGui/QSplitter>
+#include <vector>
 
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "gui/dictionary_tool/ui_dictionary_tool.h"
 #include "dictionary/user_dictionary_importer.h"
 
 namespace mozc {
 
-class UserPOSInterface;
+class POSListProviderInterface;
 
 namespace client {
 class ClientInterface;
@@ -76,13 +78,7 @@ class DictionaryTool : public QMainWindow,
   // modifications on data before closing the window.
   void closeEvent(QCloseEvent *event);
 
-  void paintEvent(QPaintEvent *event);
-
   bool eventFilter(QObject *obj, QEvent *event);
-
-#ifdef OS_WIN
-  bool winEvent(MSG * message, long * result);
-#endif  // OS_WIN
 
  private slots:
   void CreateDictionary();
@@ -183,7 +179,7 @@ class DictionaryTool : public QMainWindow,
 
   // Helper function for DeleteWord and MoveTo.
   // Fills selected word entry rows as a unique sorted sequence.
-  void GetSortedSelectedRows(vector<int> *rows) const;
+  void GetSortedSelectedRows(std::vector<int> *rows) const;
 
   // Returns a pointer to the first selected dictionary.
   // Returns NULL if no dictionary is selected.
@@ -191,7 +187,7 @@ class DictionaryTool : public QMainWindow,
 
   ImportDialog *import_dialog_;
   FindDialog   *find_dialog_;
-  scoped_ptr<mozc::user_dictionary::UserDictionarySession> session_;
+  std::unique_ptr<mozc::user_dictionary::UserDictionarySession> session_;
 
   // ID of current selected dictionary. This needs to be maintained
   // separate from selection on the list widget because data is saved
@@ -247,15 +243,16 @@ class DictionaryTool : public QMainWindow,
   // status message
   QString statusbar_message_;
 
-  scoped_ptr<client::ClientInterface> client_;
+  std::unique_ptr<client::ClientInterface> client_;
 
   bool is_available_;
 
   // The maximum number of entries for a dictionary currently selected.
   int max_entry_size_;
 
-  scoped_ptr<const UserPOSInterface> user_pos_;
+  std::unique_ptr<const POSListProviderInterface> pos_list_provider_;
 };
+
 }  // namespace gui
 }  // namespace mozc
 

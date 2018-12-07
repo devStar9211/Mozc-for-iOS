@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,8 +32,7 @@
 #include <Windows.h>
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlcom.h>
 #include <Ctffunc.h>
 
@@ -75,7 +74,7 @@ class CandidateListCallbackImpl : public TipCandidateListCallback {
 
  private:
   // TipCandidateListCallback overrides:
-  virtual void OnFinalize(size_t index, const wstring &candidate) {
+  virtual void OnFinalize(size_t index, const std::wstring &candidate) {
     TipEditSession::SetTextAsync(text_service_, candidate, range_);
   }
 
@@ -171,7 +170,7 @@ class ReconvertFunctionImpl : public ITfFnReconversion {
     }
 
     if (info.selected_text.find(static_cast<wchar_t>(TS_CHAR_EMBEDDED)) !=
-        wstring::npos) {
+        std::wstring::npos) {
       // embedded object is found.
       *convertable = FALSE;
       *new_range = nullptr;
@@ -197,11 +196,11 @@ class ReconvertFunctionImpl : public ITfFnReconversion {
     if (!provider) {
       return E_FAIL;
     }
-    wstring query;
+    std::wstring query;
     if (!TipEditSession::GetTextSync(text_service_, range, &query)) {
       return E_FAIL;
     }
-    std::vector<wstring> candidates;
+    std::vector<std::wstring> candidates;
     if (!provider->Query(query,
                          TipQueryProvider::kReconversion,
                          &candidates)) {

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -28,17 +28,22 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "base/flags.h"
+#include "base/init_mozc.h"
 #include "converter/gen_segmenter_bitarray.h"
 
 namespace {
-#include "data_manager/testing/mock_segmenter_inl.h"
+#include "data_manager/testing/segmenter_inl.inc"
 }
 
-DEFINE_string(output, "", "header filename for mock segmenter");
+DEFINE_string(output_size_info, "", "Serialized SegmenterDataSizeInfo");
+DEFINE_string(output_ltable, "", "LTable array");
+DEFINE_string(output_rtable, "", "RTable array");
+DEFINE_string(output_bitarray, "", "Segmenter bitarray");
 
 int main(int argc, char **argv) {
-  InitGoogle(argv[0], &argc, &argv, true);
+  mozc::InitMozc(argv[0], &argc, &argv, true);
   mozc::SegmenterBitarrayGenerator::GenerateBitarray(
-      kLSize, kRSize, &IsBoundaryInternal, FLAGS_output);
+      kLSize, kRSize, &IsBoundaryInternal, FLAGS_output_size_info,
+      FLAGS_output_ltable, FLAGS_output_rtable, FLAGS_output_bitarray);
   return 0;
 }

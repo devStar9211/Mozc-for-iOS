@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,11 +34,10 @@
 #include "base/port.h"
 #include "base/protobuf/protobuf.h"
 #include "base/protobuf/repeated_field.h"
-#include "base/scoped_ptr.h"
 #include "base/util.h"
 #include "dictionary/user_dictionary_session.h"
-#include "dictionary/user_dictionary_storage.pb.h"
 #include "dictionary/user_dictionary_util.h"
+#include "protocol/user_dictionary_storage.pb.h"
 
 namespace mozc {
 namespace user_dictionary {
@@ -147,14 +146,16 @@ void UserDictionarySessionHandler::NoOperation(
 void UserDictionarySessionHandler::ClearStorage(
     const UserDictionaryCommand &command,
     UserDictionaryCommandStatus *status) {
-#ifdef __native_client__
+#ifdef OS_NACL
   // File operation is not supported on NaCl.
   status->set_status(UserDictionaryCommandStatus::UNKNOWN_ERROR);
-#else
-  FileUtil::Unlink(dictionary_path_);
-  status->set_status(
-      UserDictionaryCommandStatus::USER_DICTIONARY_COMMAND_SUCCESS);
-#endif
+#else  // OS_NACL
+  // Note: session_ might not be created when ClearStorage is called.  So create
+  // a local session to clear the storage.
+  UserDictionarySession session(dictionary_path_);
+  session.ClearDictionariesAndUndoHistory();
+  status->set_status(session.Save());
+#endif  // OS_NACL
 }
 
 void UserDictionarySessionHandler::CreateSession(
@@ -499,7 +500,7 @@ void UserDictionarySessionHandler::DeleteEntry(
     return;
   }
 
-  const vector<int> index_list(command.entry_index().begin(),
+  const std::vector<int> index_list(command.entry_index().begin(),
                                command.entry_index().end());
   status->set_status(
       session->DeleteEntry(command.dictionary_id(), index_list));
@@ -531,6 +532,12 @@ void UserDictionarySessionHandler::ImportData(
     result_status =
         session->ImportToNewDictionaryFromString(
             command.dictionary_name(), command.data(), &dictionary_id);
+  }
+  if (result_status == UserDictionaryCommandStatus::IMPORT_INVALID_ENTRIES &&
+      command.ignore_invalid_entries()) {
+    LOG(INFO) << "There are some invalid entries but ignored.";
+    result_status =
+        UserDictionaryCommandStatus::USER_DICTIONARY_COMMAND_SUCCESS;
   }
 
   if (dictionary_id != 0) {

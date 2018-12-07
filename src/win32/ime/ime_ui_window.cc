@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,15 +31,14 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-#define _ATL_NO_HOSTING
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlapp.h>
 #include <atlstr.h>
 #include <atlwin.h>
 #include <atlmisc.h>
 #include <strsafe.h>
 
+#include <algorithm>
 #include <memory>
 
 #include "base/const.h"
@@ -52,7 +51,7 @@
 #include "base/win_util.h"
 #include "client/client_interface.h"
 #include "config/config_handler.h"
-#include "renderer/renderer_command.pb.h"
+#include "protocol/renderer_command.pb.h"
 #include "renderer/win32/win32_renderer_client.h"
 #include "session/output_util.h"
 #include "win32/base/conversion_mode_util.h"
@@ -98,7 +97,8 @@ volatile bool g_module_unloaded = false;
 static once_t g_launch_set_default_dialog = MOZC_ONCE_INIT;
 
 void LaunchSetDefaultDialog() {
-  const config::Config &config = config::ConfigHandler::GetConfig();
+  config::Config config;
+  config::ConfigHandler::GetConfig(&config);
   if (config.has_check_default() && !config.check_default()) {
     // User opted out the default IME checking. Do nothing.
     return;
@@ -202,7 +202,7 @@ void UpdateCommand(const UIContext &context,
   const bool show_suggest_window =
       ui_visibility_tracker.IsSuggestWindowVisible();
 
-  vector<wstring> candidate_list;
+  std::vector<std::wstring> candidate_list;
   DWORD focused_index = 0;
   if (!context.IsEmpty() && context.GetOpenStatus()) {
     // Copy the last output.
@@ -245,8 +245,8 @@ void UpdateCommand(const UIContext &context,
   app_info.set_process_id(::GetCurrentProcessId());
   app_info.set_thread_id(::GetCurrentThreadId());
   app_info.set_target_window_handle(
-      reinterpret_cast<uint32>(target_window.m_hWnd));
-  app_info.set_receiver_handle(reinterpret_cast<uint32>(ui_window));
+      WinUtil::EncodeWindowHandle(target_window.m_hWnd));
+  app_info.set_receiver_handle(WinUtil::EncodeWindowHandle(ui_window));
   app_info.set_input_framework(ApplicationInfo::IMM32);
   int visibility = ApplicationInfo::ShowUIDefault;
   if (show_composition_window) {
@@ -350,7 +350,7 @@ class LangBarCallbackImpl : public LangBarCallback {
 
   virtual ULONG AddRef() {
     const LONG count = ::InterlockedIncrement(&reference_count_);
-    return max(count, 0);
+    return static_cast<ULONG>(std::max(count, static_cast<LONG>(0)));
   }
 
   virtual ULONG Release() {
@@ -616,8 +616,6 @@ class DefaultUIWindow {
           UpdateCandidate(context, kNoEvent);
         } else if (lParam == kNotifyReconvertFromIME) {
           TurnOnIMEAndTryToReconvertFromIME(hwnd_);
-        } else if (lParam == kNotifyDelayedCallback) {
-          SetMozcEventCallbackTimer(context);
         }
         break;
     }
@@ -802,9 +800,6 @@ class DefaultUIWindow {
 
   void OnTimer(WPARAM event_id) {
     switch (event_id) {
-      case kMozcEventCallbackTimerId:
-        OnDeferredMozcEventCallback();
-        break;
       case kDeferredLangBarUpdateTimerId:
         OnDeferredUpdateLangBar();
         break;
@@ -812,9 +807,6 @@ class DefaultUIWindow {
   }
 
  private:
-  // Timer for the delayed callback to Mozc server.
-  static const UINT_PTR kMozcEventCallbackTimerId = 1;
-
   // Timer for the langbar update.
   static const UINT_PTR kDeferredLangBarUpdateTimerId = 2;
   static const DWORD kLangBarUpdateDelayMilliSec = 50;
@@ -838,18 +830,6 @@ class DefaultUIWindow {
     bool enabled;
     commands::CompositionMode mode;
   };
-
-  // Sets the timer that send callback command.
-  void SetMozcEventCallbackTimer(const UIContext &context) {
-    commands::Output output;
-    context.GetLastOutput(&output);
-    if (output.has_callback() && output.callback().has_delay_millisec()) {
-      ::SetTimer(hwnd_,
-                 kMozcEventCallbackTimerId,
-                 output.callback().delay_millisec(),
-                 NULL);
-    }
-  }
 
   // Constructs RendererCommand based on various parameters in the input
   // context.  This implementation is very experimental, should be revised.
@@ -941,7 +921,7 @@ class DefaultUIWindow {
   }
 
   void InvalidateLangBarInfoCache() {
-    langbar_info_cache_.reset(nullptr);
+    langbar_info_cache_.reset();
   }
 
   void SetDeferredLangBarUpdate(bool enabled, commands::CompositionMode mode) {
@@ -991,13 +971,6 @@ class DefaultUIWindow {
   void OnDeferredUpdateLangBar() {
     UpdateLangBarAndCancelUpdateTimer(deferred_langbar_update_request_.enabled,
                                       deferred_langbar_update_request_.mode);
-  }
-
-  void OnDeferredMozcEventCallback() {
-    ::KillTimer(hwnd_, kMozcEventCallbackTimerId);
-    const HIMC himc = GetSafeHIMC(hwnd_);
-    const bool generate_message = mozc::win32::ImeCore::IsActiveContext(himc);
-    ImeCore::SendCallbackCommand(himc, generate_message);
   }
 
   HWND hwnd_;

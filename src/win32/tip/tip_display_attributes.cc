@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -87,7 +87,7 @@ const GUID kDisplayAttributeConverted = {
 
 TipDisplayAttribute::TipDisplayAttribute(const GUID &guid,
                                          const TF_DISPLAYATTRIBUTE &attribute,
-                                         const wstring &description)
+                                         const std::wstring &description)
     : guid_(guid),
       description_(description) {
   ::CopyMemory(&original_attribute_, &attribute, sizeof(original_attribute_));

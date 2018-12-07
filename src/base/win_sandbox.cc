@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,8 @@
 #include <AclAPI.h>
 #include <sddl.h>
 #include <strsafe.h>
+
+#include <atlsecurity.h>
 
 #include <memory>
 #include <string>
@@ -176,7 +178,8 @@ class ScopedLocalFreeInvoker {
   DISALLOW_COPY_AND_ASSIGN(ScopedLocalFreeInvoker);
 };
 
-bool GetUserSid(wstring *token_user_sid, wstring *token_primary_group_sid) {
+bool GetUserSid(std::wstring *token_user_sid,
+                std::wstring *token_primary_group_sid) {
   DCHECK(token_user_sid);
   DCHECK(token_primary_group_sid);
   token_user_sid->clear();
@@ -218,19 +221,21 @@ bool GetUserSid(wstring *token_user_sid, wstring *token_primary_group_sid) {
   return true;
 }
 
-wstring Allow(const wstring &access_right, const wstring &account_sid) {
-  return (wstring(L"(") + SDDL_ACCESS_ALLOWED + L";;" +
+std::wstring Allow(const std::wstring &access_right,
+                   const std::wstring &account_sid) {
+  return (std::wstring(L"(") + SDDL_ACCESS_ALLOWED + L";;" +
           access_right + L";;;" + account_sid + L")");
 }
 
-wstring Deny(const wstring &access_right, const wstring &account_sid) {
-  return (wstring(L"(") + SDDL_ACCESS_DENIED + L";;" +
+std::wstring Deny(const std::wstring &access_right,
+                  const std::wstring &account_sid) {
+  return (std::wstring(L"(") + SDDL_ACCESS_DENIED + L";;" +
           access_right + L";;;" + account_sid + L")");
 }
 
-wstring MandatoryLevel(const wstring &mandatory_label,
-                       const wstring &integrity_levels) {
-  return (wstring(L"(") + SDDL_MANDATORY_LABEL + L";;" +
+std::wstring MandatoryLevel(const std::wstring &mandatory_label,
+                            const std::wstring &integrity_levels) {
+  return (std::wstring(L"(") + SDDL_MANDATORY_LABEL + L";;" +
           mandatory_label + L";;;" + integrity_levels + L")");
 }
 
@@ -256,23 +261,20 @@ static_assert(PROCESS_QUERY_LIMITED_INFORMATION == 0x1000,
 
 }  // namespace
 
-wstring WinSandbox::GetSDDL(ObjectSecurityType shareble_object_type,
-                            const wstring &token_user_sid,
-                            const wstring &token_primary_group_sid,
-                            bool is_windows_vista_or_later,
+std::wstring WinSandbox::GetSDDL(ObjectSecurityType shareble_object_type,
+                            const std::wstring &token_user_sid,
+                            const std::wstring &token_primary_group_sid,
                             bool is_windows_8_or_later) {
   // See http://social.msdn.microsoft.com/Forums/en-US/windowssecurity/thread/e92502b1-0b9f-4e02-9d72-e4e47e924a8f/
   // for how to acess named objects from an AppContainer.
 
-  wstring dacl;
-  wstring sacl;
+  std::wstring dacl;
+  std::wstring sacl;
   switch (shareble_object_type) {
     case WinSandbox::kSharablePipe:
       // Strip implicit owner rights
       // http://technet.microsoft.com/en-us/library/dd125370.aspx
-      if (is_windows_vista_or_later) {
-        dacl += Allow(L"", SDDL_OWNER_RIGHTS);
-      }
+      dacl += Allow(L"", SDDL_OWNER_RIGHTS);
       // Deny remote acccess
       dacl += Deny(SDDL_GENERIC_ALL, SDDL_NETWORK);
       // Allow general access to LocalSystem
@@ -285,17 +287,13 @@ wstring WinSandbox::GetSDDL(ObjectSecurityType shareble_object_type,
       }
       // Allow general access to the current user
       dacl += Allow(SDDL_GENERIC_ALL, token_user_sid);
-      if (is_windows_vista_or_later) {
-        // Allow read/write access to low integrity
-        sacl += MandatoryLevel(SDDL_NO_EXECUTE_UP, SDDL_ML_LOW);
-      }
+      // Allow read/write access to low integrity
+      sacl += MandatoryLevel(SDDL_NO_EXECUTE_UP, SDDL_ML_LOW);
       break;
     case WinSandbox::kLooseSharablePipe:
       // Strip implicit owner rights
       // http://technet.microsoft.com/en-us/library/dd125370.aspx
-      if (is_windows_vista_or_later) {
-        dacl += Allow(L"", SDDL_OWNER_RIGHTS);
-      }
+      dacl += Allow(L"", SDDL_OWNER_RIGHTS);
       // Deny remote acccess
       dacl += Deny(SDDL_GENERIC_ALL, SDDL_NETWORK);
       // Allow general access to LocalSystem
@@ -310,17 +308,13 @@ wstring WinSandbox::GetSDDL(ObjectSecurityType shareble_object_type,
       dacl += Allow(SDDL_GENERIC_ALL, token_user_sid);
       // Skip 2nd-phase ACL validation against restricted tokens.
       dacl += Allow(SDDL_GENERIC_ALL, SDDL_RESTRICTED_CODE);
-      if (is_windows_vista_or_later) {
-        // Allow read/write access to low integrity
-        sacl += MandatoryLevel(SDDL_NO_EXECUTE_UP, SDDL_ML_LOW);
-      }
+      // Allow read/write access to low integrity
+      sacl += MandatoryLevel(SDDL_NO_EXECUTE_UP, SDDL_ML_LOW);
       break;
     case WinSandbox::kSharableEvent:
       // Strip implicit owner rights
       // http://technet.microsoft.com/en-us/library/dd125370.aspx
-      if (is_windows_vista_or_later) {
-        dacl += Allow(L"", SDDL_OWNER_RIGHTS);
-      }
+      dacl += Allow(L"", SDDL_OWNER_RIGHTS);
       // Allow general access to LocalSystem
       dacl += Allow(SDDL_GENERIC_ALL, SDDL_LOCAL_SYSTEM);
       // Allow general access to Built-in Administorators
@@ -334,17 +328,13 @@ wstring WinSandbox::GetSDDL(ObjectSecurityType shareble_object_type,
       // Skip 2nd-phase ACL validation against restricted tokens regarding
       // change/synchronize.
       dacl += Allow(SDDL_GENERIC_EXECUTE, SDDL_RESTRICTED_CODE);
-      if (is_windows_vista_or_later) {
-        // Allow read/write access to low integrity
-        sacl += MandatoryLevel(SDDL_NO_EXECUTE_UP, SDDL_ML_LOW);
-      }
+      // Allow read/write access to low integrity
+      sacl += MandatoryLevel(SDDL_NO_EXECUTE_UP, SDDL_ML_LOW);
       break;
     case WinSandbox::kSharableMutex:
       // Strip implicit owner rights
       // http://technet.microsoft.com/en-us/library/dd125370.aspx
-      if (is_windows_vista_or_later) {
-        dacl += Allow(L"", SDDL_OWNER_RIGHTS);
-      }
+      dacl += Allow(L"", SDDL_OWNER_RIGHTS);
       // Allow general access to LocalSystem
       dacl += Allow(SDDL_GENERIC_ALL, SDDL_LOCAL_SYSTEM);
       // Allow general access to Built-in Administorators
@@ -358,17 +348,13 @@ wstring WinSandbox::GetSDDL(ObjectSecurityType shareble_object_type,
       // Skip 2nd-phase ACL validation against restricted tokens regarding
       // change/synchronize.
       dacl += Allow(SDDL_GENERIC_EXECUTE, SDDL_RESTRICTED_CODE);
-      if (is_windows_vista_or_later) {
-        // Allow read/write access to low integrity
-        sacl += MandatoryLevel(SDDL_NO_EXECUTE_UP, SDDL_ML_LOW);
-      }
+      // Allow read/write access to low integrity
+      sacl += MandatoryLevel(SDDL_NO_EXECUTE_UP, SDDL_ML_LOW);
       break;
     case WinSandbox::kSharableFileForRead:
       // Strip implicit owner rights
       // http://technet.microsoft.com/en-us/library/dd125370.aspx
-      if (is_windows_vista_or_later) {
-        dacl += Allow(L"", SDDL_OWNER_RIGHTS);
-      }
+      dacl += Allow(L"", SDDL_OWNER_RIGHTS);
       // Allow general access to LocalSystem
       dacl += Allow(SDDL_GENERIC_ALL, SDDL_LOCAL_SYSTEM);
       // Allow general access to Built-in Administorators
@@ -383,18 +369,14 @@ wstring WinSandbox::GetSDDL(ObjectSecurityType shareble_object_type,
       // Skip 2nd-phase ACL validation against restricted tokens regarding
       // general read access.
       dacl += Allow(SDDL_GENERIC_READ, SDDL_RESTRICTED_CODE);
-      if (is_windows_vista_or_later) {
-        // Allow read access to low integrity
-        sacl += MandatoryLevel(
-            SDDL_NO_WRITE_UP SDDL_NO_EXECUTE_UP, SDDL_ML_LOW);
-      }
+      // Allow read access to low integrity
+      sacl += MandatoryLevel(
+          SDDL_NO_WRITE_UP SDDL_NO_EXECUTE_UP, SDDL_ML_LOW);
       break;
     case WinSandbox::kIPCServerProcess:
       // Strip implicit owner rights
       // http://technet.microsoft.com/en-us/library/dd125370.aspx
-      if (is_windows_vista_or_later) {
-        dacl += Allow(L"", SDDL_OWNER_RIGHTS);
-      }
+      dacl += Allow(L"", SDDL_OWNER_RIGHTS);
       // Allow general access to LocalSystem
       dacl += Allow(SDDL_GENERIC_ALL, SDDL_LOCAL_SYSTEM);
       // Allow general access to Built-in Administorators
@@ -406,22 +388,15 @@ wstring WinSandbox::GetSDDL(ObjectSecurityType shareble_object_type,
       }
       // Allow general access to the current user
       dacl += Allow(SDDL_GENERIC_ALL, token_user_sid);
-      if (is_windows_vista_or_later) {
-        // Allow PROCESS_QUERY_LIMITED_INFORMATION to restricted tokens
-        dacl += Allow(SDDL_PROCESS_QUERY_LIMITED_INFORMATION,
-                      SDDL_RESTRICTED_CODE);
-      } else {
-        // Allow PROCESS_QUERY_INFORMATION to restricted tokens
-        dacl += Allow(SDDL_PROCESS_QUERY_INFORMATION, SDDL_RESTRICTED_CODE);
-      }
+      // Allow PROCESS_QUERY_LIMITED_INFORMATION to restricted tokens
+      dacl += Allow(SDDL_PROCESS_QUERY_LIMITED_INFORMATION,
+                    SDDL_RESTRICTED_CODE);
       break;
     case WinSandbox::kPrivateObject:
     default:
       // Strip implicit owner rights
       // http://technet.microsoft.com/en-us/library/dd125370.aspx
-      if (is_windows_vista_or_later) {
-        dacl += Allow(L"", SDDL_OWNER_RIGHTS);
-      }
+      dacl += Allow(L"", SDDL_OWNER_RIGHTS);
       // Allow general access to LocalSystem
       dacl += Allow(SDDL_GENERIC_ALL, SDDL_LOCAL_SYSTEM);
       // Allow general access to Built-in Administorators
@@ -431,7 +406,7 @@ wstring WinSandbox::GetSDDL(ObjectSecurityType shareble_object_type,
       break;
   }
 
-  wstring sddl;
+  std::wstring sddl;
   // Owner SID
   sddl += ((SDDL_OWNER SDDL_DELIMINATOR) + token_user_sid);
   // Primary Group SID
@@ -465,16 +440,16 @@ SID *Sid::GetPSID() {
   return reinterpret_cast<SID*>(const_cast<BYTE*>(sid_));
 }
 
-wstring Sid::GetName() const {
+std::wstring Sid::GetName() const {
   wchar_t *ptr = nullptr;
   Sid temp_sid(GetPSID());
   ConvertSidToStringSidW(temp_sid.GetPSID(), &ptr);
-  wstring name = ptr;
+  std::wstring name = ptr;
   ::LocalFree(ptr);
   return name;
 }
 
-wstring Sid::GetAccountName() const {
+std::wstring Sid::GetAccountName() const {
   wchar_t *ptr = nullptr;
   DWORD name_size = 0;
   DWORD domain_name_size = 0;
@@ -490,14 +465,14 @@ wstring Sid::GetAccountName() const {
     unique_ptr<wchar_t[]> name_buffer(new wchar_t[name_size]);
     ::LookupAccountSid(nullptr, temp_sid.GetPSID(), name_buffer.get(),
                        &name_size, nullptr, &domain_name_size, &name_use);
-    return wstring(L"/") + name_buffer.get();
+    return std::wstring(L"/") + name_buffer.get();
   }
   unique_ptr<wchar_t[]> name_buffer(new wchar_t[name_size]);
   unique_ptr<wchar_t[]> domain_name_buffer(new wchar_t[domain_name_size]);
   ::LookupAccountSid(nullptr, temp_sid.GetPSID(), name_buffer.get(), &name_size,
                      domain_name_buffer.get(), &domain_name_size, &name_use);
-  const wstring domain_name = wstring(domain_name_buffer.get());
-  const wstring user_name = wstring(name_buffer.get());
+  const std::wstring domain_name = std::wstring(domain_name_buffer.get());
+  const std::wstring user_name = std::wstring(name_buffer.get());
   return domain_name + L"/" + user_name;
 }
 
@@ -505,15 +480,15 @@ wstring Sid::GetAccountName() const {
 bool WinSandbox::MakeSecurityAttributes(
     ObjectSecurityType shareble_object_type,
     SECURITY_ATTRIBUTES *security_attributes) {
-  wstring token_user_sid;
-  wstring token_primary_group_sid;
+  std::wstring token_user_sid;
+  std::wstring token_primary_group_sid;
   if (!GetUserSid(&token_user_sid, &token_primary_group_sid)) {
     return false;
   }
 
-  const wstring &sddl = GetSDDL(
+  const std::wstring &sddl = GetSDDL(
       shareble_object_type, token_user_sid, token_primary_group_sid,
-      SystemUtil::IsVistaOrLater(), SystemUtil::IsWindows8OrLater());
+      SystemUtil::IsWindows8OrLater());
 
   // Create self-relative SD
   PSECURITY_DESCRIPTOR self_relative_desc = nullptr;
@@ -839,12 +814,12 @@ bool WinSandbox::SpawnSandboxedProcess(const string &path,
                                        const string &arg,
                                        const SecurityInfo &info,
                                        DWORD *pid) {
-  wstring wpath;
-  Util::UTF8ToWide(path.c_str(), &wpath);
+  std::wstring wpath;
+  Util::UTF8ToWide(path, &wpath);
   wpath = L"\"" + wpath + L"\"";
   if (!arg.empty()) {
-    wstring warg;
-    Util::UTF8ToWide(arg.c_str(), &warg);
+    std::wstring warg;
+    Util::UTF8ToWide(arg, &warg);
     wpath += L" ";
     wpath += warg;
   }
@@ -912,7 +887,7 @@ class ScopedTokenInfo {
                                num_bytes, &num_bytes)) {
       const DWORD last_error = ::GetLastError();
       DLOG(ERROR) << "GetTokenInformation failed. Last error: " << last_error;
-      buffer_.reset(nullptr);
+      buffer_.reset();
       return;
     }
     initialized_ = true;
@@ -952,8 +927,8 @@ class SidAndAttributes {
 };
 
 // Returns all the 'TokenGroups' information of the specified |token_handle|.
-vector<SidAndAttributes> GetAllTokenGroups(HANDLE token_handle) {
-  vector<SidAndAttributes> result;
+std::vector<SidAndAttributes> GetAllTokenGroups(HANDLE token_handle) {
+  std::vector<SidAndAttributes> result;
   ScopedTokenInfo<TokenGroups, TOKEN_GROUPS> all_token_groups(token_handle);
   if (all_token_groups.get() == nullptr) {
     return result;
@@ -966,9 +941,9 @@ vector<SidAndAttributes> GetAllTokenGroups(HANDLE token_handle) {
   return result;
 }
 
-vector<SidAndAttributes> FilterByHavingAttribute(
-    const vector<SidAndAttributes> &source, DWORD attribute) {
-  vector<SidAndAttributes> result;
+std::vector<SidAndAttributes> FilterByHavingAttribute(
+    const std::vector<SidAndAttributes> &source, DWORD attribute) {
+  std::vector<SidAndAttributes> result;
   for (size_t i = 0; i < source.size(); ++i) {
     if (source[i].HasAttribute(attribute)) {
       result.push_back(source[i]);
@@ -977,9 +952,9 @@ vector<SidAndAttributes> FilterByHavingAttribute(
   return result;
 }
 
-vector<SidAndAttributes> FilterByNotHavingAttribute(
-    const vector<SidAndAttributes> &source, DWORD attribute) {
-  vector<SidAndAttributes> result;
+std::vector<SidAndAttributes> FilterByNotHavingAttribute(
+    const std::vector<SidAndAttributes> &source, DWORD attribute) {
+  std::vector<SidAndAttributes> result;
   for (size_t i = 0; i < source.size(); ++i) {
     if (!source[i].HasAttribute(attribute)) {
       result.push_back(source[i]);
@@ -989,10 +964,10 @@ vector<SidAndAttributes> FilterByNotHavingAttribute(
 }
 
 template <size_t NumExceptions>
-vector<Sid> FilterSidExceptFor(
-    const vector<SidAndAttributes> &source_sids,
+std::vector<Sid> FilterSidExceptFor(
+    const std::vector<SidAndAttributes> &source_sids,
     const WELL_KNOWN_SID_TYPE (&exception_sids)[NumExceptions]) {
-  vector<Sid> result;
+  std::vector<Sid> result;
   // find logon_sid.
   for (size_t i = 0; i < source_sids.size(); ++i) {
     bool in_the_exception_list = false;
@@ -1014,10 +989,10 @@ vector<Sid> FilterSidExceptFor(
 }
 
 template <size_t NumExceptions>
-vector<LUID> FilterPrivilegesExceptFor(
-    const vector<LUID_AND_ATTRIBUTES> &source_privileges,
+std::vector<LUID> FilterPrivilegesExceptFor(
+    const std::vector<LUID_AND_ATTRIBUTES> &source_privileges,
     const wchar_t *(&exception_privileges)[NumExceptions]) {
-  vector<LUID> result;
+  std::vector<LUID> result;
   for (size_t i = 0; i < source_privileges.size(); ++i) {
     bool in_the_exception_list = false;
     for (size_t j = 0; j < NumExceptions; ++j) {
@@ -1048,8 +1023,8 @@ Optional<SidAndAttributes> GetUserSid(HANDLE token) {
   return Optional<SidAndAttributes>(SidAndAttributes(sid, attributes));
 }
 
-vector<LUID_AND_ATTRIBUTES> GetPrivileges(HANDLE token) {
-  vector<LUID_AND_ATTRIBUTES> result;
+std::vector<LUID_AND_ATTRIBUTES> GetPrivileges(HANDLE token) {
+  std::vector<LUID_AND_ATTRIBUTES> result;
   ScopedTokenInfo<TokenPrivileges, TOKEN_PRIVILEGES> token_privileges(token);
   if (token_privileges.get() == nullptr) {
     return result;
@@ -1065,11 +1040,11 @@ vector<LUID_AND_ATTRIBUTES> GetPrivileges(HANDLE token) {
 bool CreateRestrictedTokenImpl(HANDLE effective_token,
                                WinSandbox::TokenLevel security_level,
                                ScopedHandle *restricted_token) {
-  const vector<Sid> sids_to_disable =
+  const std::vector<Sid> sids_to_disable =
       WinSandbox::GetSidsToDisable(effective_token, security_level);
-  const vector<LUID> privileges_to_disable =
+  const std::vector<LUID> privileges_to_disable =
       WinSandbox::GetPrivilegesToDisable(effective_token, security_level);
-  const vector<Sid> sids_to_restrict =
+  const std::vector<Sid> sids_to_restrict =
       WinSandbox::GetSidsToRestrict(effective_token, security_level);
 
   if ((sids_to_disable.size() == 0) &&
@@ -1090,7 +1065,7 @@ bool CreateRestrictedTokenImpl(HANDLE effective_token,
   }
 
   unique_ptr<SID_AND_ATTRIBUTES[]> sids_to_disable_array;
-  vector<Sid> sids_to_disable_array_buffer = sids_to_disable;
+  std::vector<Sid> sids_to_disable_array_buffer = sids_to_disable;
   {
     const size_t size = sids_to_disable.size();
     if (size > 0) {
@@ -1116,7 +1091,7 @@ bool CreateRestrictedTokenImpl(HANDLE effective_token,
   }
 
   unique_ptr<SID_AND_ATTRIBUTES[]> sids_to_restrict_array;
-  vector<Sid> sids_to_restrict_array_buffer = sids_to_restrict;
+  std::vector<Sid> sids_to_restrict_array_buffer = sids_to_restrict;
   {
     const size_t size = sids_to_restrict.size();
     if (size > 0) {
@@ -1209,10 +1184,6 @@ const wchar_t *GetPredefinedSidString(
 
 bool SetTokenIntegrityLevel(HANDLE token,
                             WinSandbox::IntegrityLevel integrity_level) {
-  if (!SystemUtil::IsVistaOrLater()) {
-    return true;
-  }
-
   const wchar_t* sid_string = GetPredefinedSidString(integrity_level);
   if (sid_string == nullptr) {
     // do not change the integrity level.
@@ -1235,18 +1206,18 @@ bool SetTokenIntegrityLevel(HANDLE token,
 
 }  // namespace
 
-vector<Sid> WinSandbox::GetSidsToDisable(HANDLE effective_token,
+std::vector<Sid> WinSandbox::GetSidsToDisable(HANDLE effective_token,
                                          TokenLevel security_level) {
-  const vector<SidAndAttributes> all_token_groups =
+  const std::vector<SidAndAttributes> all_token_groups =
       GetAllTokenGroups(effective_token);
   const Optional<SidAndAttributes> current_user_sid =
       GetUserSid(effective_token);
-  const vector<SidAndAttributes> normal_tokens =
+  const std::vector<SidAndAttributes> normal_tokens =
       FilterByNotHavingAttribute(
           FilterByNotHavingAttribute(all_token_groups, SE_GROUP_LOGON_ID),
           SE_GROUP_INTEGRITY);
 
-  vector<Sid> sids_to_disable;
+  std::vector<Sid> sids_to_disable;
   switch (security_level) {
     case USER_UNPROTECTED:
     case USER_RESTRICTED_SAME_ACCESS:
@@ -1288,12 +1259,12 @@ vector<Sid> WinSandbox::GetSidsToDisable(HANDLE effective_token,
   return sids_to_disable;
 }
 
-vector<LUID> WinSandbox::GetPrivilegesToDisable(HANDLE effective_token,
+std::vector<LUID> WinSandbox::GetPrivilegesToDisable(HANDLE effective_token,
                                                 TokenLevel security_level ) {
-  const vector<LUID_AND_ATTRIBUTES> all_privileges =
+  const std::vector<LUID_AND_ATTRIBUTES> all_privileges =
       GetPrivileges(effective_token);
 
-  vector<LUID> privileges_to_disable;
+  std::vector<LUID> privileges_to_disable;
   switch (security_level) {
     case USER_UNPROTECTED:
     case USER_RESTRICTED_SAME_ACCESS:
@@ -1322,16 +1293,16 @@ vector<LUID> WinSandbox::GetPrivilegesToDisable(HANDLE effective_token,
   return privileges_to_disable;
 }
 
-vector<Sid> WinSandbox::GetSidsToRestrict(HANDLE effective_token,
+std::vector<Sid> WinSandbox::GetSidsToRestrict(HANDLE effective_token,
                                           TokenLevel security_level) {
-  const vector<SidAndAttributes> all_token_groups =
+  const std::vector<SidAndAttributes> all_token_groups =
       GetAllTokenGroups(effective_token);
   const Optional<SidAndAttributes> current_user_sid =
       GetUserSid(effective_token);
-  const vector<SidAndAttributes> token_logon_session =
+  const std::vector<SidAndAttributes> token_logon_session =
       FilterByHavingAttribute(all_token_groups, SE_GROUP_LOGON_ID);
 
-  vector<Sid> sids_to_restrict;
+  std::vector<Sid> sids_to_restrict;
   switch (security_level) {
     case USER_UNPROTECTED:
       sids_to_restrict.clear();
@@ -1340,7 +1311,7 @@ vector<Sid> WinSandbox::GetSidsToRestrict(HANDLE effective_token,
       if (current_user_sid.has_value()) {
         sids_to_restrict.push_back(current_user_sid.value().sid());
       }
-      const vector<SidAndAttributes> tokens =
+      const std::vector<SidAndAttributes> tokens =
           FilterByNotHavingAttribute(all_token_groups, SE_GROUP_INTEGRITY);
       for (size_t i = 0; i < tokens.size(); ++i) {
         sids_to_restrict.push_back(tokens[i].sid());
@@ -1368,10 +1339,8 @@ vector<Sid> WinSandbox::GetSidsToRestrict(HANDLE effective_token,
       // On Windows Vista, the following token (current logon sid) is required
       // to create objects in BNO.  Consider to use low integrity level
       // so that it cannot access object created by other processes.
-      if (SystemUtil::IsVistaOrLater()) {
-        for (size_t i = 0; i < token_logon_session.size(); ++i) {
-          sids_to_restrict.push_back(token_logon_session[i].sid());
-        }
+      for (size_t i = 0; i < token_logon_session.size(); ++i) {
+        sids_to_restrict.push_back(token_logon_session[i].sid());
       }
       break;
     case USER_RESTRICTED:
@@ -1462,6 +1431,45 @@ bool WinSandbox::GetRestrictedTokenHandleForImpersonation(
   }
   restricted_token->reset(restricted_token_ret);
   return true;
+}
+
+bool WinSandbox::EnsureAllApplicationPackagesPermisssion(
+    const std::wstring &file_name) {
+  // Get "All Application Packages" group SID.
+  const ATL::CSid all_application_packages(
+      Sid(WinBuiltinAnyPackageSid).GetPSID());
+
+  // Get current DACL (Discretionary Access Control List) of |file_name|.
+  ATL::CDacl dacl;
+  if (!ATL::AtlGetDacl(file_name.c_str(), SE_FILE_OBJECT, &dacl)) {
+    return false;
+  }
+
+  // As of Windows 10 Anniversary Update, following access masks (==0x1200a9)
+  // are specified to files under Program Files by default.
+  const ACCESS_MASK kDesiredMask =
+      FILE_READ_DATA | FILE_READ_EA | FILE_EXECUTE | READ_CONTROL | SYNCHRONIZE;
+
+  // Check if the desired ACE is already specified or not.
+  for (UINT i = 0; i < dacl.GetAceCount(); ++i) {
+    CSid ace_sid;
+    ACCESS_MASK acess_mask = 0;
+    BYTE ace_type = 0;
+    dacl.GetAclEntry(i, &ace_sid, &acess_mask, &ace_type);
+    if (ace_sid == all_application_packages &&
+        ace_type == ACCESS_ALLOWED_ACE_TYPE &&
+        (acess_mask & kDesiredMask) == kDesiredMask) {
+      // This is the desired ACE.  There is nothing to do.
+      return true;
+    }
+  }
+
+  // We are here because there is no desired ACE.  Hence we do add it.
+  if (!dacl.AddAllowedAce(
+          all_application_packages, kDesiredMask, ACCESS_ALLOWED_ACE_TYPE)) {
+    return false;
+  }
+  return ATL::AtlSetDacl(file_name.c_str(), SE_FILE_OBJECT, dacl);
 }
 
 }   // namespace mozc

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -40,7 +40,7 @@ namespace {
 TEST(TipSurroundingTextUtilTest, MeasureCharactersBackward) {
   {
     const char kSource[] = "abcde";
-    wstring source;
+    std::wstring source;
     Util::UTF8ToWide(kSource, &source);
     size_t characters_in_utf16 = 0;
     EXPECT_TRUE(TipSurroundingTextUtil::MeasureCharactersBackward(
@@ -59,9 +59,8 @@ TEST(TipSurroundingTextUtilTest, MeasureCharactersBackward) {
         source, 6, &characters_in_utf16));
   }
   {
-    // "𠮟咤"
-    const char kSource[] = "\xF0\xA0\xAE\x9F\xE5\x92\xA4";
-    wstring source;
+    const char kSource[] = "𠮟咤";
+    std::wstring source;
     Util::UTF8ToWide(kSource, &source);
     size_t characters_in_utf16 = 0;
     EXPECT_TRUE(TipSurroundingTextUtil::MeasureCharactersBackward(

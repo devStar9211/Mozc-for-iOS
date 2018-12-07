@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,34 +30,33 @@
 #include "rewriter/emoji_rewriter.h"
 
 #include <cstddef>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "base/logging.h"
-#include "base/number_util.h"
-#include "base/system_util.h"
+#include "base/string_piece.h"
+#include "base/serialized_string_array.h"
 #include "base/util.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
-#include "data_manager/user_pos_manager.h"
+#include "data_manager/testing/mock_data_manager.h"
 #include "dictionary/pos_matcher.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
+#include "request/conversion_request.h"
 #include "rewriter/variants_rewriter.h"
-#include "session/commands.pb.h"
 #include "testing/base/public/gunit.h"
+#include "testing/base/public/mozctest.h"
 #include "usage_stats/usage_stats.h"
 #include "usage_stats/usage_stats_testing_util.h"
 
-DECLARE_string(test_tmpdir);
-
 namespace mozc {
+namespace {
 
 using mozc::commands::Request;
 
-namespace {
-
-// "えもじ"
-const char kEmoji[] = "\xE3\x81\x88\xE3\x82\x82\xE3\x81\x98";
+const char kEmoji[] = "えもじ";
 
 // Makes |segments| to have only a segment with a key-value paired candidate.
 void SetSegment(const string &key, const string &value, Segments *segments) {
@@ -92,7 +91,6 @@ bool HasExpectedCandidate(const Segments &segments,
   const Segment &segment = segments.segment(0);
   for (size_t i = 0; i < segment.candidates_size(); ++i) {
     const Segment::Candidate &candidate = segment.candidate(i);
-    LOG(ERROR) << "[i]" << candidate.value;
     if (candidate.value == expect_value) {
       return true;
     }
@@ -101,7 +99,7 @@ bool HasExpectedCandidate(const Segments &segments,
 }
 
 // Replaces an emoji candidate into the 0-th index, as the Mozc converter
-// does with a commited candidate.
+// does with a committed candidate.
 void ChooseEmojiCandidate(Segments *segments) {
   CHECK_LE(1, segments->segments_size());
   Segment *segment = segments->mutable_segment(0);
@@ -114,47 +112,97 @@ void ChooseEmojiCandidate(Segments *segments) {
   segment->set_segment_type(Segment::FIXED_VALUE);
 }
 
-// Dictionary data set for tests.
-const EmojiRewriter::EmojiData kTestEmojiData[] = {
-  // An actual emoji character
-  {"\xF0\x9F\x90\xAD", 0, "nezumi picture", NULL, NULL, NULL},
-
-  // Meta candidates.
-  {"DOG", 0, "inu", NULL, NULL, NULL},
-  {"CAT", 0, "neko", NULL, NULL, NULL},
-  {"MOUSE", 0, "nezumi", NULL, NULL, NULL},
-  {"RAT", 0, "nezumi", NULL, NULL, NULL},
-
-  // Test data for carrier.
-  {"COW", 0xFE001, "ushi", NULL, NULL, NULL},
-  {"TIGER", 0xFE002, "tora", "docomo", NULL, NULL},
-  {"RABIT", 0xFE003, "usagi", NULL, "softbank", NULL},
-  {"DRAGON", 0xFE004, "ryu", NULL, NULL, "kddi"},
-
-  // No unicode available.
-  {NULL, 0xFE011, NULL, "docomo", NULL, NULL},
-  {NULL, 0xFE012, NULL, NULL, "softbank", NULL},
-  {NULL, 0xFE013, NULL, NULL, NULL, "kddi"},
-
-  // Multiple carriers available.
-  {NULL, 0xFE021, NULL, "docomo", "softbank", NULL},
-  {NULL, 0xFE022, NULL, "docomo", NULL, "kddi"},
-  {NULL, 0xFE023, NULL, NULL, "softbank", "kddi"},
-  {NULL, 0xFE024, NULL, "docomo", "softbank", "kddi"},
+struct EmojiData {
+  const char *key;
+  const char *unicode;
+  const uint32 android_pua;
+  const char *description_unicode;
+  const char *description_docomo;
+  const char *description_softbank;
+  const char *description_kddi;
 };
 
-const uint16 kValueList[] = {0,
-                             1, 2, 3, 4,
-                             5, 6, 7, 8,
-                             9, 10, 11,
-                             12, 13, 14, 15};
-const EmojiRewriter::Token kTestToken[] = {
-  // Keys (the first string of each element) must be sorted lexicographically.
-  {"Emoji", kValueList, 1},  // value is ""
-  {"Inu", kValueList + 1, 1},  // value is "DOG"
-  {"Neko", kValueList + 2, 1},  // value is "CAT"
-  {"Nezumi", kValueList + 3, 2},  // values are "MOUSE" and "RAT"
-  {"X", kValueList + 5, 11},  // values for carrier test.
+// Elements must be sorted lexicographically by key (first string).
+const EmojiData kTestEmojiList[] = {
+  // An actual emoji character
+  {"Emoji", "🐭", 0, "nezumi picture", "", "", ""},
+
+  // Meta candidates.
+  {"Inu", "DOG", 0, "inu", "", "", ""},
+  {"Neko", "CAT", 0, "neko", "", "", ""},
+  {"Nezumi", "MOUSE", 0, "nezumi", "", "", ""},
+  {"Nezumi", "RAT", 0, "nezumi", "", "", ""},
+
+  // Test data for carrier.
+  {"X", "COW", 0xFE001, "ushi", "", "", ""},
+  {"X", "TIGER", 0xFE002, "tora", "docomo", "", ""},
+  {"X", "RABIT", 0xFE003, "usagi", "", "softbank", ""},
+  {"X", "DRAGON", 0xFE004, "ryu", "", "", "kddi"},
+
+  // No unicode available.
+  {"X", "", 0xFE011, "", "docomo", "", ""},
+  {"X", "", 0xFE012, "", "", "softbank", ""},
+  {"X", "", 0xFE013, "", "", "", "kddi"},
+
+  // Multiple carriers available.
+  {"X", "", 0xFE021, "", "docomo", "softbank", ""},
+  {"X", "", 0xFE022, "", "docomo", "", "kddi"},
+  {"X", "", 0xFE023, "", "", "softbank", "kddi"},
+  {"X", "", 0xFE024, "", "docomo", "softbank", "kddi"},
+};
+
+// This data manager overrides GetEmojiRewriterData() to return the above test
+// data for EmojiRewriter.
+class TestDataManager : public testing::MockDataManager {
+ public:
+  TestDataManager() {
+    // Collect all the strings and temporarily assing 0 as index.
+    std::map<string, size_t> string_index;
+    for (const EmojiData &data : kTestEmojiList) {
+      string_index[data.key] = 0;
+      string_index[data.unicode] = 0;
+      string_index[data.description_unicode] = 0;
+      string_index[data.description_docomo] = 0;
+      string_index[data.description_softbank] = 0;
+      string_index[data.description_kddi] = 0;
+    }
+
+    // Set index.
+    std::vector<StringPiece> strings;
+    size_t index = 0;
+    for (auto &iter : string_index) {
+      strings.push_back(iter.first);
+      iter.second = index++;
+    }
+
+    // Create token array.
+    for (const EmojiData &data : kTestEmojiList) {
+      token_array_.push_back(string_index[data.key]);
+      token_array_.push_back(string_index[data.unicode]);
+      token_array_.push_back(data.android_pua);
+      token_array_.push_back(string_index[data.description_unicode]);
+      token_array_.push_back(string_index[data.description_docomo]);
+      token_array_.push_back(string_index[data.description_softbank]);
+      token_array_.push_back(string_index[data.description_kddi]);
+    }
+
+    // Create string array.
+    string_array_data_ =
+        SerializedStringArray::SerializeToBuffer(strings, &string_array_buf_);
+  }
+
+  void GetEmojiRewriterData(StringPiece *token_array_data,
+                            StringPiece *string_array_data) const override {
+    *token_array_data =
+        StringPiece(reinterpret_cast<const char *>(token_array_.data()),
+                    token_array_.size() * sizeof(uint32));
+    *string_array_data = string_array_data_;
+  }
+
+ private:
+  std::vector<uint32> token_array_;
+  StringPiece string_array_data_;
+  std::unique_ptr<uint32[]> string_array_buf_;
 };
 
 string ToAndroidPuaString(int pua) {
@@ -163,70 +211,61 @@ string ToAndroidPuaString(int pua) {
   return str;
 }
 
-}  // namespace
-
 class EmojiRewriterTest : public ::testing::Test {
  protected:
-  // This empty constructor is written to avoid bugs of Visual Studio.
-  EmojiRewriterTest() {}
+  EmojiRewriterTest() {
+    convreq_.set_request(&request_);
+    convreq_.set_config(&config_);
+  }
 
-  virtual void SetUp() {
-    original_profile_directory_ = SystemUtil::GetUserProfileDirectory();
-    SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
-
+  void SetUp() override {
     // Enable emoji conversion
-    config::ConfigHandler::GetConfig(&original_config_);
-    config::Config config(original_config_);
-    config.set_use_emoji_conversion(true);
-    config::ConfigHandler::SetConfig(config);
+    config::ConfigHandler::GetDefaultConfig(&config_);
+    config_.set_use_emoji_conversion(true);
 
     mozc::usage_stats::UsageStats::ClearAllStatsForTest();
 
-    rewriter_.reset(new EmojiRewriter(
-        kTestEmojiData, arraysize(kTestEmojiData),
-        kTestToken, arraysize(kTestToken),
-        kValueList));
+    rewriter_.reset(new EmojiRewriter(test_data_manager_));
+    full_data_rewriter_.reset(new EmojiRewriter(mock_data_manager_));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     mozc::usage_stats::UsageStats::ClearAllStatsForTest();
-
-    config::ConfigHandler::SetConfig(original_config_);
-    SystemUtil::SetUserProfileDirectory(original_profile_directory_);
   }
 
-  const ConversionRequest request_;
-  scoped_ptr<EmojiRewriter> rewriter_;
+  ConversionRequest convreq_;
+  commands::Request request_;
+  config::Config config_;
+  std::unique_ptr<EmojiRewriter> rewriter_;
+  std::unique_ptr<EmojiRewriter> full_data_rewriter_;
 
  private:
-  string original_profile_directory_;
-  config::Config original_config_;
+  const testing::ScopedTmpUserProfileDirectory scoped_tmp_profile_dir_;
+  const testing::MockDataManager mock_data_manager_;
+  const TestDataManager test_data_manager_;
   usage_stats::scoped_usage_stats_enabler usage_stats_enabler_;
 };
 
 TEST_F(EmojiRewriterTest, Capability) {
-  Request request;
-  ConversionRequest conversion_request(NULL, &request);
-
-  request.set_emoji_rewriter_capability(Request::NOT_AVAILABLE);
+  request_.set_emoji_rewriter_capability(Request::NOT_AVAILABLE);
   EXPECT_EQ(RewriterInterface::NOT_AVAILABLE,
-            rewriter_->capability(conversion_request));
+            rewriter_->capability(convreq_));
 
-  request.set_emoji_rewriter_capability(Request::CONVERSION);
+  request_.set_emoji_rewriter_capability(Request::CONVERSION);
   EXPECT_EQ(RewriterInterface::CONVERSION,
-            rewriter_->capability(conversion_request));
+            rewriter_->capability(convreq_));
 
-  request.set_emoji_rewriter_capability(Request::PREDICTION);
+  request_.set_emoji_rewriter_capability(Request::PREDICTION);
   EXPECT_EQ(RewriterInterface::PREDICTION,
-            rewriter_->capability(conversion_request));
+            rewriter_->capability(convreq_));
 
-  request.set_emoji_rewriter_capability(Request::SUGGESTION);
+  request_.set_emoji_rewriter_capability(Request::SUGGESTION);
   EXPECT_EQ(RewriterInterface::SUGGESTION,
-            rewriter_->capability(conversion_request));
+            rewriter_->capability(convreq_));
 
-  request.set_emoji_rewriter_capability(Request::ALL);
+  request_.set_emoji_rewriter_capability(Request::ALL);
   EXPECT_EQ(RewriterInterface::ALL,
-            rewriter_->capability(conversion_request));
+            rewriter_->capability(convreq_));
 }
 
 TEST_F(EmojiRewriterTest, ConvertedSegmentsHasEmoji) {
@@ -237,44 +276,38 @@ TEST_F(EmojiRewriterTest, ConvertedSegmentsHasEmoji) {
 
   Segments segments;
   SetSegment("neko", "test", &segments);
-  EXPECT_FALSE(rewriter_->Rewrite(request_, &segments));
+  EXPECT_FALSE(rewriter_->Rewrite(convreq_, &segments));
   EXPECT_EQ(0, CountEmojiCandidates(segments));
 
   SetSegment("Neko", "test", &segments);
-  EXPECT_TRUE(rewriter_->Rewrite(request_, &segments));
+  EXPECT_TRUE(rewriter_->Rewrite(convreq_, &segments));
   EXPECT_EQ(1, CountEmojiCandidates(segments));
   EXPECT_TRUE(HasExpectedCandidate(segments, "CAT"));
 
   SetSegment("Nezumi", "test", &segments);
-  EXPECT_TRUE(rewriter_->Rewrite(request_, &segments));
+  EXPECT_TRUE(rewriter_->Rewrite(convreq_, &segments));
   EXPECT_EQ(2, CountEmojiCandidates(segments));
   EXPECT_TRUE(HasExpectedCandidate(segments, "MOUSE"));
   EXPECT_TRUE(HasExpectedCandidate(segments, "RAT"));
 
   SetSegment(kEmoji, "test", &segments);
-  EXPECT_TRUE(rewriter_->Rewrite(request_, &segments));
+  EXPECT_TRUE(rewriter_->Rewrite(convreq_, &segments));
   EXPECT_EQ(9, CountEmojiCandidates(segments));
 }
 
 TEST_F(EmojiRewriterTest, CarrierEmojiSelectionEmpty) {
-  Request request;
-  ConversionRequest conversion_request(NULL, &request);
-
   Segments segments;
   SetSegment("X", "test", &segments);
-  request.set_available_emoji_carrier(0);  // Disable emoji rewriting.
-  ASSERT_FALSE(rewriter_->Rewrite(conversion_request, &segments));
+  request_.set_available_emoji_carrier(0);  // Disable emoji rewriting.
+  ASSERT_FALSE(rewriter_->Rewrite(convreq_, &segments));
   ASSERT_EQ(0, CountEmojiCandidates(segments));
 }
 
 TEST_F(EmojiRewriterTest, CarrierEmojiSelectionUnicode) {
-  Request request;
-  ConversionRequest conversion_request(NULL, &request);
-
   Segments segments;
   SetSegment("X", "test", &segments);
-  request.set_available_emoji_carrier(Request::UNICODE_EMOJI);
-  ASSERT_TRUE(rewriter_->Rewrite(conversion_request, &segments));
+  request_.set_available_emoji_carrier(Request::UNICODE_EMOJI);
+  ASSERT_TRUE(rewriter_->Rewrite(convreq_, &segments));
   ASSERT_EQ(4, CountEmojiCandidates(segments));
   EXPECT_TRUE(HasExpectedCandidate(segments, "COW"));
   EXPECT_TRUE(HasExpectedCandidate(segments, "TIGER"));
@@ -283,13 +316,10 @@ TEST_F(EmojiRewriterTest, CarrierEmojiSelectionUnicode) {
 }
 
 TEST_F(EmojiRewriterTest, CarrierEmojiSelectionDocomo) {
-  Request request;
-  ConversionRequest conversion_request(NULL, &request);
-
   Segments segments;
   SetSegment("X", "test", &segments);
-  request.set_available_emoji_carrier(Request::DOCOMO_EMOJI);
-  ASSERT_TRUE(rewriter_->Rewrite(conversion_request, &segments));
+  request_.set_available_emoji_carrier(Request::DOCOMO_EMOJI);
+  ASSERT_TRUE(rewriter_->Rewrite(convreq_, &segments));
   ASSERT_EQ(5, CountEmojiCandidates(segments));
   EXPECT_TRUE(HasExpectedCandidate(segments, ToAndroidPuaString(0xFE002)));
   EXPECT_TRUE(HasExpectedCandidate(segments, ToAndroidPuaString(0xFE011)));
@@ -299,13 +329,10 @@ TEST_F(EmojiRewriterTest, CarrierEmojiSelectionDocomo) {
 }
 
 TEST_F(EmojiRewriterTest, CarrierEmojiSelectionSoftbank) {
-  Request request;
-  ConversionRequest conversion_request(NULL, &request);
-
   Segments segments;
   SetSegment("X", "test", &segments);
-  request.set_available_emoji_carrier(Request::SOFTBANK_EMOJI);
-  ASSERT_TRUE(rewriter_->Rewrite(conversion_request, &segments));
+  request_.set_available_emoji_carrier(Request::SOFTBANK_EMOJI);
+  ASSERT_TRUE(rewriter_->Rewrite(convreq_, &segments));
   ASSERT_EQ(5, CountEmojiCandidates(segments));
   EXPECT_TRUE(HasExpectedCandidate(segments, ToAndroidPuaString(0xFE003)));
   EXPECT_TRUE(HasExpectedCandidate(segments, ToAndroidPuaString(0xFE012)));
@@ -315,13 +342,10 @@ TEST_F(EmojiRewriterTest, CarrierEmojiSelectionSoftbank) {
 }
 
 TEST_F(EmojiRewriterTest, CarrierEmojiSelectionKddi) {
-  Request request;
-  ConversionRequest conversion_request(NULL, &request);
-
   Segments segments;
   SetSegment("X", "test", &segments);
-  request.set_available_emoji_carrier(Request::KDDI_EMOJI);
-  ASSERT_TRUE(rewriter_->Rewrite(conversion_request, &segments));
+  request_.set_available_emoji_carrier(Request::KDDI_EMOJI);
+  ASSERT_TRUE(rewriter_->Rewrite(convreq_, &segments));
   ASSERT_EQ(5, CountEmojiCandidates(segments));
   EXPECT_TRUE(HasExpectedCandidate(segments, ToAndroidPuaString(0xFE004)));
   EXPECT_TRUE(HasExpectedCandidate(segments, ToAndroidPuaString(0xFE013)));
@@ -332,14 +356,11 @@ TEST_F(EmojiRewriterTest, CarrierEmojiSelectionKddi) {
 
 // The combination of unicode and android carrier dependent emoji.
 TEST_F(EmojiRewriterTest, CarrierEmojiSelectionDocomoUnicode) {
-  Request request;
-  ConversionRequest conversion_request(NULL, &request);
-
   Segments segments;
   SetSegment("X", "test", &segments);
-  request.set_available_emoji_carrier(
+  request_.set_available_emoji_carrier(
       Request::DOCOMO_EMOJI | Request::UNICODE_EMOJI);
-  ASSERT_TRUE(rewriter_->Rewrite(conversion_request, &segments));
+  ASSERT_TRUE(rewriter_->Rewrite(convreq_, &segments));
   ASSERT_EQ(9, CountEmojiCandidates(segments));
   EXPECT_TRUE(HasExpectedCandidate(segments, "COW"));
   EXPECT_TRUE(HasExpectedCandidate(segments, "TIGER"));
@@ -353,14 +374,11 @@ TEST_F(EmojiRewriterTest, CarrierEmojiSelectionDocomoUnicode) {
 }
 
 TEST_F(EmojiRewriterTest, CarrierEmojiSelectionSoftbankUnicode) {
-  Request request;
-  ConversionRequest conversion_request(NULL, &request);
-
   Segments segments;
   SetSegment("X", "test", &segments);
-  request.set_available_emoji_carrier(
+  request_.set_available_emoji_carrier(
       Request::SOFTBANK_EMOJI | Request::UNICODE_EMOJI);
-  ASSERT_TRUE(rewriter_->Rewrite(conversion_request, &segments));
+  ASSERT_TRUE(rewriter_->Rewrite(convreq_, &segments));
   ASSERT_EQ(9, CountEmojiCandidates(segments));
   EXPECT_TRUE(HasExpectedCandidate(segments, "COW"));
   EXPECT_TRUE(HasExpectedCandidate(segments, "TIGER"));
@@ -374,14 +392,11 @@ TEST_F(EmojiRewriterTest, CarrierEmojiSelectionSoftbankUnicode) {
 }
 
 TEST_F(EmojiRewriterTest, CarrierEmojiSelectionKddiUnicode) {
-  Request request;
-  ConversionRequest conversion_request(NULL, &request);
-
   Segments segments;
   SetSegment("X", "test", &segments);
-  request.set_available_emoji_carrier(
+  request_.set_available_emoji_carrier(
       Request::KDDI_EMOJI | Request::UNICODE_EMOJI);
-  ASSERT_TRUE(rewriter_->Rewrite(conversion_request, &segments));
+  ASSERT_TRUE(rewriter_->Rewrite(convreq_, &segments));
   ASSERT_EQ(9, CountEmojiCandidates(segments));
   EXPECT_TRUE(HasExpectedCandidate(segments, "COW"));
   EXPECT_TRUE(HasExpectedCandidate(segments, "TIGER"));
@@ -399,40 +414,38 @@ TEST_F(EmojiRewriterTest, NoConversionWithDisabledSettings) {
   // in settings. Same segments are tested with ConvertedSegmentsHasEmoji test.
 
   // Disable emoji conversion in settings
-  config::Config config;
-  config::ConfigHandler::GetConfig(&config);
-  config.set_use_emoji_conversion(false);
-  config::ConfigHandler::SetConfig(config);
+  config_.set_use_emoji_conversion(false);
 
   Segments segments;
   SetSegment("test", "test", &segments);
-  EXPECT_FALSE(rewriter_->Rewrite(request_, &segments));
+  EXPECT_FALSE(rewriter_->Rewrite(convreq_, &segments));
   EXPECT_EQ(0, CountEmojiCandidates(segments));
 
   SetSegment("Neko", "test", &segments);
-  EXPECT_FALSE(rewriter_->Rewrite(request_, &segments));
+  EXPECT_FALSE(rewriter_->Rewrite(convreq_, &segments));
   EXPECT_EQ(0, CountEmojiCandidates(segments));
   EXPECT_FALSE(HasExpectedCandidate(segments, "CAT"));
 
   SetSegment("Nezumi", "test", &segments);
-  EXPECT_FALSE(rewriter_->Rewrite(request_, &segments));
+  EXPECT_FALSE(rewriter_->Rewrite(convreq_, &segments));
   EXPECT_EQ(0, CountEmojiCandidates(segments));
   EXPECT_FALSE(HasExpectedCandidate(segments, "MOUSE"));
   EXPECT_FALSE(HasExpectedCandidate(segments, "RAT"));
 
   SetSegment(kEmoji, "test", &segments);
-  EXPECT_FALSE(rewriter_->Rewrite(request_, &segments));
+  EXPECT_FALSE(rewriter_->Rewrite(convreq_, &segments));
   EXPECT_EQ(0, CountEmojiCandidates(segments));
 }
 
 TEST_F(EmojiRewriterTest, CheckDescription) {
+  const testing::MockDataManager data_manager;
   Segments segments;
   VariantsRewriter variants_rewriter(
-      UserPosManager::GetUserPosManager()->GetPOSMatcher());
+      dictionary::POSMatcher(data_manager.GetPOSMatcherData()));
 
   SetSegment("Emoji", "test", &segments);
-  EXPECT_TRUE(rewriter_->Rewrite(request_, &segments));
-  EXPECT_TRUE(variants_rewriter.Rewrite(request_, &segments));
+  EXPECT_TRUE(rewriter_->Rewrite(convreq_, &segments));
+  EXPECT_TRUE(variants_rewriter.Rewrite(convreq_, &segments));
   ASSERT_LT(0, CountEmojiCandidates(segments));
   const Segment &segment = segments.segment(0);
   for (int i = 0; i < segment.candidates_size(); ++i) {
@@ -442,13 +455,9 @@ TEST_F(EmojiRewriterTest, CheckDescription) {
     if (!EmojiRewriter::IsEmojiCandidate(candidate)) {
       continue;
     }
-    // "<機種依存文字>"
-    EXPECT_NE(string::npos, description.find("<"
-        "\xE6\xA9\x9F\xE7\xA8\xAE\xE4\xBE\x9D\xE5\xAD\x98"
-        "\xE6\x96\x87\xE5\xAD\x97" ">"))
+    EXPECT_NE(string::npos, description.find("<機種依存文字>"))
         << "for \"" << candidate.value << "\" : \"" << description << "\"";
-    // "[全]"
-    EXPECT_EQ(string::npos, description.find("[" "\xE5\x85\xA8" "]"))
+    EXPECT_EQ(string::npos, description.find("[全]"))
         << "for \"" << candidate.value << "\" : \"" << description << "\"";
   }
 }
@@ -466,7 +475,7 @@ TEST_F(EmojiRewriterTest, CheckInsertPosition) {
     Segment *segment = segments.push_back_segment();
     segment->set_key("Neko");
     for (int i = 0; i < kExpectPosition * 2; ++i) {
-      string value = "candidate" + NumberUtil::SimpleItoa(i);
+      string value = "candidate" + std::to_string(i);
       Segment::Candidate *candidate = segment->add_candidate();
       candidate->Init();
       candidate->value = value;
@@ -474,7 +483,7 @@ TEST_F(EmojiRewriterTest, CheckInsertPosition) {
       candidate->content_value = value;
     }
   }
-  EXPECT_TRUE(rewriter_->Rewrite(request_, &segments));
+  EXPECT_TRUE(rewriter_->Rewrite(convreq_, &segments));
 
   ASSERT_EQ(1, segments.segments_size());
   const Segment& segment = segments.segment(0);
@@ -498,27 +507,101 @@ TEST_F(EmojiRewriterTest, CheckUsageStats) {
 
   // Converting non-emoji candidates does not matter.
   SetSegment("test", "test", &segments);
-  EXPECT_FALSE(rewriter_->Rewrite(request_, &segments));
-  rewriter_->Finish(request_, &segments);
+  EXPECT_FALSE(rewriter_->Rewrite(convreq_, &segments));
+  rewriter_->Finish(convreq_, &segments);
   EXPECT_STATS_NOT_EXIST(kStatsKey);
 
   // Converting an emoji candidate.
   SetSegment("Nezumi", "test", &segments);
-  EXPECT_TRUE(rewriter_->Rewrite(request_, &segments));
+  EXPECT_TRUE(rewriter_->Rewrite(convreq_, &segments));
   ChooseEmojiCandidate(&segments);
-  rewriter_->Finish(request_, &segments);
+  rewriter_->Finish(convreq_, &segments);
   EXPECT_COUNT_STATS(kStatsKey, 1);
   SetSegment(kEmoji, "test", &segments);
-  EXPECT_TRUE(rewriter_->Rewrite(request_, &segments));
+  EXPECT_TRUE(rewriter_->Rewrite(convreq_, &segments));
   ChooseEmojiCandidate(&segments);
-  rewriter_->Finish(request_, &segments);
+  rewriter_->Finish(convreq_, &segments);
   EXPECT_COUNT_STATS(kStatsKey, 2);
 
   // Converting non-emoji keeps the previous usage stats.
   SetSegment("test", "test", &segments);
-  EXPECT_FALSE(rewriter_->Rewrite(request_, &segments));
-  rewriter_->Finish(request_, &segments);
+  EXPECT_FALSE(rewriter_->Rewrite(convreq_, &segments));
+  rewriter_->Finish(convreq_, &segments);
   EXPECT_COUNT_STATS(kStatsKey, 2);
 }
 
+TEST_F(EmojiRewriterTest, QueryNormalization) {
+  {
+    Segments segments;
+    SetSegment("Ｎｅｋｏ", "Neko", &segments);
+    EXPECT_TRUE(rewriter_->Rewrite(convreq_, &segments));
+  }
+  {
+    Segments segments;
+    SetSegment("Neko", "Neko", &segments);
+    EXPECT_TRUE(rewriter_->Rewrite(convreq_, &segments));
+  }
+}
+
+TEST_F(EmojiRewriterTest, FullDataTest) {
+  // U+1F646 (FACE WITH OK GESTURE)
+  {
+    Segments segments;
+    SetSegment("ＯＫ", "OK", &segments);
+    EXPECT_TRUE(full_data_rewriter_->Rewrite(convreq_, &segments));
+  }
+  {
+    Segments segments;
+    SetSegment("OK", "OK", &segments);
+    EXPECT_TRUE(full_data_rewriter_->Rewrite(convreq_, &segments));
+  }
+  // U+2795 (HEAVY PLUS SIGN)
+  {
+    Segments segments;
+    SetSegment("＋", "+", &segments);
+    EXPECT_TRUE(full_data_rewriter_->Rewrite(convreq_, &segments));
+  }
+  {
+    Segments segments;
+    SetSegment("+", "+", &segments);
+    EXPECT_TRUE(full_data_rewriter_->Rewrite(convreq_, &segments));
+  }
+  // U+1F522 (INPUT SYMBOL FOR NUMBERS)
+  {
+    Segments segments;
+    SetSegment("１２３４", "1234", &segments);
+    EXPECT_TRUE(full_data_rewriter_->Rewrite(convreq_, &segments));
+  }
+  {
+    Segments segments;
+    SetSegment("1234", "1234", &segments);
+    EXPECT_TRUE(full_data_rewriter_->Rewrite(convreq_, &segments));
+  }
+  // U+1F552 (CLOCK FACE THREE OCLOCK)
+  {
+    Segments segments;
+    SetSegment("３じ", "3ji", &segments);
+    EXPECT_TRUE(full_data_rewriter_->Rewrite(convreq_, &segments));
+  }
+  {
+    Segments segments;
+    SetSegment("3じ", "3ji", &segments);
+    EXPECT_TRUE(full_data_rewriter_->Rewrite(convreq_, &segments));
+  }
+  // U+31 U+20E3 (KEYCAP 1)
+  // Since emoji_rewriter does not support multi-codepoint characters,
+  // Rewrite function returns false though ideally it should be supported.
+  {
+    Segments segments;
+    SetSegment("１", "1", &segments);
+    EXPECT_FALSE(full_data_rewriter_->Rewrite(convreq_, &segments));
+  }
+  {
+    Segments segments;
+    SetSegment("1", "1", &segments);
+    EXPECT_FALSE(full_data_rewriter_->Rewrite(convreq_, &segments));
+  }
+}
+
+}  // namespace
 }  // namespace mozc

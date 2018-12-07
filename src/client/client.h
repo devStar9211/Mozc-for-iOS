@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,12 +32,13 @@
 #ifndef MOZC_CLIENT_CLIENT_H_
 #define MOZC_CLIENT_CLIENT_H_
 
+#include <memory>
 #include <string>
 #include <vector>
+
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "client/client_interface.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "testing/base/public/gunit_prod.h"
 // for FRIEND_TEST()
 
@@ -238,19 +239,19 @@ class Client : public ClientInterface {
 
   // for unittest
   // copy the history inputs to |result|.
-  void GetHistoryInputs(vector<commands::Input> *result) const;
+  void GetHistoryInputs(std::vector<commands::Input> *result) const;
 
   uint64 id_;
   IPCClientFactoryInterface *client_factory_;
-  scoped_ptr<ServerLauncherInterface> server_launcher_;
-  scoped_ptr<char[]> result_;
-  scoped_ptr<config::Config> preferences_;
+  std::unique_ptr<ServerLauncherInterface> server_launcher_;
+  std::unique_ptr<char[]> result_;
+  std::unique_ptr<config::Config> preferences_;
   int timeout_;
   ServerStatus server_status_;
   uint32 server_protocol_version_;
   uint32 server_process_id_;
   string server_product_version_;
-  vector<commands::Input> history_inputs_;
+  std::vector<commands::Input> history_inputs_;
   // Remember the composition mode of input session for playback.
   commands::CompositionMode last_mode_;
   commands::Capability client_capability_;

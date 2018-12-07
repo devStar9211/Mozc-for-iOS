@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,6 +31,7 @@
 #define MOZC_WIN32_TIP_TIP_EDIT_SESSION_H_
 
 #include <msctf.h>
+#include <string>
 
 #include "base/port.h"
 
@@ -108,11 +109,11 @@ class TipEditSession {
   // Begins a sync edit session to retrieve the text from |range|.
   static bool GetTextSync(TipTextService *text_service,
                           ITfRange *range,
-                          wstring *text);
+                          std::wstring *text);
 
   // Begins an async edit session to set |text| to |range|.
   static bool SetTextAsync(TipTextService *text_service,
-                           const wstring &text,
+                           const std::wstring &text,
                            ITfRange *range);
 
  private:

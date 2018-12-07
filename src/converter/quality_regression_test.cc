@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -37,19 +38,15 @@
 #include "base/logging.h"
 #include "base/port.h"
 #include "base/system_util.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
 #include "converter/quality_regression_util.h"
-#include "engine/chromeos_engine_factory.h"
-#include "engine/engine_factory.h"
-#include "engine/engine_interface.h"
-#include "session/commands.pb.h"
+#include "data_manager/data_manager.h"
+#include "engine/engine.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 #include "session/request_test_util.h"
 #include "testing/base/public/gunit.h"
-
-DECLARE_string(test_tmpdir);
-
-using mozc::quality_regression::QualityRegressionUtil;
+#include "testing/base/public/mozctest.h"
 
 namespace mozc {
 
@@ -62,24 +59,14 @@ extern TestCase kTestData[];
 
 namespace {
 
-class QualityRegressionTest : public testing::Test {
+using quality_regression::QualityRegressionUtil;
+
+class QualityRegressionTest : public ::testing::Test {
  protected:
-  virtual void SetUp() {
-    SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config::ConfigHandler::SetConfig(config);
-  }
-
-  virtual void TearDown() {
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config::ConfigHandler::SetConfig(config);
-  }
-
   static void RunTestForPlatform(uint32 platform, QualityRegressionUtil *util) {
     CHECK(util);
-    map<string, vector<pair<float, string>>> results, disabled_results;
+    std::map<string, std::vector<std::pair<float, string>>> results,
+        disabled_results;
 
     int num_executed_cases = 0, num_disabled_cases = 0;
     for (size_t i = 0; kTestData[i].line; ++i) {
@@ -92,7 +79,7 @@ class QualityRegressionTest : public testing::Test {
       string actual_value;
       const bool test_result = util->ConvertAndTest(item, &actual_value);
 
-      map<string, vector<pair<float, string>>> *table = nullptr;
+      std::map<string, std::vector<std::pair<float, string>>> *table = nullptr;
       if (kTestData[i].enabled) {
         ++num_executed_cases;
         table = &results;
@@ -107,9 +94,9 @@ class QualityRegressionTest : public testing::Test {
       line.append("\tActual: ").append(actual_value);
       if (test_result) {
         // use "-1.0" as a dummy expected ratio
-        (*table)[label].push_back(make_pair(-1.0, line));
+        (*table)[label].push_back(std::make_pair(-1.0, line));
       } else {
-        (*table)[label].push_back(make_pair(item.accuracy, line));
+        (*table)[label].push_back(std::make_pair(item.accuracy, line));
       }
     }
 
@@ -126,10 +113,10 @@ class QualityRegressionTest : public testing::Test {
   // results don't affect test results but closable issues are reported.
   static void ExamineResults(
       const bool enabled, uint32 platform,
-      map<string, vector<pair<float, string>>> *results) {
+      std::map<string, std::vector<std::pair<float, string>>> *results) {
     for (auto it = results->begin(); it != results->end(); ++it) {
-      vector<pair<float, string>> *values = &it->second;
-      sort(values->begin(), values->end());
+      std::vector<std::pair<float, string>> *values = &it->second;
+      std::sort(values->begin(), values->end());
       size_t correct = 0;
       bool all_passed = true;
       for (const auto &value : *values) {
@@ -165,20 +152,31 @@ class QualityRegressionTest : public testing::Test {
       }
     }
   }
+
+ private:
+  const testing::ScopedTmpUserProfileDirectory scoped_profile_dir_;
 };
 
-
-TEST_F(QualityRegressionTest, ChromeOSTest) {
-  scoped_ptr<EngineInterface> chromeos_engine(ChromeOsEngineFactory::Create());
-  QualityRegressionUtil util(chromeos_engine->GetConverter());
-  RunTestForPlatform(QualityRegressionUtil::CHROMEOS, &util);
+std::unique_ptr<EngineInterface> CreateEngine(const string &data_file_path,
+                                              const string &magic_number,
+                                              const string &engine_type) {
+  std::unique_ptr<DataManager> data_manager(new DataManager);
+  const auto status = data_manager->InitFromFile(data_file_path, magic_number);
+  if (status != DataManager::Status::OK) {
+    LOG(ERROR) << "Failed to load " << data_file_path
+               << ": " << DataManager::StatusCodeToString(status);
+    return nullptr;
+  }
+  if (engine_type == "desktop") {
+    return Engine::CreateDesktopEngine(std::move(data_manager));
+  }
+  if (engine_type == "mobile") {
+    return Engine::CreateMobileEngine(std::move(data_manager));
+  }
+  LOG(ERROR) << "Invalid engine type: " << engine_type;
+  return nullptr;
 }
 
-// Test for desktop
-TEST_F(QualityRegressionTest, BasicTest) {
-  scoped_ptr<EngineInterface> engine(EngineFactory::Create());
-  QualityRegressionUtil util(engine->GetConverter());
-  RunTestForPlatform(QualityRegressionUtil::DESKTOP, &util);
-}
+
 }  // namespace
 }  // namespace mozc

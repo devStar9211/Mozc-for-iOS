@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,8 +31,8 @@
 #define MOZC_GUI_ADMINISTRATION_DIALOG_H_
 
 #include <QtGui/QtGui>
-#include <QtGui/QDialog>
-#include <string>
+#include <QtWidgets/QDialog>
+
 #include "gui/administration_dialog/ui_administration_dialog.h"
 
 namespace mozc {

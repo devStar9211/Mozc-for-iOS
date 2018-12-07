@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,14 +29,15 @@
 
 #include "rewriter/focus_candidate_rewriter.h"
 
+#include <algorithm>
 #include <string>
 
 #include "base/logging.h"
 #include "base/number_util.h"
+#include "base/serialized_string_array.h"
 #include "base/util.h"
 #include "converter/segments.h"
 #include "data_manager/data_manager_interface.h"
-#include "dictionary/pos_matcher.h"
 #include "rewriter/number_compound_util.h"
 
 namespace mozc {
@@ -50,8 +51,7 @@ enum {
 
 // TODO(taku): See POS and increase the coverage.
 bool IsConnectorSegment(const Segment &segment) {
-  return (segment.key() == "\xE3\x81\xA8" ||
-          segment.key() == "\xE3\x82\x84");
+  return (segment.key() == "と" || segment.key() == "や");
 }
 
 // Finds value from the candidates list and move the canidate to the top.
@@ -128,10 +128,16 @@ bool RewriteNumber(Segment *segment, const Segment::Candidate &candidate) {
 }  // namespace
 
 FocusCandidateRewriter::FocusCandidateRewriter(
-    const DataManagerInterface *data_manager) {
-  data_manager->GetCounterSuffixSortedArray(&suffix_array_,
-                                            &suffix_array_size_);
-  pos_matcher_ = data_manager->GetPOSMatcher();
+    const DataManagerInterface *data_manager)
+    : pos_matcher_(data_manager->GetPOSMatcherData()) {
+  const char *array = nullptr;
+  size_t size = 0;
+  data_manager->GetCounterSuffixSortedArray(&array, &size);
+  const StringPiece data(array, size);
+  // Data manager is responsible for providing a valid data.  Just verify data
+  // in debug build.
+  DCHECK(SerializedStringArray::VerifyData(data));
+  suffix_array_.Set(data);
 }
 
 FocusCandidateRewriter::~FocusCandidateRewriter() {}
@@ -369,7 +375,8 @@ int FocusCandidateRewriter::FindMatchingCandidates(
 
   // Check only top 10 candidates because, when the top candidate is a number
   // candidate, other number compounds likely to appear near the top candidate.
-  const size_t max_size = min(seg.candidates_size(), static_cast<size_t>(10));
+  const size_t max_size =
+      std::min(seg.candidates_size(), static_cast<size_t>(10));
   for (size_t i = 1; i < max_size; ++i) {
     if (!ParseNumberCandidate(seg.candidate(i), &number, &suffix,
                               &script_type)) {
@@ -390,13 +397,12 @@ bool FocusCandidateRewriter::ParseNumberCandidate(
   // Otherwise, the following wrong rewrite will occur.
   // Example: "一階へは | 二回 | 行った -> 一階へは | 二階 | 行った"
   if (cand.content_value.size() != cand.value.size()) {
-    if (!pos_matcher_->IsParallelMarker(cand.rid)) {
+    if (!pos_matcher_.IsParallelMarker(cand.rid)) {
       return false;
     }
   }
   return number_compound_util::SplitStringIntoNumberAndCounterSuffix(
-      suffix_array_, suffix_array_size_,
-      cand.content_value, number, suffix, script_type);
+      suffix_array_, cand.content_value, number, suffix, script_type);
 }
 
 }  // namespace mozc

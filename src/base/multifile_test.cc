@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -68,7 +68,7 @@ TEST(InputMultiFileTest, OpenNonexistentFilesTest) {
 
   // Multiple paths
   {
-    vector<string> filenames;
+    std::vector<string> filenames;
     filenames.push_back(FileUtil::JoinPath(FLAGS_test_tmpdir, "these_files"));
     filenames.push_back(FileUtil::JoinPath(FLAGS_test_tmpdir, "do_not"));
     filenames.push_back(FileUtil::JoinPath(FLAGS_test_tmpdir, "exists"));
@@ -89,14 +89,14 @@ TEST(InputMultiFileTest, ReadSingleFileTest) {
   const string path = FileUtil::JoinPath(FLAGS_test_tmpdir, "i_am_a_test_file");
 
   // Create a test file
-  vector<string> expected_lines;
+  std::vector<string> expected_lines;
   const int kNumLines = 10;
   {
     OutputFileStream ofs(path.c_str());
     for (int i = 0; i < kNumLines; ++i) {
       string line = Util::StringPrintf("Hi, line %d", i);
       expected_lines.push_back(line);
-      ofs << line << endl;;
+      ofs << line << std::endl;
     }
   }
   EXPECT_EQ(kNumLines, expected_lines.size());
@@ -121,8 +121,8 @@ TEST(InputMultiFileTest, ReadMultipleFilesTest) {
   const int kNumLinesPerFile = 10;
 
   // Create test files
-  vector<string> paths;
-  vector<string> expected_lines;
+  std::vector<string> paths;
+  std::vector<string> expected_lines;
   {
     int serial_line_no = 0;
     for (int fileno = 0; fileno < kNumFile; ++fileno) {
@@ -134,7 +134,7 @@ TEST(InputMultiFileTest, ReadMultipleFilesTest) {
       for (int i = 0; i < kNumLinesPerFile; ++i) {
         string line = Util::StringPrintf("Hi, line %d", ++serial_line_no);
         expected_lines.push_back(line);
-        ofs << line << endl;;
+        ofs << line << std::endl;
       }
     }
   }

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,20 +27,22 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "converter/converter_mock.h"
+
+#include <memory>
 #include <string>
 
-#include "converter/conversion_request.h"
-#include "converter/converter_mock.h"
 #include "converter/segments.h"
+#include "request/conversion_request.h"
 #include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
 
 namespace mozc {
 namespace {
+
 void SetSegments(Segments *segments, const string &cand_value) {
   Segment *segment = segments->add_segment();
-  // "Testてすと"
-  segment->set_key("\x54\x65\x73\x74\xe3\x81\xa6\xe3\x81\x99\xe3\x81\xa8");
+  segment->set_key("Testてすと");
   Segment::Candidate *candidate = segment->add_candidate();
   candidate->value = cand_value;
 
@@ -49,11 +51,10 @@ void SetSegments(Segments *segments, const string &cand_value) {
   meta_cand->Init();
   meta_cand->value = "TestT13N";
 }
-}  // namespace
 
-class ConverterMockTest : public testing::Test {
+class ConverterMockTest : public ::testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     mock_.reset(new ConverterMock);
   }
 
@@ -62,7 +63,7 @@ class ConverterMockTest : public testing::Test {
   }
 
  private:
-  scoped_ptr<ConverterMock> mock_;
+  std::unique_ptr<ConverterMock> mock_;
 };
 
 TEST_F(ConverterMockTest, CopySegment) {
@@ -75,8 +76,7 @@ TEST_F(ConverterMockTest, CopySegment) {
   EXPECT_EQ(expect.DebugString(), output.DebugString());
   EXPECT_EQ(1, output.segments_size());
   const Segment &seg = output.segment(0);
-  // "Testてすと"
-  EXPECT_EQ("\x54\x65\x73\x74\xe3\x81\xa6\xe3\x81\x99\xe3\x81\xa8", seg.key());
+  EXPECT_EQ("Testてすと", seg.key());
   EXPECT_EQ(1, seg.candidates_size());
   EXPECT_EQ("StartConvert", seg.candidate(0).value);
   EXPECT_EQ(1, seg.meta_candidates_size());
@@ -210,7 +210,7 @@ TEST_F(ConverterMockTest, SetCommitSegments) {
   Segments output, expect;
   SetSegments(&expect, "CommitSegments");
   GetMock()->SetCommitSegments(&expect, true);
-  vector<size_t> singleton_vector;
+  std::vector<size_t> singleton_vector;
   singleton_vector.push_back(1);
   EXPECT_TRUE(converter->CommitSegments(&output, singleton_vector));
   EXPECT_EQ(expect.DebugString(), output.DebugString());
@@ -461,13 +461,13 @@ TEST_F(ConverterMockTest, GetCommitSegments) {
   size_t input_idx2 = 2;
   SetSegments(&input, "CommitSegments");
   const string input_str = input.DebugString();
-  vector<size_t> index_list;
+  std::vector<size_t> index_list;
   index_list.push_back(input_idx1);
   index_list.push_back(input_idx2);
   converter->CommitSegments(&input, index_list);
 
   Segments last_segment;
-  vector<size_t> last_idx;
+  std::vector<size_t> last_idx;
   GetMock()->GetCommitSegments(&last_segment, &last_idx);
   const string last_segment_str = last_segment.DebugString();
 
@@ -542,4 +542,5 @@ TEST_F(ConverterMockTest, DefaultBehavior) {
   EXPECT_EQ(input_str, last_str);
 }
 
+}  // namespace
 }  // namespace mozc

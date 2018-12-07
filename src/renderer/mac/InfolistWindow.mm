@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,8 +35,8 @@
 #include "base/coordinates.h"
 #include "base/logging.h"
 #include "client/client_interface.h"
+#include "protocol/commands.pb.h"
 #include "renderer/mac/InfolistWindow.h"
-#include "session/commands.pb.h"
 
 using mozc::commands::Candidates;
 using mozc::commands::Output;
@@ -72,7 +72,7 @@ namespace mac {
 namespace {
 bool SendUsageStatsEvent(client::SendCommandInterface *command_sender,
                          const SessionCommand::UsageStatsEvent &event) {
-  if (command_sender == NULL) {
+  if (command_sender == nullptr) {
     return false;
   }
   SessionCommand command;
@@ -81,11 +81,11 @@ bool SendUsageStatsEvent(client::SendCommandInterface *command_sender,
   Output dummy_output;
   return command_sender->SendCommand(command, &dummy_output);
 }
-}  // anonymous namespace
+}  // namespace
 
 InfolistWindow::InfolistWindow()
-    : lasttimer_(NULL),
-      command_sender_(NULL) {
+    : lasttimer_(nullptr),
+      command_sender_(nullptr) {
  timer_handler_.reset([[InfolistWindowTimerHandler alloc]
      initWithInfolistWindow:this]);
 }

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -48,9 +48,9 @@ TEST(UploadUtilTest, UploadTest) {
     client.set_result(result);
 
     UploadUtil uploader;
-    vector<pair<string, string> > params;
-    params.push_back(make_pair("hl", "ja"));
-    params.push_back(make_pair("v", "test"));
+    std::vector<std::pair<string, string> > params;
+    params.push_back(std::make_pair("hl", "ja"));
+    params.push_back(std::make_pair("v", "test"));
     uploader.SetHeader("Test", 100, params);
     uploader.AddCountValue("Count", 100);
     EXPECT_TRUE(uploader.Upload());
@@ -71,9 +71,9 @@ TEST(UploadUtilTest, UploadTest) {
     client.set_result(result);
 
     UploadUtil uploader;
-    vector<pair<string, string> > params;
-    params.push_back(make_pair("hl", "ja"));
-    params.push_back(make_pair("v", "test"));
+    std::vector<std::pair<string, string> > params;
+    params.push_back(std::make_pair("hl", "ja"));
+    params.push_back(std::make_pair("v", "test"));
     uploader.SetHeader("Test", 100, params);
     uploader.AddTimingValue("Timing", 20, 20, 10, 30);
     EXPECT_TRUE(uploader.Upload());
@@ -86,9 +86,9 @@ TEST(UploadUtilTest, UploadTest) {
     client.set_result(result);
 
     UploadUtil uploader;
-    vector<pair<string, string> > params;
-    params.push_back(make_pair("hl", "ja"));
-    params.push_back(make_pair("v", "test"));
+    std::vector<std::pair<string, string> > params;
+    params.push_back(std::make_pair("hl", "ja"));
+    params.push_back(std::make_pair("v", "test"));
     uploader.SetHeader("Test", 100, params);
     uploader.AddIntegerValue("Integer", -10);
     EXPECT_TRUE(uploader.Upload());
@@ -101,9 +101,9 @@ TEST(UploadUtilTest, UploadTest) {
     client.set_result(result);
 
     UploadUtil uploader;
-    vector<pair<string, string> > params;
-    params.push_back(make_pair("hl", "ja"));
-    params.push_back(make_pair("v", "test"));
+    std::vector<std::pair<string, string> > params;
+    params.push_back(std::make_pair("hl", "ja"));
+    params.push_back(std::make_pair("v", "test"));
     uploader.SetHeader("Test", 100, params);
     uploader.AddBooleanValue("Boolean", false);
     EXPECT_TRUE(uploader.Upload());
@@ -116,9 +116,9 @@ TEST(UploadUtilTest, UploadTest) {
     client.set_result(result);
 
     UploadUtil uploader;
-    vector<pair<string, string> > params;
-    params.push_back(make_pair("hl", "ja"));
-    params.push_back(make_pair("v", "test"));
+    std::vector<std::pair<string, string> > params;
+    params.push_back(std::make_pair("hl", "ja"));
+    params.push_back(std::make_pair("v", "test"));
     uploader.SetHeader("Test", 100, params);
     uploader.AddCountValue("C", 1);
     uploader.AddTimingValue("T", 1, 1, 1, 1);
@@ -139,9 +139,9 @@ TEST(UploadUtilTest, UploadSecureTest) {
     client.set_result(result);
 
     UploadUtil uploader;
-    vector<pair<string, string> > params;
-    params.push_back(make_pair("hl", "ja"));
-    params.push_back(make_pair("v", "test"));
+    std::vector<std::pair<string, string> > params;
+    params.push_back(std::make_pair("hl", "ja"));
+    params.push_back(std::make_pair("v", "test"));
     uploader.SetHeader("Test", 100, params);
     uploader.AddCountValue("Count", 100);
     uploader.SetUseHttps(true);

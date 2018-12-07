@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -118,7 +118,7 @@ class ScopedHIMCC {
   DISALLOW_COPY_AND_ASSIGN(ScopedHIMCC);
 };
 
-}  // namespace mozc
 }  // namespace win32
+}  // namespace mozc
 
 #endif  // MOZC_WIN32_IME_IME_SCOPED_CONTEXT_H_

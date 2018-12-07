@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,10 +30,11 @@
 #include "gui/character_pad/hand_writing.h"
 
 #ifdef ENABLE_CLOUD_HANDWRITING
-#include <QtGui/QApplication>
+#include <QtGui/QGuiApplication>
 #endif  // ENABLE_CLOUD_HANDWRITING
+
 #include <QtGui/QtGui>
-#include <QtGui/QMessageBox>
+#include <QtWidgets/QMessageBox>
 
 #ifdef OS_WIN
 #include <windows.h>
@@ -41,9 +42,9 @@
 #endif
 
 #ifdef ENABLE_CLOUD_HANDWRITING
-#include "config/config.pb.h"
 #include "config/config_handler.h"
 #include "handwriting/cloud_handwriting.h"
+#include "protocol/config.pb.h"
 #endif  // ENABLE_CLOUD_HANDWRITING
 
 #include "base/logging.h"
@@ -52,7 +53,7 @@
 #include "gui/base/win_util.h"
 #include "handwriting/handwriting_manager.h"
 #include "handwriting/zinnia_handwriting.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 
 namespace mozc {
 
@@ -300,25 +301,6 @@ void HandWriting::itemSelected(const QListWidgetItem *item) {
   commands::Output dummy_output;
   client_->SendCommand(command, &dummy_output);
 }
-
-#ifdef OS_WIN
-bool HandWriting::winEvent(MSG *message, long *result) {
-  if (message != NULL &&
-      message->message == WM_LBUTTONDOWN &&
-      WinUtil::IsCompositionEnabled()) {
-    const QWidget *widget = qApp->widgetAt(
-        mapToGlobal(QPoint(message->lParam & 0xFFFF,
-                           (message->lParam >> 16) & 0xFFFF)));
-    if (widget == centralwidget) {
-      ::PostMessage(message->hwnd, WM_NCLBUTTONDOWN,
-                    static_cast<WPARAM>(HTCAPTION), message->lParam);
-      return true;
-    }
-  }
-
-  return QWidget::winEvent(message, result);
-}
-#endif  // OS_WIN
 
 #ifdef ENABLE_CLOUD_HANDWRITING
 bool HandWriting::TryToEnableCloudHandwriting() {

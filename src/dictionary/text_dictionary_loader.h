@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -39,6 +39,7 @@
 // for FRIEND_TEST
 
 namespace mozc {
+namespace dictionary {
 
 struct Token;
 class POSMatcher;
@@ -47,6 +48,7 @@ class TextDictionaryLoader {
  public:
   // TODO(noriyukit): Better to pass the pointer of pos_matcher.
   explicit TextDictionaryLoader(const POSMatcher& pos_matcher);
+  TextDictionaryLoader(uint16 zipcode_id, uint16 isolated_word_id);
   virtual ~TextDictionaryLoader();
 
   // Loads tokens from system dictionary files and reading correction
@@ -72,26 +74,24 @@ class TextDictionaryLoader {
     tokens_.push_back(token);
   }
 
-  const vector<Token *> &tokens() const {
+  const std::vector<Token *> &tokens() const {
     return tokens_;
   }
 
   // Appends the tokens owned by this instance to |res|.  Note that the appended
   // tokens are still owned by this instance and deleted on destruction of this
   // instance or when Clear() is called.
-  void CollectTokens(vector<Token *> *res) const;
+  void CollectTokens(std::vector<Token *> *res) const;
 
  protected:
   // Allows derived classes to implement custom filtering rules.
-  virtual Token *ParseTSV(const vector<StringPiece> &columns) const;
-
-  const POSMatcher *pos_matcher_;
+  virtual Token *ParseTSV(const std::vector<StringPiece> &columns) const;
 
  private:
   static void LoadReadingCorrectionTokens(
       const string &reading_correction_filename,
-      const vector<Token *> &ref_sorted_tokens,
-      int *limit, vector<Token *> *tokens);
+      const std::vector<Token *> &ref_sorted_tokens,
+      int *limit, std::vector<Token *> *tokens);
 
   // Encodes special information into |token| with the |label|.
   // Currently, label must be:
@@ -104,11 +104,14 @@ class TextDictionaryLoader {
 
   Token *ParseTSVLine(StringPiece line) const;
 
-  vector<Token *> tokens_;
+  const uint16 zipcode_id_;
+  const uint16 isolated_word_id_;
+  std::vector<Token *> tokens_;
 
   FRIEND_TEST(TextDictionaryLoaderTest, RewriteSpecialTokenTest);
 };
 
+}  // namespace dictionary
 }  // namespace mozc
 
 #endif  // MOZC_DICTIONARY_TEXT_DICTIONARY_LOADER_H_

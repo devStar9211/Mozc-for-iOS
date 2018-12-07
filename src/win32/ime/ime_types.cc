@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,9 +31,7 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-#define _ATL_NO_HOSTING
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlapp.h>
 #include <atlwin.h>
 #include <atlmisc.h>
@@ -45,11 +43,10 @@ template <LPARAM bit>
 bool BitwiseTest(LPARAM lParam) {
   return (lParam & bit) == bit;
 }
-}  // anonymous namespace
+}  // namespace
 
 const LPARAM kNotifyUpdateUI = 0x10000;
 const LPARAM kNotifyReconvertFromIME = 0x10001;
-const LPARAM kNotifyDelayedCallback = 0x10002;
 
 CompositionChangeAttributes::CompositionChangeAttributes()
     : composition_attribute(false),

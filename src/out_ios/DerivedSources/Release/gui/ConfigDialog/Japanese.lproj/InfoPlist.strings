@@ -1,4 +1,0 @@
-/* Localized versions of Info.plist keys */
-
-CFBundleName = "Mozc 環境設定";
-NSHumanReadableCopyright = "© Google Inc., 2010";

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,10 +29,10 @@
 
 #include <QtCore/QObject>
 #include <QtCore/QString>
-#include <QtGui/QApplication>
-#include <QtGui/QWidget>
+#include <QtGui/QGuiApplication>
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QWidget>
 
-#include "base/singleton.h"
 #include "base/version.h"
 #include "gui/base/window_title_modifier.h"
 
@@ -40,7 +40,7 @@ namespace mozc {
 namespace gui {
 bool WindowTitleModifier::eventFilter(QObject *obj,
                                       QEvent *event) {
-  QWidget *w = qApp->activeWindow();
+  QWidget *w = QApplication::activeWindow();
   if (w != NULL && obj != NULL && w == obj &&
       QEvent::WindowActivate == event->type() &&
       w->windowTitle().indexOf(prefix_) == -1) {

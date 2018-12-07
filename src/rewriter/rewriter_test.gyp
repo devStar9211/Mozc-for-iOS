@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -50,6 +50,7 @@
         'english_variants_rewriter_test.cc',
         'focus_candidate_rewriter_test.cc',
         'fortune_rewriter_test.cc',
+        'katakana_promotion_rewriter_test.cc',
         'merger_rewriter_test.cc',
         'normalization_rewriter_test.cc',
         'number_compound_util_test.cc',
@@ -67,14 +68,17 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base.gyp:serialized_string_array',
+        '../base/base_test.gyp:clock_mock',
         '../converter/converter.gyp:converter',
         '../converter/converter_base.gyp:converter_mock',
-        '../data_manager/data_manager.gyp:user_pos_manager',
         '../data_manager/testing/mock_data_manager.gyp:mock_data_manager',
+        '../dictionary/dictionary_base.gyp:user_pos',
         '../engine/engine.gyp:mock_data_engine_factory',
+        '../protocol/protocol.gyp:commands_proto',
         '../session/session_base.gyp:request_test_util',
-        '../session/session_base.gyp:session_protocol',
         '../testing/testing.gyp:gtest_main',
+        '../testing/testing.gyp:mozctest',
         'calculator/calculator.gyp:calculator_mock',
         'rewriter.gyp:rewriter',
       ],
@@ -99,15 +103,6 @@
             'user_dictionary_rewriter_test.cc',
             'user_segment_history_rewriter_test.cc',
             'variants_rewriter_test.cc',
-          ],
-        }],
-        ['use_packed_dictionary==1', {
-          'dependencies': [
-            '../data_manager/packed/packed_data_manager.gyp:gen_packed_data_header_mock#host',
-          ],
-          'hard_dependency': 1,
-          'export_dependent_settings': [
-            '../data_manager/packed/packed_data_manager.gyp:gen_packed_data_header_mock#host',
           ],
         }],
       ],
@@ -139,28 +134,17 @@
         '../base/base.gyp:base',
         '../composer/composer.gyp:composer',
         '../config/config.gyp:config_handler',
-        '../config/config.gyp:config_protocol',
-        '../converter/converter_base.gyp:conversion_request',
         '../converter/converter_base.gyp:segments',
-        '../data_manager/data_manager.gyp:user_pos_manager',
         '../data_manager/testing/mock_data_manager.gyp:mock_data_manager',
         '../dictionary/dictionary.gyp:dictionary_mock',
         '../dictionary/dictionary_base.gyp:pos_matcher',
-        '../session/session_base.gyp:session_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
+        '../request/request.gyp:conversion_request',
         '../testing/testing.gyp:gtest_main',
+        '../testing/testing.gyp:mozctest',
         '../usage_stats/usage_stats_test.gyp:usage_stats_testing_util',
         'rewriter.gyp:rewriter',
-      ],
-      'conditions': [
-        ['use_packed_dictionary==1', {
-          'dependencies': [
-            '../data_manager/packed/packed_data_manager.gyp:gen_packed_data_header_mock#host',
-          ],
-          'hard_dependency': 1,
-          'export_dependent_settings': [
-            '../data_manager/packed/packed_data_manager.gyp:gen_packed_data_header_mock#host',
-          ],
-        }],
       ],
       'variables': {
         'test_size': 'small',
@@ -176,22 +160,12 @@
         '../base/base.gyp:base',
         '../composer/composer.gyp:composer',
         '../data_manager/testing/mock_data_manager.gyp:mock_data_manager',
+        '../protocol/protocol.gyp:commands_proto',
         '../session/session_base.gyp:request_test_util',
-        '../session/session_base.gyp:session_protocol',
         '../testing/testing.gyp:gtest_main',
+        '../testing/testing.gyp:mozctest',
         '../usage_stats/usage_stats_test.gyp:usage_stats_testing_util',
         'rewriter.gyp:rewriter',
-      ],
-      'conditions': [
-        ['use_packed_dictionary==1', {
-          'dependencies': [
-            '../data_manager/packed/packed_data_manager.gyp:gen_packed_data_header_mock#host',
-          ],
-          'hard_dependency': 1,
-          'export_dependent_settings': [
-            '../data_manager/packed/packed_data_manager.gyp:gen_packed_data_header_mock#host',
-          ],
-        }],
       ],
       'variables': {
         'test_size': 'small',

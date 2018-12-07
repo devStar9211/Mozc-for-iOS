@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,9 +30,10 @@
 #ifndef MOZC_GUI_CHARACTER_PAD_HAND_WRITING_H_
 #define MOZC_GUI_CHARACTER_PAD_HAND_WRITING_H_
 
-#include <QtGui/QMainWindow>
+#include <QtWidgets/QMainWindow>
 
-#include "base/scoped_ptr.h"
+#include <memory>
+
 #include "gui/character_pad/ui_hand_writing.h"
 
 namespace mozc {
@@ -64,14 +65,9 @@ class HandWriting : public QMainWindow,
 
  protected:
   void resizeEvent(QResizeEvent *event);
-
-#ifdef OS_WIN
-  bool winEvent(MSG *message, long *result);
-#endif  // OS_WIN
-
   void updateHandwritingSource(int index);
 
-  scoped_ptr<client::ClientInterface> client_;
+  std::unique_ptr<client::ClientInterface> client_;
   bool usage_stats_enabled_;
 // Do not depend on CloudHandwriting class to keep dependencies
 // minimum.
@@ -84,9 +80,9 @@ class HandWriting : public QMainWindow,
   // necessary and updates the current config as
   // |config.set_allow_cloud_handwriting(true)| when it is allowed.
   bool TryToEnableCloudHandwriting();
-  scoped_ptr<mozc::handwriting::HandwritingInterface> cloud_handwriting_;
+  std::unique_ptr<mozc::handwriting::HandwritingInterface> cloud_handwriting_;
 #endif  // ENABLE_CLOUD_HANDWRITING
-  scoped_ptr<mozc::handwriting::HandwritingInterface> zinnia_handwriting_;
+  std::unique_ptr<mozc::handwriting::HandwritingInterface> zinnia_handwriting_;
 };
 }  // namespace gui
 }  // namespace mozc

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,6 +34,7 @@
 #include <LMCons.h>
 #include <Sddl.h>
 #include <ShlObj.h>
+#include <VersionHelpers.h>
 #else  // OS_WIN
 #include <pwd.h>
 #include <sys/mman.h>
@@ -59,15 +60,11 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/mac_util.h"
-#include "base/number_util.h"
 #include "base/singleton.h"
 #include "base/util.h"
 #include "base/win_util.h"
 
 #ifdef OS_ANDROID
-// HACK to avoid a bug in sysconf in android.
-#include "android/jni/sysconf.h"
-#define sysconf mysysconf
 #include "base/android_util.h"
 #endif  // OS_ANDROID
 
@@ -81,16 +78,7 @@ namespace {
 class UserProfileDirectoryImpl {
  public:
   UserProfileDirectoryImpl();
-  string get() {
-#ifdef __native_client__
-    // Copies string here to prevent Copy-On-Write issues in multi-thread
-    // environment.
-    // TODO(hsumita): Remove this hack if not necessary.
-    return string(dir_.data(), dir_.size());
-#else
-    return dir_;
-#endif  // __native_client__
-  }
+  string get() { return dir_; }
   void set(const string &dir) { dir_ = dir; }
  private:
   string dir_;
@@ -146,29 +134,7 @@ class LocalAppDataDirectoryCache {
     if (in_app_container) {
       return TryGetLocalAppDataForAppContainer(dir);
     }
-    if (SystemUtil::IsVistaOrLater()) {
-      return TryGetLocalAppDataLow(dir);
-    }
-
-    // Windows XP: use "%USERPROFILE%\Local Settings\Application Data"
-
-    // Retrieve the directory "%USERPROFILE%\Local Settings\Application Data",
-    // which is a user directory which serves a data repository for local
-    // applications, to avoid user profiles from being roamed by indexers.
-    wchar_t config[MAX_PATH] = {};
-    const HRESULT result = ::SHGetFolderPathW(
-        nullptr, CSIDL_LOCAL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, &config[0]);
-    if (FAILED(result)) {
-      return result;
-    }
-
-    string buffer;
-    if (Util::WideToUTF8(&config[0], &buffer) == 0) {
-      return E_FAIL;
-    }
-
-    *dir = buffer;
-    return S_OK;
+    return TryGetLocalAppDataLow(dir);
   }
 
   static HRESULT TryGetLocalAppDataForAppContainer(string *dir) {
@@ -185,9 +151,9 @@ class LocalAppDataDirectoryCache {
     if (FAILED(result)) {
       return result;
     }
-    wstring path = config;
-    const wstring::size_type local_pos = path.find(L"\\Packages\\");
-    if (local_pos == wstring::npos) {
+    std::wstring path = config;
+    const std::wstring::size_type local_pos = path.find(L"\\Packages\\");
+    if (local_pos == std::wstring::npos) {
       return E_FAIL;
     }
     path.erase(local_pos);
@@ -204,57 +170,29 @@ class LocalAppDataDirectoryCache {
     }
     dir->clear();
 
-    if (!SystemUtil::IsVistaOrLater()) {
-      return E_NOTIMPL;
-    }
-
-    // Windows Vista: use LocalLow
-    // Call SHGetKnownFolderPath dynamically.
-    // http://msdn.microsoft.com/en-us/library/bb762188(VS.85).aspx
-    // http://msdn.microsoft.com/en-us/library/bb762584(VS.85).aspx
-    // GUID: {A520A1A4-1780-4FF6-BD18-167343C5AF16}
-    const HMODULE hLib = WinUtil::LoadSystemLibrary(L"shell32.dll");
-    if (hLib == nullptr) {
-      return E_NOTIMPL;
-    }
-
-    typedef HRESULT (WINAPI *FPSHGetKnownFolderPath)(
-        const GUID &, DWORD, HANDLE, PWSTR *);
-    FPSHGetKnownFolderPath func = reinterpret_cast<FPSHGetKnownFolderPath>
-        (::GetProcAddress(hLib, "SHGetKnownFolderPath"));
-    if (func == nullptr) {
-      ::FreeLibrary(hLib);
-      return E_NOTIMPL;
-    }
-
     wchar_t *task_mem_buffer = nullptr;
-    const HRESULT result =
-        (*func)(FOLDERID_LocalAppDataLow, 0, nullptr, &task_mem_buffer);
+    const HRESULT result = ::SHGetKnownFolderPath(
+        FOLDERID_LocalAppDataLow, 0, nullptr, &task_mem_buffer);
     if (FAILED(result)) {
       if (task_mem_buffer != nullptr) {
         ::CoTaskMemFree(task_mem_buffer);
       }
-      ::FreeLibrary(hLib);
       return result;
     }
 
     if (task_mem_buffer == nullptr) {
-      ::FreeLibrary(hLib);
       return E_UNEXPECTED;
     }
 
-    wstring wpath = task_mem_buffer;
+    std::wstring wpath = task_mem_buffer;
     ::CoTaskMemFree(task_mem_buffer);
 
     string path;
     if (Util::WideToUTF8(wpath, &path) == 0) {
-      ::FreeLibrary(hLib);
       return E_UNEXPECTED;
     }
 
     *dir = path;
-
-    ::FreeLibrary(hLib);
     return S_OK;
   }
 
@@ -294,10 +232,9 @@ UserProfileDirectoryImpl::UserProfileDirectoryImpl() {
 #endif  //  GOOGLE_JAPANESE_INPUT_BUILD
 
 #elif defined(OS_ANDROID)
-  // For android, we just use pre-defined directory, which is under the package
-  // directory, asssuming each device has single user.
-  dir = FileUtil::JoinPath("/data/data", kMozcAndroidPackage);
-  dir = FileUtil::JoinPath(dir, ".mozc");
+  // For android, we do nothing here because user profile directory,
+  // of which the path depends on active user,
+  // is injected from Java layer.
 
 #else  // !OS_WIN && !OS_MACOSX && !OS_ANDROID
   char buf[1024];
@@ -434,14 +371,14 @@ string SystemUtil::GetServerDirectory() {
 #elif defined(OS_MACOSX)
   return MacUtil::GetServerDirectory();
 
-#elif defined(OS_LINUX)
+#elif defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_NACL)
 #if defined(MOZC_SERVER_DIRECTORY)
   return MOZC_SERVER_DIRECTORY;
 #else
   return "/usr/lib/mozc";
 #endif  // MOZC_SERVER_DIRECTORY
 
-#endif  // OS_WIN, OS_MACOSX, OS_LINUX
+#endif  // OS_WIN, OS_MACOSX, OS_LINUX, ...
 }
 
 string SystemUtil::GetServerPath() {
@@ -512,7 +449,7 @@ string SystemUtil::GetUserNameAsString() {
   return ppw->pw_name;
 
 #else  // OS_ANDROID
-  // OS_MACOSX or OS_LINUX
+  // OS_MACOSX, OS_LINUX or OS_NACL
   struct passwd pw, *ppw;
   char buf[1024];
   CHECK_EQ(0, getpwuid_r(geteuid(), &pw, buf, sizeof(buf), &ppw));
@@ -665,14 +602,14 @@ string GetSessionIdString() {
   if (!GetCurrentSessionId(&session_id)) {
     return "";
   }
-  return NumberUtil::SimpleItoa(session_id);
+  return std::to_string(session_id);
 }
 
 }  // namespace
 #endif  // OS_WIN
 
 string SystemUtil::GetDesktopNameAsString() {
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_NACL)
   const char *display = getenv("DISPLAY");
   if (display == NULL) {
     return "";
@@ -702,74 +639,11 @@ string SystemUtil::GetDesktopNameAsString() {
   }
 
   return (session_id + "." + window_station_name + "." + desktop_name);
-#endif  // OS_LINUX, OS_MACOSX, OS_WIN
+#endif  // OS_LINUX, OS_MACOSX, OS_WIN, ...
 }
 
 #ifdef OS_WIN
 namespace {
-// TODO(yukawa): Use API wrapper so that unit test can emulate any case.
-template<DWORD MajorVersion, DWORD MinorVersion>
-class IsWindowsVerXOrLaterCache {
- public:
-  IsWindowsVerXOrLaterCache()
-    : succeeded_(false),
-      is_ver_x_or_later_(true) {
-    // Examine if this system is greater than or equal to WinNT ver. X
-    {
-      OSVERSIONINFOEX osvi = {};
-      osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-      osvi.dwMajorVersion = MajorVersion;
-      osvi.dwMinorVersion = MinorVersion;
-      DWORDLONG conditional = 0;
-      VER_SET_CONDITION(conditional, VER_MAJORVERSION, VER_GREATER_EQUAL);
-      VER_SET_CONDITION(conditional, VER_MINORVERSION, VER_GREATER_EQUAL);
-      const BOOL result = ::VerifyVersionInfo(
-          &osvi, VER_MAJORVERSION | VER_MINORVERSION, conditional);
-      if (result != FALSE) {
-        succeeded_ = true;
-        is_ver_x_or_later_ = true;
-        return;
-      }
-    }
-
-    // Examine if this system is less than WinNT ver. X
-    {
-      OSVERSIONINFOEX osvi = {};
-      osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-      osvi.dwMajorVersion = MajorVersion;
-      osvi.dwMinorVersion = MinorVersion;
-      DWORDLONG conditional = 0;
-      VER_SET_CONDITION(conditional, VER_MAJORVERSION, VER_LESS);
-      VER_SET_CONDITION(conditional, VER_MINORVERSION, VER_LESS);
-      const BOOL result = ::VerifyVersionInfo(
-          &osvi, VER_MAJORVERSION | VER_MINORVERSION, conditional);
-      if (result != FALSE) {
-        succeeded_ = true;
-        is_ver_x_or_later_ = false;
-        return;
-      }
-    }
-
-    // Unexpected situation.
-    succeeded_ = false;
-    is_ver_x_or_later_ = false;
-  }
-  const bool succeeded() const {
-    return succeeded_;
-  }
-  const bool is_ver_x_or_later() const {
-    return is_ver_x_or_later_;
-  }
-
- private:
-  bool succeeded_;
-  bool is_ver_x_or_later_;
-};
-
-typedef IsWindowsVerXOrLaterCache<6, 0> IsWindowsVistaOrLaterCache;
-typedef IsWindowsVerXOrLaterCache<6, 1> IsWindows7OrLaterCache;
-typedef IsWindowsVerXOrLaterCache<6, 2> IsWindows8OrLaterCache;
-typedef IsWindowsVerXOrLaterCache<6, 3> IsWindows8_1OrLaterCache;
 
 // TODO(yukawa): Use API wrapper so that unit test can emulate any case.
 class SystemDirectoryCache {
@@ -794,22 +668,11 @@ class SystemDirectoryCache {
   wchar_t path_buffer_[MAX_PATH];
   wchar_t *system_dir_;
 };
+
 }  // namespace
 
 // TODO(team): Support other platforms.
 bool SystemUtil::EnsureVitalImmutableDataIsAvailable() {
-  if (!Singleton<IsWindowsVistaOrLaterCache>::get()->succeeded()) {
-    return false;
-  }
-  if (!Singleton<IsWindows7OrLaterCache>::get()->succeeded()) {
-    return false;
-  }
-  if (!Singleton<IsWindows8OrLaterCache>::get()->succeeded()) {
-    return false;
-  }
-  if (!Singleton<IsWindows8_1OrLaterCache>::get()->succeeded()) {
-    return false;
-  }
   if (!Singleton<SystemDirectoryCache>::get()->succeeded()) {
     return false;
   }
@@ -823,173 +686,10 @@ bool SystemUtil::EnsureVitalImmutableDataIsAvailable() {
 }
 #endif  // OS_WIN
 
-void SystemUtil::CommandLineRotateArguments(int argc, char ***argv) {
-  char *arg = **argv;
-  memmove(*argv, *argv + 1, (argc - 1) * sizeof(**argv));
-  (*argv)[argc - 1] = arg;
-}
-
-bool SystemUtil::CommandLineGetFlag(int argc,
-                                    char **argv,
-                                    string *key,
-                                    string *value,
-                                    int *used_args) {
-  key->clear();
-  value->clear();
-  *used_args = 0;
-  if (argc < 1) {
-    return false;
-  }
-
-  *used_args = 1;
-  const char *start = argv[0];
-  if (start[0] != '-') {
-    return false;
-  }
-
-  ++start;
-  if (start[0] == '-') ++start;
-  const string arg = start;
-  const size_t n = arg.find("=");
-  if (n != string::npos) {
-    *key = arg.substr(0, n);
-    *value = arg.substr(n + 1, arg.size() - n);
-    return true;
-  }
-
-  key->assign(arg);
-  value->clear();
-
-  if (argc == 1) {
-    return true;
-  }
-  start = argv[1];
-  if (start[0] == '-') {
-    return true;
-  }
-
-  *used_args = 2;
-  value->assign(start);
-  return true;
-}
-
-bool SystemUtil::IsPlatformSupported() {
-#if defined(OS_MACOSX)
-  // TODO(yukawa): support Mac.
-  return true;
-#elif defined(OS_LINUX)
-  // TODO(yukawa): support Linux.
-  return true;
-#elif defined(OS_WIN)
-  // Sometimes we suffer from version lie of GetVersion(Ex) such as
-  // http://b/2430094
-  // This is why we use VerifyVersionInfo here instead of GetVersion(Ex).
-
-  // You can find a table of version number for each version of Windows in
-  // the following page.
-  // http://msdn.microsoft.com/en-us/library/ms724833.aspx
-  {
-    // Windows 7 <= |OSVERSION|: supported
-    OSVERSIONINFOEX osvi = {};
-    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-    osvi.dwMajorVersion = 6;
-    osvi.dwMinorVersion = 1;
-    DWORDLONG conditional = 0;
-    VER_SET_CONDITION(conditional, VER_MAJORVERSION, VER_GREATER_EQUAL);
-    VER_SET_CONDITION(conditional, VER_MINORVERSION, VER_GREATER_EQUAL);
-    const DWORD typemask = VER_MAJORVERSION | VER_MINORVERSION;
-    if (::VerifyVersionInfo(&osvi, typemask, conditional) != 0) {
-      return true;  // supported
-    }
-  }
-  {
-    // Windows Vista SP1 <= |OSVERSION| < Windows 7: supported
-    OSVERSIONINFOEX osvi = {};
-    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-    osvi.dwMajorVersion = 6;
-    osvi.dwMinorVersion = 0;
-    osvi.wServicePackMajor = 1;
-    DWORDLONG conditional = 0;
-    VER_SET_CONDITION(conditional, VER_MAJORVERSION, VER_GREATER_EQUAL);
-    VER_SET_CONDITION(conditional, VER_MINORVERSION, VER_GREATER_EQUAL);
-    VER_SET_CONDITION(conditional, VER_SERVICEPACKMAJOR, VER_GREATER_EQUAL);
-    const DWORD typemask = VER_MAJORVERSION | VER_MINORVERSION |
-                           VER_SERVICEPACKMAJOR;
-    if (::VerifyVersionInfo(&osvi, typemask, conditional) != 0) {
-      return true;  // supported
-    }
-  }
-  {
-    // Windows Vista RTM <= |OSVERSION| < Windows Vista SP1: not supported
-    OSVERSIONINFOEX osvi = {};
-    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-    osvi.dwMajorVersion = 6;
-    osvi.dwMinorVersion = 0;
-    osvi.wServicePackMajor = 0;
-    DWORDLONG conditional = 0;
-    VER_SET_CONDITION(conditional, VER_MAJORVERSION, VER_GREATER_EQUAL);
-    VER_SET_CONDITION(conditional, VER_MINORVERSION, VER_GREATER_EQUAL);
-    VER_SET_CONDITION(conditional, VER_SERVICEPACKMAJOR, VER_GREATER_EQUAL);
-    const DWORD typemask = VER_MAJORVERSION | VER_MINORVERSION |
-                           VER_SERVICEPACKMAJOR;
-    if (::VerifyVersionInfo(&osvi, typemask, conditional) != 0) {
-      return false;  // not supported
-    }
-  }
-  {
-    // Windows XP x64/Server 2003 <= |OSVERSION| < Windows Vista RTM: supported
-    // ---
-    // Note: We do not oficially support these platforms but allows users to
-    //   install Mozc into them.  See b/5182031 for the background information.
-    OSVERSIONINFOEX osvi = {};
-    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-    osvi.dwMajorVersion = 5;
-    osvi.dwMinorVersion = 2;
-    DWORDLONG conditional = 0;
-    VER_SET_CONDITION(conditional, VER_MAJORVERSION, VER_GREATER_EQUAL);
-    VER_SET_CONDITION(conditional, VER_MINORVERSION, VER_GREATER_EQUAL);
-    const DWORD typemask = VER_MAJORVERSION | VER_MINORVERSION;
-    if (::VerifyVersionInfo(&osvi, typemask, conditional) != 0) {
-      return true;  // supported
-    }
-  }
-  {
-    // Windows XP SP2 <= |OSVERSION| < Windows XP x64/Server 2003: supported
-    OSVERSIONINFOEX osvi = {};
-    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-    osvi.dwMajorVersion = 5;
-    osvi.dwMinorVersion = 1;
-    osvi.wServicePackMajor = 2;
-    DWORDLONG conditional = 0;
-    VER_SET_CONDITION(conditional, VER_MAJORVERSION, VER_GREATER_EQUAL);
-    VER_SET_CONDITION(conditional, VER_MINORVERSION, VER_GREATER_EQUAL);
-    VER_SET_CONDITION(conditional, VER_SERVICEPACKMAJOR, VER_GREATER_EQUAL);
-    const DWORD typemask = VER_MAJORVERSION | VER_MINORVERSION |
-                           VER_SERVICEPACKMAJOR;
-    if (::VerifyVersionInfo(&osvi, typemask, conditional) != 0) {
-      return true;  // supported
-    }
-  }
-  // |OSVERSION| < Windows XP SP2: not supported
-  return false;  // not support
-#else  // !OS_LINUX && !OS_MACOSX && !OS_WIN
-#error "Unsupported platform".
-#endif  // OS_LINUX, OS_MACOSX, OS_WIN
-}
-
-bool SystemUtil::IsVistaOrLater() {
-#ifdef OS_WIN
-  DCHECK(Singleton<IsWindowsVistaOrLaterCache>::get()->succeeded());
-  return Singleton<IsWindowsVistaOrLaterCache>::get()->is_ver_x_or_later();
-#else
-  return false;
-#endif  // OS_WIN
-}
-
 bool SystemUtil::IsWindows7OrLater() {
 #ifdef OS_WIN
-  DCHECK(Singleton<IsWindows7OrLaterCache>::get()->succeeded());
-  return Singleton<IsWindows7OrLaterCache>::get()->is_ver_x_or_later();
+  static const bool result = ::IsWindows7OrGreater();
+  return result;
 #else
   return false;
 #endif  // OS_WIN
@@ -997,8 +697,8 @@ bool SystemUtil::IsWindows7OrLater() {
 
 bool SystemUtil::IsWindows8OrLater() {
 #ifdef OS_WIN
-  DCHECK(Singleton<IsWindows8OrLaterCache>::get()->succeeded());
-  return Singleton<IsWindows8OrLaterCache>::get()->is_ver_x_or_later();
+  static const bool result = ::IsWindows8OrGreater();
+  return result;
 #else
   return false;
 #endif  // OS_WIN
@@ -1006,8 +706,8 @@ bool SystemUtil::IsWindows8OrLater() {
 
 bool SystemUtil::IsWindows8_1OrLater() {
 #ifdef OS_WIN
-  DCHECK(Singleton<IsWindows8_1OrLaterCache>::get()->succeeded());
-  return Singleton<IsWindows8_1OrLaterCache>::get()->is_ver_x_or_later();
+  static const bool result = ::IsWindows8Point1OrGreater();
+  return result;
 #else
   return false;
 #endif  // OS_WIN
@@ -1067,71 +767,6 @@ const wchar_t *SystemUtil::GetSystemDir() {
   return Singleton<SystemDirectoryCache>::get()->system_dir();
 }
 
-bool SystemUtil::GetFileVersion(const wstring &file_fullpath, int *major,
-                                int *minor, int *build, int *revision) {
-  DCHECK(major);
-  DCHECK(minor);
-  DCHECK(build);
-  DCHECK(revision);
-  string path;
-  Util::WideToUTF8(file_fullpath.c_str(), &path);
-
-  // Accoding to KB826496, we should check file existence.
-  // http://support.microsoft.com/kb/826496
-  if (!FileUtil::FileExists(path)) {
-    LOG(ERROR) << "file not found";
-    return false;
-  }
-
-  DWORD handle = 0;
-  const DWORD version_size =
-      ::GetFileVersionInfoSizeW(file_fullpath.c_str(), &handle);
-
-  if (version_size == 0) {
-    LOG(ERROR) << "GetFileVersionInfoSizeW failed."
-               << " error = " << ::GetLastError();
-    return false;
-  }
-
-  unique_ptr<BYTE[]> version_buffer(new BYTE[version_size]);
-
-  if (!::GetFileVersionInfoW(file_fullpath.c_str(), 0,
-                             version_size, version_buffer.get())) {
-    LOG(ERROR) << "GetFileVersionInfo failed."
-               << " error = " << ::GetLastError();
-    return false;
-  }
-
-  VS_FIXEDFILEINFO *fixed_fileinfo = nullptr;
-  UINT length = 0;
-  if (!::VerQueryValueW(version_buffer.get(), L"\\",
-                        reinterpret_cast<LPVOID *>(&fixed_fileinfo),
-                        &length)) {
-    LOG(ERROR) << "VerQueryValue failed."
-               << " error = " << ::GetLastError();
-    return false;
-  }
-
-  *major = HIWORD(fixed_fileinfo->dwFileVersionMS);
-  *minor = LOWORD(fixed_fileinfo->dwFileVersionMS);
-  *build = HIWORD(fixed_fileinfo->dwFileVersionLS);
-  *revision = LOWORD(fixed_fileinfo->dwFileVersionLS);
-
-  return true;
-}
-
-string SystemUtil::GetFileVersionString(const wstring &file_fullpath) {
-  int major, minor, build, revision;
-  if (!GetFileVersion(file_fullpath, &major, &minor, &build, &revision)) {
-    return "";
-  }
-
-  stringstream buf;
-  buf << major << "." << minor << "." << build << "." << revision;
-
-  return buf.str();
-}
-
 string SystemUtil::GetMSCTFAsmCacheReadyEventName() {
   const string &session_id = GetSessionIdString();
   if (session_id.empty()) {
@@ -1160,11 +795,11 @@ string SystemUtil::GetOSVersionString() {
   osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
   if (GetVersionEx(reinterpret_cast<OSVERSIONINFO *>(&osvi))) {
     ret += ".";
-    ret += NumberUtil::SimpleItoa(static_cast<uint32>(osvi.dwMajorVersion));
+    ret += std::to_string(static_cast<uint32>(osvi.dwMajorVersion));
     ret += ".";
-    ret += NumberUtil::SimpleItoa(static_cast<uint32>(osvi.dwMinorVersion));
-    ret += "." + NumberUtil::SimpleItoa(osvi.wServicePackMajor);
-    ret += "." + NumberUtil::SimpleItoa(osvi.wServicePackMinor);
+    ret += std::to_string(static_cast<uint32>(osvi.dwMinorVersion));
+    ret += "." + std::to_string(osvi.wServicePackMajor);
+    ret += "." + std::to_string(osvi.wServicePackMinor);
   } else {
     LOG(WARNING) << "GetVersionEx failed";
   }
@@ -1173,7 +808,7 @@ string SystemUtil::GetOSVersionString() {
   const string ret = "MacOSX " + MacUtil::GetOSVersionString();
   // TODO(toshiyuki): get more specific info
   return ret;
-#elif defined(OS_LINUX)
+#elif defined(OS_LINUX) || defined(OS_NACL)
   const string ret = "Linux";
   return ret;
 #else  // !OS_WIN && !OS_MACOSX && !OS_LINUX
@@ -1182,23 +817,11 @@ string SystemUtil::GetOSVersionString() {
 #endif  // OS_WIN, OS_MACOSX, OS_LINUX
 }
 
-bool SystemUtil::MacOSVersionIsGreaterOrEqual(int32 major,
-                                              int32 minor,
-                                              int32 fix) {
-#ifdef OS_MACOSX
-  return MacUtil::OSVersionIsGreaterOrEqual(major, minor, fix);
-#else
-  return false;
-#endif  // OS_MACOSX
-}
-
 void SystemUtil::DisableIME() {
 #ifdef OS_WIN
-  // turn off IME:
-  // AFAIK disabling TSF under Vista and later OS is almost impossible
-  // so that all we have to do is to prevent from calling
-  // ITfThreadMgr::Activate and ITfThreadMgrEx::ActivateEx in this thread.
-  ::ImmDisableTextFrameService(-1);
+  // Note that ImmDisableTextFrameService API is no longer supported on
+  // Windows Vista and later.
+  // https://msdn.microsoft.com/en-us/library/windows/desktop/dd318537.aspx
   ::ImmDisableIME(-1);
 #endif  // OS_WIN
 }
@@ -1223,7 +846,7 @@ uint64 SystemUtil::GetTotalPhysicalMemory() {
     return 0;
   }
   return total_memory;
-#elif defined(OS_LINUX)
+#elif defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_NACL)
 #if defined(_SC_PAGESIZE) && defined(_SC_PHYS_PAGES)
   const long page_size = sysconf(_SC_PAGESIZE);
   const long number_of_phyisical_pages = sysconf(_SC_PHYS_PAGES);
@@ -1239,44 +862,6 @@ uint64 SystemUtil::GetTotalPhysicalMemory() {
 #else  // !(defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX))
 #error "unknown platform"
 #endif  // OS_WIN, OS_MACOSX, OS_LINUX
-}
-
-bool SystemUtil::IsLittleEndian() {
-#ifndef OS_WIN
-  union {
-    unsigned char c[4];
-    unsigned int i;
-  } u;
-  static_assert(sizeof(u.c) == sizeof(u.i),
-                "Expecting (unsigned) int is 32-bit integer.");
-  static_assert(sizeof(u) == sizeof(u.i),
-                "Checking alignment.");
-  u.i = 0x12345678U;
-  return u.c[0] == 0x78U;
-#else  // OS_WIN
-  return true;
-#endif  // OS_WIN
-}
-
-int SystemUtil::MaybeMLock(const void *addr, size_t len) {
-  // TODO(yukawa): Integrate mozc_cache service.
-#if defined(OS_WIN) || defined(OS_ANDROID) || defined(__native_client__)
-  return -1;
-#else  // defined(OS_WIN) || defined(OS_ANDROID) ||
-       // defined(__native_client__)
-  return -1;
-#endif  // defined(OS_WIN) || defined(OS_ANDROID) ||
-        // defined(__native_client__)
-}
-
-int SystemUtil::MaybeMUnlock(const void *addr, size_t len) {
-#if defined(OS_WIN) || defined(OS_ANDROID) || defined(__native_client__)
-  return -1;
-#else  // defined(OS_WIN) || defined(OS_ANDROID) ||
-       // defined(__native_client__)
-  return munlock(addr, len);
-#endif  // defined(OS_WIN) || defined(OS_ANDROID) ||
-        // defined(__native_client__)
 }
 
 }  // namespace mozc

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,7 +31,8 @@
 
 #include <QtCore/QTimer>
 #include <QtGui/QtGui>
-#include <QtGui/QMessageBox>
+#include <QtWidgets/QAbstractButton>
+#include <QtWidgets/QMessageBox>
 
 #include "base/flags.h"
 

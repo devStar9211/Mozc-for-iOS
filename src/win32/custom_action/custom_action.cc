@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,8 +30,8 @@
 #include "win32/custom_action/custom_action.h"
 
 #include <windows.h>
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <IEPMapi.h>
+#include <atlbase.h>
 #if !defined(NO_LOGGING)
 #include <atlstr.h>
 #endif  // !NO_LOGGING
@@ -46,13 +46,14 @@
 #include "base/system_util.h"
 #include "base/url.h"
 #include "base/util.h"
-#include "base/win_util.h"
 #include "base/version.h"
+#include "base/win_sandbox.h"
+#include "base/win_util.h"
 #include "client/client_interface.h"
 #include "config/stats_config_util.h"
+#include "protocol/commands.pb.h"
 #include "renderer/renderer_client.h"
 #include "server/cache_service_manager.h"
-#include "session/commands.pb.h"
 #include "win32/base/imm_registrar.h"
 #include "win32/base/imm_util.h"
 #include "win32/base/keyboard_layout_id.h"
@@ -60,7 +61,6 @@
 #include "win32/base/tsf_registrar.h"
 #include "win32/base/uninstall_helper.h"
 #include "win32/custom_action/resource.h"
-
 
 #ifdef _DEBUG
 #define DEBUG_BREAK_FOR_DEBUGGER()  \
@@ -84,43 +84,22 @@ const wchar_t kSystemSharedKey[] = L"Software\\Microsoft\\CTF\\SystemShared";
 
 HMODULE g_module = nullptr;
 
-HRESULT CallSystemDllFunction(const char* dll_name,
-                              const char* function_name) {
-  HRESULT result = E_NOTIMPL;
-  wstring wdll_name;
-  mozc::Util::UTF8ToWide(dll_name, &wdll_name);
-  const HMODULE dll = mozc::WinUtil::LoadSystemLibrary(wdll_name);
-  if (dll != nullptr) {
-    typedef HRESULT (*DllFunction)();
-    DllFunction dll_function = reinterpret_cast<DllFunction>(
-        ::GetProcAddress(dll, function_name));
-    if (dll_function) {
-      result = dll_function();
-    } else {
-       const DWORD error = GetLastError();
-       result = HRESULT_FROM_WIN32(error);
-     }
-    FreeLibrary(dll);
-  } else {
-    result = E_FAIL;
-  }
-  return result;
-}
-
-wstring GetMozcComponentPath(const string &filename) {
+std::wstring GetMozcComponentPath(const string &filename) {
   const string path = mozc::SystemUtil::GetServerDirectory() + "\\" + filename;
-  wstring wpath;
-  mozc::Util::UTF8ToWide(path.c_str(), &wpath);
+  std::wstring wpath;
+  mozc::Util::UTF8ToWide(path, &wpath);
   return wpath;
 }
 
 // Retrieves the value for an installer property.
 // Returns an empty string if a property corresponding to |name| is not found or
 // error occurs.
-wstring GetProperty(MSIHANDLE msi, const wstring &name) {
+std::wstring GetProperty(MSIHANDLE msi, const std::wstring &name) {
   DWORD num_buf = 0;
   // Obtains the size of the property's string, without null termination.
-  UINT result = MsiGetProperty(msi, name.c_str(), L"", &num_buf);
+  // Note: |MsiGetProperty()| requires non-null writable buffer.
+  wchar_t dummy_buffer[1] = {L'\0'};
+  UINT result = MsiGetProperty(msi, name.c_str(), dummy_buffer, &num_buf);
   if (ERROR_MORE_DATA != result) {
     return L"";
   }
@@ -133,10 +112,11 @@ wstring GetProperty(MSIHANDLE msi, const wstring &name) {
     return L"";
   }
 
-  return wstring(buf.get());
+  return std::wstring(buf.get());
 }
 
-bool SetProperty(MSIHANDLE msi, const wstring &name, const wstring &value) {
+bool SetProperty(
+    MSIHANDLE msi, const std::wstring &name, const std::wstring &value) {
   if (MsiSetProperty(msi, name.c_str(), value.c_str()) != ERROR_SUCCESS) {
     return false;
   }
@@ -163,7 +143,7 @@ bool DisableErrorReportingInternal(const wchar_t* key_name,
 }
 #endif
 
-wstring FormatMessageByResourceId(int resourceID, ...) {
+std::wstring FormatMessageByResourceId(int resourceID, ...) {
   wchar_t format_message[4096];
   {
     const int length = ::LoadString(g_module, resourceID, format_message,
@@ -191,7 +171,7 @@ wstring FormatMessageByResourceId(int resourceID, ...) {
   return buffer;
 }
 
-wstring GetVersionHeader() {
+std::wstring GetVersionHeader() {
   return FormatMessageByResourceId(IDS_FORMAT_VERSION_INFO,
                                    mozc::Version::GetMozcVersionW().c_str());
 }
@@ -216,7 +196,7 @@ bool WriteOmahaError(const wchar_t (&function)[num_elements], int line) {
              mozc::Version::GetMozcVersionW().c_str(), function, line);
   ::OutputDebugStringW(log);
 #endif
-  const wstring &message =
+  const std::wstring &message =
       FormatMessageByResourceId(IDS_FORMAT_FUNCTION_AND_LINE,
                                 function, line);
   return OmahaUtil::WriteOmahaError(message, GetVersionHeader());
@@ -238,7 +218,8 @@ UINT RemovePreloadKeyByKLID(const mozc::win32::KeyboardLayoutID &klid) {
       klid, default_klid);
   return SUCCEEDED(result) ? ERROR_SUCCESS : ERROR_INSTALL_FAILURE;
 }
-}
+
+}  // namespace
 
 BOOL APIENTRY DllMain(HMODULE module,
                       DWORD  ul_reason_for_call,
@@ -258,10 +239,33 @@ BOOL APIENTRY DllMain(HMODULE module,
   return TRUE;
 }
 
-UINT __stdcall RefreshPolicy(MSIHANDLE msi_handle) {
+// [Return='ignore']
+UINT __stdcall EnsureAllApplicationPackagesPermisssions(MSIHANDLE msi_handle) {
   DEBUG_BREAK_FOR_DEBUGGER();
-  HRESULT result = CallSystemDllFunction(kIEFrameDll,
-                                         "IERefreshElevationPolicy");
+  if (!mozc::WinSandbox::EnsureAllApplicationPackagesPermisssion(
+          GetMozcComponentPath(mozc::kMozcServerName))) {
+    return ERROR_INSTALL_FAILURE;
+  }
+  if (!mozc::WinSandbox::EnsureAllApplicationPackagesPermisssion(
+          GetMozcComponentPath(mozc::kMozcRenderer))) {
+    return ERROR_INSTALL_FAILURE;
+  }
+  if (!mozc::WinSandbox::EnsureAllApplicationPackagesPermisssion(
+          GetMozcComponentPath(mozc::kMozcTIP32))) {
+    return ERROR_INSTALL_FAILURE;
+  }
+  if (mozc::SystemUtil::IsWindowsX64()) {
+    if (!mozc::WinSandbox::EnsureAllApplicationPackagesPermisssion(
+            GetMozcComponentPath(mozc::kMozcTIP64))) {
+      return ERROR_INSTALL_FAILURE;
+    }
+  }
+  return ERROR_SUCCESS;
+}
+
+UINT __stdcall CallIERefreshElevationPolicy(MSIHANDLE msi_handle) {
+  DEBUG_BREAK_FOR_DEBUGGER();
+  HRESULT result = ::IERefreshElevationPolicy();
   if (FAILED(result)) {
     LOG_ERROR_FOR_OMAHA();
     return ERROR_INSTALL_FAILURE;
@@ -349,17 +353,6 @@ UINT __stdcall InitialInstallation(MSIHANDLE msi_handle) {
   // Write a general error message in case any unexpected error occurs.
   WriteOmahaErrorById(IDS_UNEXPECTED_ERROR);
 
-  // We cannot rely on the result of GetVersion(Ex) in custom actions.
-  // http://b/2430094
-  // http://blogs.msdn.com/cjacks/archive/2009/05/06/why-custom-actions-get-a-windows-vista-version-lie-on-windows-7.aspx
-  // SystemUtil::IsPlatformSupported uses VerifyVersionInfo, which is expected
-  // to be not affected by the version lie for GetVersion(Ex).
-  // MsiEvaluateCondition API may be another way to check the condition.
-  // http://msdn.microsoft.com/en-us/library/aa370104.aspx
-  if (!mozc::SystemUtil::IsPlatformSupported()) {
-    WriteOmahaErrorById(IDS_UNSUPPORTED_PLATFORM);
-    return ERROR_INSTALL_FAILURE;
-  }
   return ERROR_SUCCESS;
 }
 
@@ -375,7 +368,7 @@ UINT __stdcall SaveCustomActionData(MSIHANDLE msi_handle) {
   DEBUG_BREAK_FOR_DEBUGGER();
   // store the CHANNEL value specified in the command line argument for
   // WriteApValue.
-  const wstring channel = GetProperty(msi_handle, L"CHANNEL");
+  const std::wstring channel = GetProperty(msi_handle, L"CHANNEL");
   if (!channel.empty()) {
     if (!SetProperty(msi_handle, L"WriteApValue", channel)) {
       LOG_ERROR_FOR_OMAHA();
@@ -384,14 +377,14 @@ UINT __stdcall SaveCustomActionData(MSIHANDLE msi_handle) {
   }
 
   // store the original ap value for WriteApValueRollback.
-  const wstring ap_value = OmahaUtil::ReadChannel();
+  const std::wstring ap_value = OmahaUtil::ReadChannel();
   if (!SetProperty(msi_handle, L"WriteApValueRollback", ap_value.c_str())) {
     LOG_ERROR_FOR_OMAHA();
     return ERROR_INSTALL_FAILURE;
   }
 
   // store the current settings of the cache service.
-  wstring backup;
+  std::wstring backup;
   if (!mozc::CacheServiceManager::BackupStateAsString(&backup)) {
     LOG_ERROR_FOR_OMAHA();
     return ERROR_INSTALL_FAILURE;
@@ -413,7 +406,7 @@ UINT __stdcall SaveCustomActionData(MSIHANDLE msi_handle) {
 // "RestoreServiceState" and "RestoreServiceStateRollback"
 UINT __stdcall RestoreServiceState(MSIHANDLE msi_handle) {
   DEBUG_BREAK_FOR_DEBUGGER();
-  const wstring &backup = GetProperty(msi_handle, L"CustomActionData");
+  const std::wstring &backup = GetProperty(msi_handle, L"CustomActionData");
   if (!mozc::CacheServiceManager::RestoreStateFromString(backup)) {
     return ERROR_INSTALL_FAILURE;
   }
@@ -433,7 +426,7 @@ UINT __stdcall StopCacheService(MSIHANDLE msi_handle) {
 
 UINT __stdcall WriteApValue(MSIHANDLE msi_handle) {
   DEBUG_BREAK_FOR_DEBUGGER();
-  const wstring channel = GetProperty(msi_handle, L"CustomActionData");
+  const std::wstring channel = GetProperty(msi_handle, L"CustomActionData");
   if (channel.empty()) {
     // OK. Does not change ap value when CustomActionData is not found.
     return ERROR_SUCCESS;
@@ -449,7 +442,7 @@ UINT __stdcall WriteApValue(MSIHANDLE msi_handle) {
 
 UINT __stdcall WriteApValueRollback(MSIHANDLE msi_handle) {
   DEBUG_BREAK_FOR_DEBUGGER();
-  const wstring ap_value = GetProperty(msi_handle, L"CustomActionData");
+  const std::wstring ap_value = GetProperty(msi_handle, L"CustomActionData");
   if (ap_value.empty()) {
     // The ap value did not originally exist so attempt to delete the value.
     if (!OmahaUtil::ClearChannel()) {
@@ -470,16 +463,16 @@ UINT __stdcall WriteApValueRollback(MSIHANDLE msi_handle) {
 UINT __stdcall InstallIME(MSIHANDLE msi_handle) {
   DEBUG_BREAK_FOR_DEBUGGER();
 
-  const wstring ime_path =
+  const std::wstring ime_path =
       mozc::win32::ImmRegistrar::GetFullPathForIME();
   if (ime_path.empty()) {
     LOG_ERROR_FOR_OMAHA();
     return ERROR_INSTALL_FAILURE;
   }
-  const wstring ime_filename =
+  const std::wstring ime_filename =
       mozc::win32::ImmRegistrar::GetFileNameForIME();
 
-  const wstring layout_name = mozc::win32::ImmRegistrar::GetLayoutName();
+  const std::wstring layout_name = mozc::win32::ImmRegistrar::GetLayoutName();
   if (layout_name.empty()) {
     LOG_ERROR_FOR_OMAHA();
     return ERROR_INSTALL_FAILURE;
@@ -506,7 +499,7 @@ UINT __stdcall InstallIMERollback(MSIHANDLE msi_handle) {
 
 UINT __stdcall UninstallIME(MSIHANDLE msi_handle) {
   DEBUG_BREAK_FOR_DEBUGGER();
-  const wstring ime_filename =
+  const std::wstring ime_filename =
       mozc::win32::ImmRegistrar::GetFileNameForIME();
   if (ime_filename.empty()) {
     return ERROR_INSTALL_FAILURE;
@@ -526,9 +519,9 @@ UINT __stdcall RegisterTIP(MSIHANDLE msi_handle) {
   mozc::ScopedCOMInitializer com_initializer;
 
 #if defined(_M_X64)
-  const wstring &path = GetMozcComponentPath(mozc::kMozcTIP64);
+  const std::wstring &path = GetMozcComponentPath(mozc::kMozcTIP64);
 #elif defined(_M_IX86)
-  const wstring &path = GetMozcComponentPath(mozc::kMozcTIP32);
+  const std::wstring &path = GetMozcComponentPath(mozc::kMozcTIP32);
 #else
 #error "Unsupported CPU architecture"
 #endif  // _M_X64, _M_IX86, and others

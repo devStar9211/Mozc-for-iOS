@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -117,12 +117,12 @@
             '../../base/base.gyp:base',
             '../../client/client.gyp:client',
             '../../config/config.gyp:config_handler',
-            '../../config/config.gyp:config_protocol',
             '../../ipc/ipc.gyp:ipc',
-            '../../renderer/renderer.gyp:renderer_protocol',
+            '../../protocol/protocol.gyp:commands_proto',
+            '../../protocol/protocol.gyp:config_proto',
+            '../../protocol/protocol.gyp:renderer_proto',
             '../../renderer/renderer.gyp:win32_font_util',
             '../../renderer/renderer.gyp:win32_renderer_client',
-            '../../session/session_base.gyp:session_protocol',
             '../base/win32_base.gyp:ime_base',
             '../base/win32_base.gyp:ime_impl_base',
           ],
@@ -143,10 +143,11 @@
           'dependencies': [
             '../../base/base.gyp:base',
             '../../base/base.gyp:crash_report_handler',
+            '../../base/base.gyp:update_util',
             '../../client/client.gyp:client',
             '../../config/config.gyp:stats_config_util',
             '../../ipc/ipc.gyp:ipc',
-            '../../session/session_base.gyp:session_protocol',
+            '../../protocol/protocol.gyp:commands_proto',
             '../base/win32_base.gyp:ime_base',
             '../base/win32_base.gyp:text_icon',
             'gen_mozc_ime_resource_header',

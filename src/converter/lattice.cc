@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,6 +29,7 @@
 
 #include "converter/lattice.h"
 
+#include <algorithm>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -39,10 +40,6 @@
 #include "base/util.h"
 #include "converter/node.h"
 #include "converter/node_allocator.h"
-
-DEFINE_bool(disable_lattice_cache,
-            false,
-            "do not use cache feature for lattice");
 
 namespace mozc {
 namespace {
@@ -93,7 +90,7 @@ bool PathContainsString(const Node *node, size_t begin_pos, size_t end_pos,
 
 string GetDebugStringForNode(const Node *node, const Node *prev_node) {
   CHECK(node);
-  stringstream os;
+  std::stringstream os;
   os << "[con:" << node->cost - (prev_node ? prev_node->cost : 0) -
       node->wcost << "]";
   os << "[lid:" << node->lid << "]";
@@ -106,8 +103,8 @@ string GetDebugStringForNode(const Node *node, const Node *prev_node) {
 
 string GetDebugStringForPath(const Node *end_node) {
   CHECK(end_node);
-  stringstream os;
-  vector<const Node *> node_vector;
+  std::stringstream os;
+  std::vector<const Node *> node_vector;
 
   for (const Node *node = end_node; node; node = node->prev) {
     node_vector.push_back(node);
@@ -123,11 +120,11 @@ string GetDebugStringForPath(const Node *end_node) {
 }
 
 string GetCommonPrefix(const string &str1, const string &str2) {
-  vector<string> split1, split2;
+  std::vector<string> split1, split2;
   Util::SplitStringToUtf8Chars(str1, &split1);
   Util::SplitStringToUtf8Chars(str2, &split2);
   string common_prefix = "";
-  for (int i = 0; i < min(split1.size(), split2.size()); ++i) {
+  for (int i = 0; i < std::min(split1.size(), split2.size()); ++i) {
     if (split1[i] == split2[i]) {
       common_prefix += split1[i];
     } else {
@@ -149,7 +146,7 @@ Lattice::Lattice() : history_end_pos_(0), node_allocator_(new NodeAllocator) {}
 
 Lattice::~Lattice() {}
 
-NodeAllocatorInterface *Lattice::node_allocator() const {
+NodeAllocator *Lattice::node_allocator() const {
   return node_allocator_.get();
 }
 
@@ -167,17 +164,16 @@ Node *Lattice::end_nodes(size_t pos) const {
 
 void Lattice::SetKey(StringPiece key) {
   Clear();
-  key.CopyToString(&key_);
+  key_.assign(key.data(), key.size());
   const size_t size = key.size();
   begin_nodes_.resize(size + 4);
   end_nodes_.resize(size + 4);
   cache_info_.resize(size + 4);
 
-  fill(begin_nodes_.begin(), begin_nodes_.end(),
-       static_cast<Node *>(NULL));
-  fill(end_nodes_.begin(), end_nodes_.end(),
-       static_cast<Node *>(NULL));
-  fill(cache_info_.begin(), cache_info_.end(), 0);
+  std::fill(begin_nodes_.begin(), begin_nodes_.end(),
+            static_cast<Node *>(NULL));
+  std::fill(end_nodes_.begin(), end_nodes_.end(), static_cast<Node *>(NULL));
+  std::fill(cache_info_.begin(), cache_info_.end(), 0);
 
   end_nodes_[0] = InitBOSNode(this,
                               static_cast<uint16>(0));
@@ -195,7 +191,7 @@ Node *Lattice::eos_nodes() const {
 
 void Lattice::Insert(size_t pos, Node *node) {
   for (Node *rnode = node; rnode != NULL; rnode = rnode->bnext) {
-    const size_t end_pos = min(rnode->key.size() + pos, key_.size());
+    const size_t end_pos = std::min(rnode->key.size() + pos, key_.size());
     rnode->begin_pos = static_cast<uint16>(pos);
     rnode->end_pos = static_cast<uint16>(end_pos);
     rnode->prev = NULL;
@@ -257,11 +253,6 @@ size_t Lattice::history_end_pos() const {
 }
 
 void Lattice::UpdateKey(const string &new_key) {
-  if (FLAGS_disable_lattice_cache) {
-    SetKey(new_key);
-    return;
-  }
-
   const string old_key = key_;
   const string common_prefix = GetCommonPrefix(new_key, old_key);
 
@@ -285,7 +276,7 @@ void Lattice::UpdateKey(const string &new_key) {
 }
 
 void Lattice::AddSuffix(const string &suffix_key) {
-  if (suffix_key == "") {
+  if (suffix_key.empty()) {
     return;
   }
   const size_t old_size = key_.size();
@@ -295,10 +286,10 @@ void Lattice::AddSuffix(const string &suffix_key) {
   begin_nodes_.resize(new_size + 4);
   end_nodes_.resize(new_size + 4);
 
-  fill(begin_nodes_.begin() + old_size, begin_nodes_.end(),
-       static_cast<Node *>(NULL));
-  fill(end_nodes_.begin() + old_size + 1, end_nodes_.end(),
-       static_cast<Node *>(NULL));
+  std::fill(begin_nodes_.begin() + old_size, begin_nodes_.end(),
+            static_cast<Node *>(NULL));
+  std::fill(end_nodes_.begin() + old_size + 1, end_nodes_.end(),
+            static_cast<Node *>(NULL));
 
   end_nodes_[0] = InitBOSNode(this,
                               static_cast<uint16>(0));
@@ -353,9 +344,9 @@ void Lattice::ShrinkKey(const size_t new_len) {
 
   // update cache_info
   for (size_t i = 0; i < new_len; ++i) {
-    cache_info_[i] = min(cache_info_[i], new_len - i);
+    cache_info_[i] = std::min(cache_info_[i], new_len - i);
   }
-  fill(cache_info_.begin() + new_len, cache_info_.end(), 0);
+  std::fill(cache_info_.begin() + new_len, cache_info_.end(), 0);
 
   // update key
   key_.erase(new_len);
@@ -432,18 +423,18 @@ void Lattice::ResetNodeCost() {
 }
 
 string Lattice::DebugString() const {
-  stringstream os;
+  std::stringstream os;
   if (!has_lattice()) {
     return "";
   }
 
-  vector<const Node *> best_path_nodes;
+  std::vector<const Node *> best_path_nodes;
 
   const Node *node = eos_nodes();
   // Print the best path
   os << "Best path: ";
   os << GetDebugStringForPath(node);
-  os << endl;
+  os << std::endl;
 
   LatticeDisplayNodeInfo *info = Singleton<LatticeDisplayNodeInfo>::get();
 
@@ -456,7 +447,7 @@ string Lattice::DebugString() const {
   }
 
   // Print tha path that contains the designated node
-  for (vector<const Node *>::const_iterator it = best_path_nodes.begin();
+  for (std::vector<const Node *>::const_iterator it = best_path_nodes.begin();
        it != best_path_nodes.end(); ++it) {
     const Node *best_path_node = *it;
     if (best_path_node->begin_pos < info->display_node_end_pos_) {
@@ -470,14 +461,15 @@ string Lattice::DebugString() const {
                               info->display_node_str_)) {
         continue;
       }
-      os << "The path " << GetDebugStringForPath(prev_node) <<
-          " ( + connection cost + wcost: " << best_path_node->wcost << ")"
-         << endl << "was defeated"
-         << " by the path " << endl
+      os << "The path " << GetDebugStringForPath(prev_node)
+         << " ( + connection cost + wcost: " << best_path_node->wcost << ")"
+         << std::endl
+         << "was defeated"
+         << " by the path " << std::endl
          << GetDebugStringForPath(best_path_node->prev)
          << " connecting to the node "
          << GetDebugStringForNode(best_path_node, best_path_node->prev)
-         << endl;
+         << std::endl;
     }
   }
 

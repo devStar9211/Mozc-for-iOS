@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -47,21 +47,11 @@
         'gen_usage_stats_list#host',
         'usage_stats_protocol',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'gen_usage_stats_list',
       'type': 'none',
       'toolsets': ['host'],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'actions': [
         {
           'action_name': 'gen_usage_stats_list',
@@ -97,11 +87,6 @@
         '../protobuf/protobuf.gyp:protobuf',
         'genproto_usage_stats#host',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'export_dependent_settings': [
         'genproto_usage_stats#host',
       ],
@@ -113,11 +98,6 @@
       'sources': [
         'usage_stats.proto',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'includes': [
         '../protobuf/genproto.gypi',
       ],

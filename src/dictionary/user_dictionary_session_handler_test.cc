@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,6 +29,7 @@
 
 #include "dictionary/user_dictionary_session_handler.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -37,11 +38,13 @@
 #include "base/protobuf/protobuf.h"
 #include "base/protobuf/repeated_field.h"
 #include "base/system_util.h"
-#include "dictionary/user_dictionary_storage.pb.h"
+#include "protocol/user_dictionary_storage.pb.h"
+#include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
 #include "testing/base/public/testing_util.h"
 
-DECLARE_string(test_tmpdir);
+namespace mozc {
+namespace {
 
 using ::mozc::protobuf::RepeatedPtrField;
 using ::mozc::user_dictionary::UserDictionary;
@@ -49,33 +52,19 @@ using ::mozc::user_dictionary::UserDictionaryCommand;
 using ::mozc::user_dictionary::UserDictionaryCommandStatus;
 using ::mozc::user_dictionary::UserDictionarySessionHandler;
 
-namespace mozc {
-
-namespace {
-// "きょうと\t京都\t名詞\n"
-// "!おおさか\t大阪\t地名\n"
-// "\n"
-// "#とうきょう\t東京\t地名\tコメント\n"
-// "すずき\t鈴木\t人名\n";
 const char kDictionaryData[] =
-    "\xE3\x81\x8D\xE3\x82\x87\xE3\x81\x86\xE3\x81\xA8\t"
-    "\xE4\xBA\xAC\xE9\x83\xBD\t\xE5\x90\x8D\xE8\xA9\x9E\n"
-    "\xE3\x81\x8A\xE3\x81\x8A\xE3\x81\x95\xE3\x81\x8B\t"
-    "\xE5\xA4\xA7\xE9\x98\xAA\t\xE5\x9C\xB0\xE5\x90\x8D\n"
-    "\xE3\x81\xA8\xE3\x81\x86\xE3\x81\x8D\xE3\x82\x87\xE3"
-    "\x81\x86\t\xE6\x9D\xB1\xE4\xBA\xAC\t\xE5\x9C\xB0\xE5"
-    "\x90\x8D\t\xE3\x82\xB3\xE3\x83\xA1\xE3\x83\xB3\xE3\x83\x88\n"
-    "\xE3\x81\x99\xE3\x81\x9A\xE3\x81\x8D\t\xE9\x88\xB4"
-    "\xE6\x9C\xA8\t\xE4\xBA\xBA\xE5\x90\x8D\n";
+    "きょうと\t京都\t名詞\n"
+    "おおさか\t大阪\t地名\n"
+    "とうきょう\t東京\t地名\tコメント\n"
+    "すずき\t鈴木\t人名\n";
 
 // 0 means invalid dictionary id.
 // c.f., UserDictionaryUtil::CreateNewDictionaryId()
 const uint64 kInvalidDictionaryId = 0;
-}  // namespace
 
 class UserDictionarySessionHandlerTest : public ::testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     original_user_profile_directory_ = SystemUtil::GetUserProfileDirectory();
     SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
     FileUtil::Unlink(GetUserDictionaryFile());
@@ -87,7 +76,7 @@ class UserDictionarySessionHandlerTest : public ::testing::Test {
     handler_->set_dictionary_path(GetUserDictionaryFile());
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     FileUtil::Unlink(GetUserDictionaryFile());
     SystemUtil::SetUserProfileDirectory(original_user_profile_directory_);
   }
@@ -152,7 +141,7 @@ class UserDictionarySessionHandlerTest : public ::testing::Test {
 
   RepeatedPtrField<UserDictionary::Entry> GetAllUserDictionaryEntries(
       uint64 session_id, uint64 dictionary_id) {
-    vector<int> indices;
+    std::vector<int> indices;
     const uint32 entries_size =
         GetUserDictionaryEntrySize(session_id, dictionary_id);
     for (uint32 i = 0; i < entries_size; ++i) {
@@ -162,7 +151,8 @@ class UserDictionarySessionHandlerTest : public ::testing::Test {
   }
 
   RepeatedPtrField<UserDictionary::Entry> GetUserDictionaryEntries(
-      uint64 session_id, uint64 dictionary_id, const vector<int> &indices) {
+      uint64 session_id, uint64 dictionary_id,
+      const std::vector<int> &indices) {
     Clear();
     command_->set_type(UserDictionaryCommand::GET_ENTRIES);
     command_->set_session_id(session_id);
@@ -192,9 +182,9 @@ class UserDictionarySessionHandlerTest : public ::testing::Test {
     return status_->entry_size();
   }
 
-  scoped_ptr<UserDictionarySessionHandler> handler_;
-  scoped_ptr<UserDictionaryCommand> command_;
-  scoped_ptr<UserDictionaryCommandStatus> status_;
+  std::unique_ptr<UserDictionarySessionHandler> handler_;
+  std::unique_ptr<UserDictionaryCommand> command_;
+  std::unique_ptr<UserDictionaryCommandStatus> status_;
 
  private:
   string original_user_profile_directory_;
@@ -232,25 +222,46 @@ TEST_F(UserDictionarySessionHandlerTest, NoOperation) {
 }
 
 TEST_F(UserDictionarySessionHandlerTest, ClearStorage) {
-#ifdef __native_client__
-  EXPECT_PROTO_EQ("status: UNKNOWN_ERROR", *status_);
-#else
-  const string &user_dictionary_file = GetUserDictionaryFile();
-  // Touch the file.
-  {
-    OutputFileStream output(user_dictionary_file.c_str());
-  }
-  ASSERT_TRUE(FileUtil::FileExists(user_dictionary_file));
-
+#ifdef OS_NACL
+  Clear();
   command_->set_type(UserDictionaryCommand::CLEAR_STORAGE);
-  ASSERT_TRUE(handler_->Evaluate(*command_, status_.get()));
-
-  // Should never fail.
-  EXPECT_PROTO_EQ("status: USER_DICTIONARY_COMMAND_SUCCESS", *status_);
-
-  // The file should be removed.
-  EXPECT_FALSE(FileUtil::FileExists(user_dictionary_file));
-#endif  // __native_client__
+  EXPECT_TRUE(handler_->Evaluate(*command_, status_.get()));
+  EXPECT_EQ(UserDictionaryCommandStatus::UNKNOWN_ERROR,
+            status_->status());
+#else  // OS_NACL
+  // Set up a user dictionary.
+  {
+    Clear();
+    const uint64 session_id = CreateSession();
+    const uint64 dictionary_id = CreateUserDictionary(session_id, "dictionary");
+    AddUserDictionaryEntry(session_id, dictionary_id,
+                         "reading", "word", UserDictionary::NOUN, "");
+    AddUserDictionaryEntry(session_id, dictionary_id,
+                         "reading", "word2", UserDictionary::NOUN, "");
+    ASSERT_EQ(2, GetUserDictionaryEntrySize(session_id, dictionary_id));
+    DeleteSession(session_id);
+  }
+  // Test CLEAR_STORAGE command.
+  {
+    Clear();
+    command_->set_type(UserDictionaryCommand::CLEAR_STORAGE);
+    EXPECT_TRUE(handler_->Evaluate(*command_, status_.get()));
+    EXPECT_EQ(UserDictionaryCommandStatus::USER_DICTIONARY_COMMAND_SUCCESS,
+              status_->status());
+  }
+  // After the command invocation, storage becomes empty.
+  {
+    Clear();
+    const uint64 session_id = CreateSession();
+    command_->set_type(UserDictionaryCommand::GET_STORAGE);
+    command_->set_session_id(session_id);
+    ASSERT_TRUE(handler_->Evaluate(*command_, status_.get()));
+    EXPECT_PROTO_PEQ("status: USER_DICTIONARY_COMMAND_SUCCESS\n"
+                     "storage <\n"
+                     ">\n",
+                     *status_);
+  }
+#endif  // OS_NACL
 }
 
 TEST_F(UserDictionarySessionHandlerTest, CreateDeleteSession) {
@@ -429,7 +440,7 @@ TEST_F(UserDictionarySessionHandlerTest, GetEntries) {
                          "key3", "value3", UserDictionary::SYMBOL, "comment3");
   ASSERT_EQ(3, GetUserDictionaryEntrySize(session_id, dictionary_id));
 
-  vector<int> indices;
+  std::vector<int> indices;
   indices.push_back(0);
   indices.push_back(2);
   GetUserDictionaryEntries(session_id, dictionary_id, indices);
@@ -903,6 +914,31 @@ TEST_F(UserDictionarySessionHandlerTest, ImportDataFailure) {
   DeleteSession(session_id);
 }
 
+TEST_F(UserDictionarySessionHandlerTest, ImportDataIgnoringInvalidEntries) {
+  const uint64 session_id = CreateSession();
+
+  string data = kDictionaryData;
+  data.append("☻\tEMOTICON\t名詞\n");  // Invalid symbol reading.
+  data.append("読み\tYOMI\t名詞\n");  // Invalid Kanji reading.
+
+  // Import data to a new dictionary.
+  Clear();
+  command_->set_type(UserDictionaryCommand::IMPORT_DATA);
+  command_->set_session_id(session_id);
+  command_->set_dictionary_name("user dictionary");
+  command_->set_data(data);
+  command_->set_ignore_invalid_entries(true);
+  ASSERT_TRUE(handler_->Evaluate(*command_, status_.get()));
+  EXPECT_PROTO_PEQ("status: USER_DICTIONARY_COMMAND_SUCCESS", *status_);
+  ASSERT_TRUE(status_->has_dictionary_id());
+  const uint64 dictionary_id = status_->dictionary_id();
+
+  // Make sure the size of the data.
+  ASSERT_EQ(4, GetUserDictionaryEntrySize(session_id, dictionary_id));
+
+  DeleteSession(session_id);
+}
+
 TEST_F(UserDictionarySessionHandlerTest, GetStorage) {
   const uint64 session_id = CreateSession();
   const uint64 dictionary_id1 = CreateUserDictionary(session_id, "dictionary1");
@@ -953,4 +989,6 @@ TEST_F(UserDictionarySessionHandlerTest, GetStorage) {
 
   DeleteSession(session_id);
 }
+
+}  // namespace
 }  // namespace mozc

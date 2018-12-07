@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,7 +33,7 @@
 #include <map>
 #include <string>
 #include "client/client_interface.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 
 namespace mozc {
 namespace client {
@@ -98,12 +98,12 @@ class ClientMock : public client::ClientInterface {
   // Counter increments each time the function called.  This method is
   // marked as 'mutable' because it has to accumulate the counter even
   // with const methods.
-  mutable map<string, int> function_counter_;
+  mutable std::map<string, int> function_counter_;
 
   // Stores return values when corresponding function is called.
-  map<string, bool> return_bool_values_;
+  std::map<string, bool> return_bool_values_;
 
-  map<string, commands::Output> outputs_;
+  std::map<string, commands::Output> outputs_;
 
   config::Config called_config_;
 };

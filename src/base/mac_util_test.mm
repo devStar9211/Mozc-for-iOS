@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,6 +32,14 @@
 #include "testing/base/public/gunit.h"
 
 namespace mozc {
+
+TEST(MacUtil, GetSerialNumber) {
+  const string serial1 = MacUtil::GetSerialNumber();
+  const string serial2 = MacUtil::GetSerialNumber();
+  // In this scenario, serial numbers should not be empty.
+  EXPECT_FALSE(serial1.empty());
+  EXPECT_EQ(serial1, serial2);
+}
 
 TEST(MacUtil, IsSuppressSuggestionWindow) {
   EXPECT_FALSE(MacUtil::IsSuppressSuggestionWindow(

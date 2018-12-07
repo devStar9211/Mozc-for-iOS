@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,17 +30,17 @@
 #ifndef MOZC_BASE_PEPPER_FILE_UTIL_H_
 #define MOZC_BASE_PEPPER_FILE_UTIL_H_
 
+#ifdef OS_NACL
+
+#include <ppapi/cpp/instance.h>
+#include <ppapi/c/pp_file_info.h>
+
 #include <string>
 
+#include "base/mmap_sync_interface.h"
 #include "base/port.h"
 
-namespace pp {
-class Instance;
-}  // namespace pp
-
 namespace mozc {
-
-class Mmap;
 
 // Interface for Papper File system.
 class PepperFileSystemInterface {
@@ -52,11 +52,13 @@ class PepperFileSystemInterface {
   virtual bool ReadBinaryFile(const string &filename, string *buffer) = 0;
   virtual bool WriteBinaryFile(const string &filename,
                                const string &buffer) = 0;
-  virtual bool DeleteFile(const string &filename) = 0;
-  virtual bool RenameFile(const string &from, const string &to) = 0;
-  virtual bool RegisterMmap(Mmap *mmap) = 0;
-  virtual bool UnRegisterMmap(Mmap *mmap) = 0;
+  virtual bool CreateDirectory(const string &dirname) = 0;
+  virtual bool Delete(const string &path) = 0;
+  virtual bool Rename(const string &from, const string &to) = 0;
+  virtual bool RegisterMmap(MmapSyncInterface *mmap) = 0;
+  virtual bool UnRegisterMmap(MmapSyncInterface *mmap) = 0;
   virtual bool SyncMmapToFile() = 0;
+  virtual bool Query(const string &path, PP_FileInfo *file_info) = 0;
 };
 
 // Utility class for Pepper FileIO.
@@ -84,28 +86,33 @@ class PepperFileUtil {
   // If the file does not exist or an error occurs returns false.
   static bool ReadBinaryFile(const string &filename, string *buffer);
 
-  // Writes a file and returns ture.
-  // If an error occurs returns false.
+  // Writes a file.
   static bool WriteBinaryFile(const string &filename, const string &buffer);
 
-  // Deletes a file and returns ture.
-  // If an error occurs returns false.
-  static bool DeleteFile(const string &filename);
+  // Creates an empty directory.
+  static bool CreateDirectory(const string &dirname);
 
-  // Renames a file.
-  // This method first deletes the "to" file if it exists, and tries to rename.
-  static bool RenameFile(const string &from, const string &to);
+  // Deletes a file or an empty directory.
+  static bool Delete(const string &path);
+
+  // Renames a file or an directory.
+  static bool Rename(const string &from, const string &to);
 
   // Registers Mmap object.
-  static bool RegisterMmap(Mmap *mmap);
+  static bool RegisterMmap(MmapSyncInterface *mmap);
 
   // Unegisters Mmap object.
-  static bool UnRegisterMmap(Mmap *mmap);
+  static bool UnRegisterMmap(MmapSyncInterface *mmap);
 
   // Call SyncToFile() method of the all registered Mmap objects.
   static bool SyncMmapToFile();
+
+  // Queries file information.
+  static bool Query(const string &path, PP_FileInfo *file_info);
 };
 
 }  // namespace mozc
+
+#endif  // OS_NACL
 
 #endif  // MOZC_BASE_PEPPER_FILE_UTIL_H_

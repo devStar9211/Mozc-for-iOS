@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,9 +29,18 @@
 
 #include "gui/dictionary_tool/dictionary_tool.h"
 
+#if defined(OS_ANDROID) || defined(OS_NACL)
+#error "This platform is not supported."
+#endif  // OS_ANDROID || OS_NACL
+
 #include <QtCore/QTimer>
 #include <QtGui/QtGui>
-#include <QtGui/QProgressDialog>
+#include <QtWidgets/QProgressDialog>
+#include <QtWidgets/QMessageBox>
+#include <QtWidgets/QFileDialog>
+#include <QtWidgets/QMenu>
+#include <QtWidgets/QInputDialog>
+#include <QtWidgets/QShortcut>
 
 #ifdef OS_WIN
 #include <Windows.h>
@@ -39,36 +48,36 @@
 
 #include <algorithm>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "base/file_stream.h"
 #include "base/logging.h"
 #include "base/run_level.h"
-#include "base/system_util.h"
 #include "base/util.h"
 #include "client/client.h"
-#include "data_manager/user_pos_manager.h"
+#include "data_manager/pos_list_provider.h"
 #include "dictionary/user_dictionary_importer.h"
 #include "dictionary/user_dictionary_session.h"
 #include "dictionary/user_dictionary_storage.h"
-#include "dictionary/user_dictionary_storage.pb.h"
 #include "dictionary/user_dictionary_util.h"
-#include "dictionary/user_pos.h"
+#include "gui/base/encoding_util.h"
+#include "gui/base/msime_user_dictionary_importer.h"
 #include "gui/base/win_util.h"
 #include "gui/config_dialog/combobox_delegate.h"
 #include "gui/dictionary_tool/find_dialog.h"
 #include "gui/dictionary_tool/import_dialog.h"
+#include "protocol/user_dictionary_storage.pb.h"
 
 namespace mozc {
 namespace gui {
-
-using mozc::user_dictionary::UserDictionary;
-using mozc::user_dictionary::UserDictionaryCommandStatus;
-using mozc::user_dictionary::UserDictionarySession;
-using mozc::user_dictionary::UserDictionaryStorage;
-
 namespace {
+
+using ::mozc::user_dictionary::UserDictionary;
+using ::mozc::user_dictionary::UserDictionaryCommandStatus;
+using ::mozc::user_dictionary::UserDictionarySession;
+using ::mozc::user_dictionary::UserDictionaryStorage;
 
 // set longer timeout because it takes longer time
 // to reload all user dictionary.
@@ -77,11 +86,9 @@ const int kSessionTimeout = 100000;
 int GetTableHeight(QTableWidget *widget) {
   // Dragon Hack:
   // Here we use "龍" to calc font size, as it looks almsot square
-  // const char kHexBaseChar[]= "龍";
-  const char kHexBaseChar[]= "\xE9\xBE\x8D";
+  const char kHexBaseChar[] = "龍";
   const QRect rect =
-      QFontMetrics(widget->font()).boundingRect(
-          QObject::trUtf8(kHexBaseChar));
+      QFontMetrics(widget->font()).boundingRect(QObject::trUtf8(kHexBaseChar));
   return static_cast<int>(rect.height() * 1.4);
 }
 
@@ -90,7 +97,9 @@ QProgressDialog *CreateProgressDialog(
   QProgressDialog *progress =
       new QProgressDialog(message, "", 0, size, parent);
   CHECK(progress);
-  progress->setWindowFlags(Qt::Window | Qt::CustomizeWindowHint);
+  progress->setWindowFlags(Qt::Window |
+                           Qt::CustomizeWindowHint |
+                           Qt::WindowCloseButtonHint);
   progress->setWindowModality(Qt::WindowModal);
   // This cancel button is invisible to users.
   // We don't accept any cancel operation
@@ -103,14 +112,6 @@ QProgressDialog *CreateProgressDialog(
 
   return progress;
 }
-
-#if defined(OS_WIN) || defined(OS_MACOSX)
-void InstallStyleSheet(const QString &filename) {
-  QFile file(filename);
-  file.open(QFile::ReadOnly);
-  qApp->setStyleSheet(QLatin1String(file.readAll()));
-}
-#endif
 
 // Use QTextStream to read UTF16 text -- we can't use ifstream,
 // since ifstream cannot handle Wide character.
@@ -172,8 +173,8 @@ class UTF16TextLineIterator
 
  private:
   QFile file_;
-  scoped_ptr<QTextStream> stream_;
-  scoped_ptr<QProgressDialog> progress_;
+  std::unique_ptr<QTextStream> stream_;
+  std::unique_ptr<QProgressDialog> progress_;
 };
 
 class MultiByteTextLineIterator
@@ -186,10 +187,10 @@ class MultiByteTextLineIterator
       : encoding_type_(encoding_type),
         ifs_(new InputFileStream(filename.c_str())),
         first_line_(true) {
-    const streampos begin = ifs_->tellg();
-    ifs_->seekg(0, ios::end);
+    const std::streampos begin = ifs_->tellg();
+    ifs_->seekg(0, std::ios::end);
     const size_t size = static_cast<size_t>(ifs_->tellg() - begin);
-    ifs_->seekg(0, ios::beg);
+    ifs_->seekg(0, std::ios::beg);
     progress_.reset(CreateProgressDialog(message, parent, size));
   }
 
@@ -229,7 +230,7 @@ class MultiByteTextLineIterator
     // We won't enable it as it increases the binary size.
     if (encoding_type_ == UserDictionaryImporter::SHIFT_JIS) {
       const string input = *line;
-      Util::SJISToUTF8(input, line);
+      EncodingUtil::SJISToUTF8(input, line);
     }
 
     // strip UTF8 BOM
@@ -247,14 +248,14 @@ class MultiByteTextLineIterator
   void Reset() {
     // Clear state bit (eofbit, failbit, badbit).
     ifs_->clear();
-    ifs_->seekg(0, ios_base::beg);
+    ifs_->seekg(0, std::ios_base::beg);
     first_line_ = true;
   }
 
  private:
   UserDictionaryImporter::EncodingType encoding_type_;
-  scoped_ptr<InputFileStream> ifs_;
-  scoped_ptr<QProgressDialog> progress_;
+  std::unique_ptr<InputFileStream> ifs_;
+  std::unique_ptr<QProgressDialog> progress_;
   bool first_line_;
 };
 
@@ -313,8 +314,7 @@ DictionaryTool::DictionaryTool(QWidget *parent)
       client_(client::ClientFactory::NewClient()),
       is_available_(true),
       max_entry_size_(mozc::UserDictionaryStorage::max_entry_size()),
-      user_pos_(new UserPOS(
-          UserPosManager::GetUserPosManager()->GetUserPOSData())) {
+      pos_list_provider_(new POSListProvider()) {
   setupUi(this);
 
   // Create and set up ImportDialog object.
@@ -356,9 +356,14 @@ DictionaryTool::DictionaryTool(QWidget *parent)
   setContextMenuPolicy(Qt::NoContextMenu);
 
   // toolbar
+  toolbar_->setFloatable(false);
+  toolbar_->setMovable(false);
   dic_menu_button_ = new QPushButton(tr("Tools"), this);
+  dic_menu_button_->setFlat(true);
   new_word_button_ = new QPushButton(tr("Add"), this);
+  new_word_button_->setFlat(true);
   delete_word_button_ = new QPushButton(tr("Remove"), this);
+  delete_word_button_->setFlat(true);
   toolbar_->addWidget(dic_menu_button_);
   toolbar_->addWidget(new_word_button_);
   toolbar_->addWidget(delete_word_button_);
@@ -382,13 +387,13 @@ DictionaryTool::DictionaryTool(QWidget *parent)
 
   // We fix the row height so that paint() is executed faster.
   // This changes allows DictionaryTool handle about 1M words.
-  dic_content_->verticalHeader()->setResizeMode(QHeaderView::Fixed);
+  dic_content_->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
   dic_content_->verticalHeader()->setDefaultSectionSize(
       GetTableHeight(dic_content_));
 
   // Get a list of POS and set a custom delagate that holds the list.
-  vector<string> tmp_pos_vec;
-  user_pos_->GetPOSList(&tmp_pos_vec);
+  std::vector<string> tmp_pos_vec;
+  pos_list_provider_->GetPOSList(&tmp_pos_vec);
   QStringList pos_list;
   for (size_t i = 0; i < tmp_pos_vec.size(); ++i) {
     pos_list.append(tmp_pos_vec[i].c_str());
@@ -526,22 +531,6 @@ DictionaryTool::DictionaryTool(QWidget *parent)
   // for Mac-like style
 #ifdef OS_MACOSX
   setUnifiedTitleAndToolBarOnMac(true);
-  InstallStyleSheet(":mac_style.qss");
-#endif
-
-  // for Window Aero Glass support
-#ifdef OS_WIN
-  if (SystemUtil::IsVistaOrLater()) {
-    setContentsMargins(0, 0, 0, 0);
-    WinUtil::InstallStyleSheetsFiles(":win_aero_style.qss",
-                                     ":win_style.qss");
-    if (gui::WinUtil::IsCompositionEnabled()) {
-      WinUtil::ExtendFrameIntoClientArea(this);
-      InstallStyleSheet(":win_aero_style.qss");
-    } else {
-      InstallStyleSheet(":win_style.qss");
-    }
-  }
 #endif
 
   StartMonitoringUserEdit();
@@ -646,7 +635,7 @@ void DictionaryTool::SetupDicContentEditor(
   dic_content_->setRowCount(dic->entries_size());
 
   {
-    scoped_ptr<QProgressDialog> progress(CreateProgressDialog(
+    std::unique_ptr<QProgressDialog> progress(CreateProgressDialog(
         tr("Updating the current view data..."),
         this,
         dic->entries_size()));
@@ -889,7 +878,7 @@ void DictionaryTool::ImportHelper(
   SyncToStorage();
 
   // Open dictionary
-  scoped_ptr<UserDictionaryImporter::TextLineIteratorInterface> iter(
+  std::unique_ptr<UserDictionaryImporter::TextLineIteratorInterface> iter(
       CreateTextLineIterator(encoding_type, file_name, this));
   if (iter.get() == NULL) {
     LOG(ERROR) << "CreateTextLineIterator returns NULL";
@@ -959,8 +948,15 @@ void DictionaryTool::ImportFromDefaultIME() {
   const int old_size = dic->entries_size();
   const string dic_name = dic_info.item->text().toStdString();
 
-  const UserDictionaryImporter::ErrorType error =
-      UserDictionaryImporter::ImportFromMSIME(dic);
+  UserDictionaryImporter::ErrorType error =
+      UserDictionaryImporter::IMPORT_NOT_SUPPORTED;
+  {
+    std::unique_ptr<UserDictionaryImporter::InputIteratorInterface> iter(
+        MSIMEUserDictionarImporter::Create());
+    if (iter) {
+      error = UserDictionaryImporter::ImportFromIterator(iter.get(), dic);
+    }
+  }
 
   const int added_entries_size = dic->entries_size() - old_size;
 
@@ -1033,7 +1029,7 @@ void DictionaryTool::AddWord() {
   UpdateUIStatus();
 }
 
-void DictionaryTool::GetSortedSelectedRows(vector<int> *rows) const {
+void DictionaryTool::GetSortedSelectedRows(std::vector<int> *rows) const {
   DCHECK(rows);
   rows->clear();
 
@@ -1046,8 +1042,8 @@ void DictionaryTool::GetSortedSelectedRows(vector<int> *rows) const {
     rows->push_back(items[i]->row());
   }
 
-  sort(rows->begin(), rows->end(), greater<int>());
-  vector<int>::const_iterator end = unique(rows->begin(), rows->end());
+  sort(rows->begin(), rows->end(), std::greater<int>());
+  std::vector<int>::const_iterator end = unique(rows->begin(), rows->end());
 
   rows->resize(end - rows->begin());
 }
@@ -1065,7 +1061,7 @@ QListWidgetItem *DictionaryTool::GetFirstSelectedDictionary() const {
 }
 
 void DictionaryTool::DeleteWord() {
-  vector<int> rows;
+  std::vector<int> rows;
   GetSortedSelectedRows(&rows);
   if (rows.size() == 0) {
     return;
@@ -1087,7 +1083,7 @@ void DictionaryTool::DeleteWord() {
   setUpdatesEnabled(false);
 
   {
-    scoped_ptr<QProgressDialog> progress(
+    std::unique_ptr<QProgressDialog> progress(
         CreateProgressDialog(
             tr("Deleting the selected words..."),
             this,
@@ -1149,7 +1145,7 @@ void DictionaryTool::MoveTo(int dictionary_row) {
         target_dict_item->data(Qt::UserRole).toULongLong());
   }
 
-  vector<int> rows;
+  std::vector<int> rows;
   GetSortedSelectedRows(&rows);
   if (rows.size() == 0) {
     return;
@@ -1171,7 +1167,7 @@ void DictionaryTool::MoveTo(int dictionary_row) {
   {
     // add |rows.size()| items and remove |rows.size()| items
     const int progress_max = rows.size() * 2;
-    scoped_ptr<QProgressDialog> progress(
+    std::unique_ptr<QProgressDialog> progress(
         CreateProgressDialog(
             tr("Moving the selected words..."),
             this,
@@ -1300,7 +1296,7 @@ void DictionaryTool::OnContextMenuRequestedForContent(const QPoint &pos) {
       }
     }
   }
-  vector<pair<int, QAction *> > change_dictionary_actions;
+  std::vector<std::pair<int, QAction *> > change_dictionary_actions;
   // "Move to" is available only when we have 2 or more dictionaries.
   if (dic_list_->count() > 1) {
     QMenu *move_to = menu->addMenu(move_to_menu_text);
@@ -1316,7 +1312,7 @@ void DictionaryTool::OnContextMenuRequestedForContent(const QPoint &pos) {
             continue;
           }
           change_dictionary_actions.push_back(
-              make_pair(i, move_to->addAction(item->text())));
+              std::make_pair(i, move_to->addAction(item->text())));
         }
       }
     }
@@ -1325,9 +1321,9 @@ void DictionaryTool::OnContextMenuRequestedForContent(const QPoint &pos) {
 
   menu->addSeparator();
   QMenu *change_category_to = menu->addMenu(tr("Change category to"));
-  vector<string> pos_list;
-  user_pos_->GetPOSList(&pos_list);
-  vector<QAction *> change_pos_actions(pos_list.size());
+  std::vector<string> pos_list;
+  pos_list_provider_->GetPOSList(&pos_list);
+  std::vector<QAction *> change_pos_actions(pos_list.size());
   for (size_t i = 0; i < pos_list.size(); ++i) {
     change_pos_actions[i] = change_category_to->addAction(
         QString::fromUtf8(pos_list[i].c_str()));
@@ -1587,26 +1583,6 @@ bool DictionaryTool::IsWritableToExport(const string &file_name) {
   }
 }
 
-void DictionaryTool::paintEvent(QPaintEvent *event) {
-#ifdef OS_WIN
-  if (!gui::WinUtil::IsCompositionEnabled()) {
-    return;
-  }
-
-  const QRect message_rect = WinUtil::GetTextRect(this, statusbar_message_);
-  const int kMargin = 2;
-  const int kGlowSize = 10;
-  const QRect rect(QPoint(kMargin,
-                          this->height() - statusbar_->height()),
-                   QPoint(message_rect.width() + kMargin + kGlowSize * 2,
-                          this->height()));
-
-  statusbar_->clearMessage();
-  QPainter painter(this);
-  WinUtil::DrawThemeText(statusbar_message_, rect, kGlowSize, &painter);
-#endif
-}
-
 void DictionaryTool::UpdateUIStatus() {
   const bool is_enable_new_dic =
       dic_list_->count() < session_->mutable_storage()->max_dictionary_size();
@@ -1635,35 +1611,7 @@ void DictionaryTool::UpdateUIStatus() {
     statusbar_message_.clear();
   }
 
-#ifdef OS_WIN
-  if (!gui::WinUtil::IsCompositionEnabled()) {
-    statusbar_->showMessage(statusbar_message_);
-  } else {
-    update();
-  }
-#else
   statusbar_->showMessage(statusbar_message_);
-#endif
 }
-
-#ifdef OS_WIN
-bool DictionaryTool::winEvent(MSG *message, long *result) {
-  if (message != NULL &&
-      message->message == WM_LBUTTONDOWN &&
-      toolbar_->cursor().shape() == Qt::ArrowCursor &&
-      WinUtil::IsCompositionEnabled()) {
-    const QWidget *widget = qApp->widgetAt(
-        mapToGlobal(QPoint(message->lParam & 0xFFFF,
-                           (message->lParam >> 16) & 0xFFFF)));
-    if (widget == statusbar_ || widget == toolbar_) {
-      ::PostMessage(message->hwnd, WM_NCLBUTTONDOWN,
-                    static_cast<WPARAM>(HTCAPTION), message->lParam);
-      return true;
-    }
-  }
-
-  return QWidget::winEvent(message, result);
-}
-#endif
 }  // namespace gui
 }  // namespace mozc

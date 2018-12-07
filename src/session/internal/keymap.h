@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,9 +36,10 @@
 #include <map>
 #include <set>
 #include <string>
-#include "config/config.pb.h"
+
+#include "composer/key_event_util.h"
+#include "protocol/config.pb.h"
 #include "session/internal/keymap_interface.h"
-#include "session/key_event_util.h"
 
 namespace mozc {
 
@@ -59,7 +60,7 @@ class KeyMap : public KeyMapInterface<typename T::Commands> {
   void Clear();
 
  private:
-  typedef map<KeyInformation, CommandsType> KeyToCommandMap;
+  typedef std::map<KeyInformation, CommandsType> KeyToCommandMap;
   KeyToCommandMap keymap_;
 };
 
@@ -68,12 +69,14 @@ class KeyMapManager {
   KeyMapManager();
   ~KeyMapManager();
 
+  bool Initialize(config::Config::SessionKeymap keymap);
+
   // Reloads the key map by using given configuration.
-  bool ReloadWithKeymap(const config::Config::SessionKeymap new_keymap);
+  bool ReloadConfig(const config::Config &config);
 
   bool LoadFile(const char *filename);
-  bool LoadStream(istream *is);
-  bool LoadStreamWithErrors(istream *ifs, vector<string> *errors);
+  bool LoadStream(std::istream *is);
+  bool LoadStreamWithErrors(std::istream *ifs, std::vector<string> *errors);
 
   // Add a command bound with state and key_event.
   bool AddCommand(const string &state_name,
@@ -112,14 +115,16 @@ class KeyMapManager {
                                     string *name) const;
 
   // Get command names
-  void GetAvailableCommandNameDirect(set<string> *command_names) const;
-  void GetAvailableCommandNamePrecomposition(set<string> *command_names) const;
-  void GetAvailableCommandNameComposition(set<string> *command_names) const;
-  void GetAvailableCommandNameConversion(set<string> *command_names) const;
+  void GetAvailableCommandNameDirect(std::set<string> *command_names) const;
+  void GetAvailableCommandNamePrecomposition(
+      std::set<string> *command_names) const;
+  void GetAvailableCommandNameComposition(
+      std::set<string> *command_names) const;
+  void GetAvailableCommandNameConversion(std::set<string> *command_names) const;
   void GetAvailableCommandNameZeroQuerySuggestion(
-      set<string> *command_names) const;
-  void GetAvailableCommandNameSuggestion(set<string> *command_names) const;
-  void GetAvailableCommandNamePrediction(set<string> *command_names) const;
+      std::set<string> *command_names) const;
+  void GetAvailableCommandNameSuggestion(std::set<string> *command_names) const;
+  void GetAvailableCommandNamePrediction(std::set<string> *command_names) const;
 
   // Return the file name bound with the keymap enum.
   static const char *GetKeyMapFileName(config::Config::SessionKeymap keymap);
@@ -127,6 +132,7 @@ class KeyMapManager {
  private:
   friend class KeyMapTest;
 
+  void Reset();
   void InitCommandData();
 
   bool ParseCommandDirect(const string &command_string,
@@ -149,16 +155,16 @@ class KeyMapManager {
   static const bool kInputModeXCommandSupported;
 
   config::Config::SessionKeymap keymap_;
-  map<string, DirectInputState::Commands> command_direct_map_;
-  map<string, PrecompositionState::Commands> command_precomposition_map_;
-  map<string, CompositionState::Commands> command_composition_map_;
-  map<string, ConversionState::Commands> command_conversion_map_;
+  std::map<string, DirectInputState::Commands> command_direct_map_;
+  std::map<string, PrecompositionState::Commands> command_precomposition_map_;
+  std::map<string, CompositionState::Commands> command_composition_map_;
+  std::map<string, ConversionState::Commands> command_conversion_map_;
 
-  map<DirectInputState::Commands, string> reverse_command_direct_map_;
-  map<PrecompositionState::Commands, string>
+  std::map<DirectInputState::Commands, string> reverse_command_direct_map_;
+  std::map<PrecompositionState::Commands, string>
       reverse_command_precomposition_map_;
-  map<CompositionState::Commands, string> reverse_command_composition_map_;
-  map<ConversionState::Commands, string> reverse_command_conversion_map_;
+  std::map<CompositionState::Commands, string> reverse_command_composition_map_;
+  std::map<ConversionState::Commands, string> reverse_command_conversion_map_;
 
   // Status should be out of keymap.
   keymap::KeyMap<keymap::DirectInputState> keymap_direct_;

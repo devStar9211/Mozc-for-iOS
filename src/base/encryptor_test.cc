@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,14 +27,14 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include <memory>
+
 #include "base/encryptor.h"
 #include "base/password_manager.h"
 #include "base/system_util.h"
 #include "base/util.h"
 #include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
-
-DECLARE_string(test_tmpdir);
 
 namespace mozc {
 
@@ -53,41 +53,41 @@ struct TestData {
 
 const TestData kTestData[] = {
   {
-    "\x66\x6F\x6F\x68\x6F\x67\x65", 7,
-    "\x73\x61\x6C\x74", 4,
-    "\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31",
-    "\x66\x6F\x6F", 3,
+    "foohoge", 7,
+    "salt", 4,
+    "1111111111111111",
+    "foo", 3,
     "\x27\x32\x66\x88\x82\x33\x78\x80\x58\x29\xBF\xDD\x46\x9A\xCC\x87", 16
   },
   {
-    "\x70\x61\x73\x73\x77\x6F\x72\x64", 8,
-    "\x73\x61\x6C\x74", 4,
-    "\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31",
-    "\x61", 1,
+    "password", 8,
+    "salt", 4,
+    "1111111111111111",
+    "a", 1,
     "\x2A\xA1\x73\xB0\x91\x1C\x22\x40\x55\xDB\xAB\xC0\x77\x39\xE6\x57", 16
   },
   {
-    "\x70\x61\x73\x73\x77\x6F\x72\x64", 8,
-    "\x73\x61\x6C\x74", 4,
-    "\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31\x31",
-    "\x74\x65\x73\x74", 4,
+    "password", 8,
+    "salt", 4,
+    "1111111111111111",
+    "test", 4,
     "\x13\x16\x0A\xA4\x2B\xA3\x02\xC4\xEF\x47\x98\x6D\x9F\xC9\xAD\x43", 16
   },
   {
-    "\x70\x61\x73\x73\x77\x6F\x72\x64", 8,
-    "\x73\x61\x6C\x74", 4,
-    "\x30\x31\x32\x33\x34\x35\x36\x37\x38\x39\x61\x62\x63\x64\x65\x66",
-    "\x64\x68\x6F\x69\x66\x61\x73\x6F\x69\x66\x61\x6F\x69\x73\x68\x64"
-    "\x6F\x69\x66\x61\x68\x73\x6F\x69\x66\x64\x68\x61\x6F\x69\x73\x68"
-    "\x66\x69\x6F\x61\x73\x68\x64\x6F\x69\x66\x61\x68\x69\x73\x6F\x64"
-    "\x66\x68\x61\x69\x6F\x73\x68\x64\x66\x69\x6F\x61", 60,
+    "password", 8,
+    "salt", 4,
+    "0123456789abcdef",
+    "dhoifasoifaoishd"
+    "oifahsoifdhaoish"
+    "fioashdoifahisod"
+    "fhaioshdfioa", 60,
     "\x27\x92\xD1\x4F\xCE\x71\xFF\xA0\x9E\x52\xAB\x96\xB4\x5D\x1A\x2F"
     "\xE0\xC7\xB3\x92\xD7\xB8\x29\xB0\xEF\xD3\x51\x9F\xBD\x87\xE0\xB4"
     "\x0A\x06\xE0\x9A\x03\x72\x48\xB3\x8F\x9A\x5E\xAC\xCD\x5D\xB8\x0B"
     "\x01\x1D\x2C\xD7\xAA\x55\x05\x0F\x4E\xD5\x73\xC0\xCB\xE2\x10\x69", 64
   }
 };
-}
+}  // namespace
 
 TEST(EncryptorTest, VerificationTest) {
   {
@@ -192,7 +192,7 @@ TEST(EncryptorTest, EncryptBatch) {
                                 10000, 16000, 100000 };
 
   for (size_t i = 0; i < arraysize(kSizeTable); ++i) {
-    scoped_ptr<char[]> buf(new char[kSizeTable[i]]);
+    std::unique_ptr<char[]> buf(new char[kSizeTable[i]]);
     Util::GetRandomSequence(buf.get(), kSizeTable[i]);
 
     Encryptor::Key key1, key2, key3, key4;
@@ -246,7 +246,7 @@ TEST(EncryptorTest, ProtectData) {
   const size_t kSizeTable[] = { 1, 10, 100, 1000, 10000, 100000 };
 
   for (size_t i = 0; i < arraysize(kSizeTable); ++i) {
-    scoped_ptr<char[]> buf(new char[kSizeTable[i]]);
+    std::unique_ptr<char[]> buf(new char[kSizeTable[i]]);
     Util::GetRandomSequence(buf.get(), kSizeTable[i]);
     string input(buf.get(), kSizeTable[i]);
     string output;
@@ -257,4 +257,5 @@ TEST(EncryptorTest, ProtectData) {
     EXPECT_EQ(result, input);
   }
 }
+
 }  // namespace mozc

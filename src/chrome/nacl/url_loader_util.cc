@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,8 +27,11 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifdef OS_NACL
+
 #include "chrome/nacl/url_loader_util.h"
 
+#include <algorithm>
 #include <memory>
 
 #include <ppapi/c/pp_file_info.h>
@@ -44,7 +47,6 @@
 
 #include "base/logging.h"
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 
 using std::unique_ptr;
 
@@ -267,7 +269,8 @@ void URLLoaderStreamToFileHandler::OnInputFileRead(int32_t bytes_read) {
   if (bytes_read == 0) {
     const int32_t ret = input_file_io_->Read(
         total_read_bytes_, tmp_buffer_.get(),
-        min(kReadBufferSize,
+        std::min(
+            kReadBufferSize,
             static_cast<int32_t>(input_file_info_.size - total_read_bytes_)),
         callback_factory_.NewCallback(
             &URLLoaderStreamToFileHandler::OnInputFileRead));
@@ -313,7 +316,8 @@ void URLLoaderStreamToFileHandler::OnOutputFileWrite(int32_t bytes_written) {
       // Read more
       const int32_t ret = input_file_io_->Read(
           total_read_bytes_, tmp_buffer_.get(),
-          min(kReadBufferSize,
+          std::min(
+              kReadBufferSize,
               static_cast<int32_t>(input_file_info_.size - total_read_bytes_)),
           callback_factory_.NewCallback(
               &URLLoaderStreamToFileHandler::OnInputFileRead));
@@ -371,3 +375,5 @@ void URLLoaderUtil::StartDownloadToFile(pp::Instance *instance,
 }  // namespace nacl
 }  // namespace chrome
 }  // namespace mozc
+
+#endif  // OS_NACL

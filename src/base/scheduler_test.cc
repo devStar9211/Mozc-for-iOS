@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,16 +30,15 @@
 #include "base/scheduler.h"
 
 #include <algorithm>
+#include <memory>
 
 #include "base/logging.h"
-#include "base/scoped_ptr.h"
 #include "base/unnamed_event.h"
 #include "base/util.h"
 #include "testing/base/public/gunit.h"
 
 namespace mozc {
 namespace {
-
 
 const int32 kTimeout = 30 * 1000;  // 30 sec.
 const int32 kNoRandomDelay = 0;
@@ -257,7 +256,6 @@ TEST_F(SchedulerTest, DontBlockOtherJobs) {
   EXPECT_TRUE(info.quit_event.Notify());
 }
 
-
 class NameCheckScheduler : public Scheduler::SchedulerInterface {
  public:
   explicit NameCheckScheduler(const string &expected_name)
@@ -268,13 +266,15 @@ class NameCheckScheduler : public Scheduler::SchedulerInterface {
   bool AddJob(const Scheduler::JobSetting &job_setting) {
     return (expected_name_ == job_setting.name());
   }
+  bool HasJob(const string &name) const { return expected_name_ == name; }
 
  private:
   const string expected_name_;
 };
 
 TEST(SchedulerInterfaceTest, SchedulerHandler) {
-  scoped_ptr<NameCheckScheduler> scheduler_mock(new NameCheckScheduler("test"));
+  std::unique_ptr<NameCheckScheduler> scheduler_mock(
+      new NameCheckScheduler("test"));
   Scheduler::SetSchedulerHandler(scheduler_mock.get());
   EXPECT_TRUE(Scheduler::AddJob(
       Scheduler::JobSetting("test", 0, 0, 0, 0, nullptr, nullptr)));

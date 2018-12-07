@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,113 +29,90 @@
 
 // JNI wrapper for SessionHandler.
 
+#ifdef OS_ANDROID
+
 #include <jni.h>
+
+#include <memory>
 
 #include "base/android_jni_proxy.h"
 #include "base/android_util.h"
-#include "base/mutex.h"
+#include "base/file_util.h"
+#include "base/logging.h"
 #include "base/scheduler.h"
 #include "base/singleton.h"
 #include "base/system_util.h"
 #include "base/version.h"
-#include "converter/connector_interface.h"
-#include "dictionary/dictionary_interface.h"
-#include "engine/engine_factory.h"
-#include "session/commands.pb.h"
+#include "data_manager/data_manager.h"
+#include "engine/engine.h"
+#include "engine/engine_builder.h"
+#include "engine/minimal_engine.h"
+#include "protocol/commands.pb.h"
 #include "session/session_handler.h"
 #include "session/session_usage_observer.h"
 #include "usage_stats/usage_stats_uploader.h"
 
+#if !defined(MOZC_USE_CUSTOM_DATA_MANAGER)
+// Use plain DataManager, which needs to be manually initialized.
+using TargetDataManager = ::mozc::DataManager;
+constexpr bool kEmbeddedData = false;
+
+
+#else
+// Use OssDataManager, which is embedding data by default.
 #include "data_manager/oss/oss_data_manager.h"
+using TargetDataManager = ::mozc::oss::OssDataManager;
+constexpr bool kEmbeddedData = true;
+
+#endif
 
 namespace mozc {
 namespace jni {
 namespace {
-jobject g_connection_data_buffer;
-jobject g_dictionary_buffer;
 
-// Adapter class to make a SessionHandlerInterface (held by this class)
-// singleton.
-// Must be accessed via mozc::Singleton<SessionHandlerSingletonAdapter>.
-class SessionHandlerSingletonAdapter {
- public:
-  SessionHandlerSingletonAdapter()
-      : engine_(mozc::EngineFactory::Create()),
-        session_handler_(new mozc::SessionHandler(engine_.get())) {}
-  ~SessionHandlerSingletonAdapter() {}
-
-  SessionHandlerInterface *getHandler() {
-    return session_handler_.get();
-  }
-
- private:
-  // Must be defined earlier than session_handler_, which depends on this.
-  scoped_ptr<EngineInterface> engine_;
-  scoped_ptr<SessionHandlerInterface> session_handler_;
-
-  DISALLOW_COPY_AND_ASSIGN(SessionHandlerSingletonAdapter);
-};
-
-void Initialize(
-    JavaVM *vm,
-    const char *user_profile_directory,
-    void *dictionary_address, int dictionary_size,
-    void *connection_data_address, int connection_data_size) {
-  // First of all, set the user profile directory.
-  SystemUtil::SetUserProfileDirectory(user_profile_directory);
-
-#ifdef MOZC_ENABLE_HTTP_CLIENT
-  // Initialize Java native callback proxy.
-  JavaHttpClientProxy::SetJavaVM(vm);
-#endif  // MOZC_ENABLE_HTTP_CLIENT
-
-  // Initialize dictionary data.
-  mozc::oss::OssDataManager::SetDictionaryData(
-      dictionary_address, dictionary_size);
-  mozc::oss::OssDataManager::SetConnectionData(
-      connection_data_address, connection_data_size);
-
-  mozc::Singleton<SessionHandlerSingletonAdapter>::get()->getHandler()
-      ->AddObserver(Singleton<session::SessionUsageObserver>::get());
-
-  // Start usage stats timer.
-  using usage_stats::UsageStatsUploader;
-  mozc::Scheduler::AddJob(Scheduler::JobSetting(
+// Returns a job setting for usage stats job.
+const Scheduler::JobSetting GetJobSetting() {
+  return Scheduler::JobSetting(
       "UsageStatsTimer",
-      UsageStatsUploader::kDefaultScheduleInterval,
-      UsageStatsUploader::kDefaultScheduleMaxInterval,
-      UsageStatsUploader::kDefaultSchedulerDelay,
-      UsageStatsUploader::kDefaultSchedulerRandomDelay,
-      &UsageStatsUploader::Send,
-      NULL));
+      usage_stats::UsageStatsUploader::kDefaultScheduleInterval,
+      usage_stats::UsageStatsUploader::kDefaultScheduleMaxInterval,
+      usage_stats::UsageStatsUploader::kDefaultSchedulerDelay,
+      usage_stats::UsageStatsUploader::kDefaultSchedulerRandomDelay,
+      &usage_stats::UsageStatsUploader::Send,
+      NULL);
 }
+
+// Gets the Java VM from JNIEnv.
+JavaVM *GetJavaVm(JNIEnv *env) {
+  DCHECK(env);
+  JavaVM *vm = nullptr;
+  env->GetJavaVM(&vm);
+  return vm;
+}
+
+// The global instance of Mozc system to be initialized in onPostLoad().
+std::unique_ptr<SessionHandlerInterface> g_session_handler;
 
 // Concrete implementation for MozcJni.evalCommand
 jbyteArray JNICALL evalCommand(JNIEnv *env,
                                jclass clazz,
                                jbyteArray in_bytes_array) {
-  jboolean is_copy = false;
-  jbyte *in_bytes = env->GetByteArrayElements(in_bytes_array, &is_copy);
+  jbyte *in_bytes = env->GetByteArrayElements(in_bytes_array, nullptr);
   const jsize in_size = env->GetArrayLength(in_bytes_array);
   mozc::commands::Command command;
   command.ParseFromArray(in_bytes, in_size);
-  mozc::Singleton<SessionHandlerSingletonAdapter>::get()->getHandler()
-      ->EvalCommand(&command);
+  if (g_session_handler) {
+    g_session_handler->EvalCommand(&command);
+  } else {
+    LOG(DFATAL) << "Mozc session handler is not yet initialized";
+  }
 
   // Use JNI_ABORT because in_bytes is read only.
   env->ReleaseByteArrayElements(in_bytes_array, in_bytes, JNI_ABORT);
 
-  // Remove candidates field.
-  // On Android all_candidate_words is always used instead and
-  // candiadtes field is ignored.
-  // Parsing protobuf message is expensive so remove such unused field.
-  // This is quick hack. Ideally also removing the logic where the candidate
-  // field is filled but currently simple solusion is employed.
-  command.mutable_output()->clear_candidates();
-
   const int out_size = command.ByteSize();
   jbyteArray out_bytes_array = env->NewByteArray(out_size);
-  jbyte *out_bytes = env->GetByteArrayElements(out_bytes_array, &is_copy);
+  jbyte *out_bytes = env->GetByteArrayElements(out_bytes_array, nullptr);
   command.SerializeToArray(out_bytes, out_size);
 
   // Use 0 to copy out_bytes to out_bytes_array.
@@ -144,36 +121,113 @@ jbyteArray JNICALL evalCommand(JNIEnv *env,
   return out_bytes_array;
 }
 
-void JNICALL onPostLoad(JNIEnv *env,
+string JstringToCcString(JNIEnv *env, jstring j_string) {
+  const char *cstr = env->GetStringUTFChars(j_string, nullptr);
+  const string cc_string(cstr);
+  env->ReleaseStringUTFChars(j_string, cstr);
+  return cc_string;
+}
+
+std::unique_ptr<DataManager> CreateDataManager(JNIEnv *env,
+                                               jstring j_data_file_path) {
+  if (kEmbeddedData) {
+    // If the data manager uses embedded data like OSS version,
+    // j_data_file_path is validly nullptr.
+    std::unique_ptr<DataManager> data_manager(new TargetDataManager());
+    return data_manager;
+  }
+
+  if (j_data_file_path == nullptr) {
+    return nullptr;
+  }
+  const string &data_file_path = JstringToCcString(env, j_data_file_path);
+  std::unique_ptr<DataManager> data_manager(new TargetDataManager());
+  const auto status = data_manager->InitFromFile(data_file_path);
+  if (status != DataManager::Status::OK) {
+    LOG(INFO) << "Failed to load data file from " << data_file_path << "("
+              << DataManager::StatusCodeToString(status) << "). "
+              << "Fall back to the embedded data.";
+    data_manager.reset();
+  }
+  return data_manager;
+}
+
+std::unique_ptr<SessionHandlerInterface> CreateSessionHandler(
+    JNIEnv *env, jstring data_file_path) {
+  if (env == nullptr) {
+    LOG(DFATAL) << "JNIEnv is null";
+    return nullptr;
+  }
+  std::unique_ptr<DataManager> data_manager =
+      CreateDataManager(env, data_file_path);
+  std::unique_ptr<EngineInterface> engine;
+  if (data_manager) {
+    engine = Engine::CreateMobileEngine(std::move(data_manager));
+  } else {
+    engine.reset(new MinimalEngine());
+  }
+  std::unique_ptr<SessionHandlerInterface> result(new SessionHandler(
+      std::move(engine), std::unique_ptr<EngineBuilder>(new EngineBuilder())));
+  result->AddObserver(Singleton<session::SessionUsageObserver>::get());
+  return result;
+}
+
+// Does post-load tasks.
+// Returns true if the task succeeded
+// or SessionHandler has already been initializaed.
+jboolean JNICALL onPostLoad(JNIEnv *env,
                         jclass clazz,
                         jstring user_profile_directory_path,
-                        jobject dictionary_buffer,
-                        jobject connection_data_buffer) {
-  // Keep the global references of the buffers.
-  g_dictionary_buffer = env->NewGlobalRef(dictionary_buffer);
-  g_connection_data_buffer = env->NewGlobalRef(connection_data_buffer);
-
-  jboolean is_copy = JNI_FALSE;
-  const char *utf8_user_profile_directory_path =
-      env->GetStringUTFChars(user_profile_directory_path, &is_copy);
-
-  JavaVM *vm = NULL;
-  env->GetJavaVM(&vm);
-
-  Initialize(
-      vm, utf8_user_profile_directory_path,
-      env->GetDirectBufferAddress(dictionary_buffer),
-      env->GetDirectBufferCapacity(dictionary_buffer),
-      env->GetDirectBufferAddress(connection_data_buffer),
-      env->GetDirectBufferCapacity(connection_data_buffer));
-  if (is_copy) {
-    env->ReleaseStringUTFChars(user_profile_directory_path,
-                               utf8_user_profile_directory_path);
+                        jstring data_file_path) {
+  if (g_session_handler) {
+    return true;
   }
+
+  // First of all, set the user profile directory.
+  const string &original_dir = SystemUtil::GetUserProfileDirectory();
+  SystemUtil::SetUserProfileDirectory(
+      JstringToCcString(env, user_profile_directory_path));
+
+  // Initializes Java native callback proxy.
+  JavaHttpClientProxy::SetJavaVM(GetJavaVm(env));
+
+  // Initializes the global Mozc system.
+  g_session_handler = CreateSessionHandler(env, data_file_path);
+  if (!g_session_handler) {
+    JavaHttpClientProxy::SetJavaVM(nullptr);
+    SystemUtil::SetUserProfileDirectory(original_dir);
+    LOG(DFATAL) << "Failed to create Mozc session handler";
+    return false;
+  }
+
+  // Starts usage stats timer.
+  Scheduler::AddJob(GetJobSetting());
+  return true;
 }
 
 jstring JNICALL getVersion(JNIEnv *env) {
   return env->NewStringUTF(Version::GetMozcVersion().c_str());
+}
+
+jstring JNICALL getDataVersion(JNIEnv *env) {
+  string version = "";
+  if (g_session_handler) {
+    g_session_handler->GetDataVersion().CopyToString(&version);
+  }
+  return env->NewStringUTF(version.c_str());
+}
+
+void JNICALL suppressSendingStats(JNIEnv *env,
+                                  jobject clazz,
+                                  jboolean suppress) {
+  const Scheduler::JobSetting &jobSetting = GetJobSetting();
+  const string &name = jobSetting.name();
+  const bool hasJob = mozc::Scheduler::HasJob(name);
+  if (suppress && hasJob) {
+    mozc::Scheduler::RemoveJob(name);
+  } else if (!suppress && !hasJob) {
+    mozc::Scheduler::AddJob(jobSetting);
+  }
 }
 
 }  // namespace
@@ -181,6 +235,7 @@ jstring JNICALL getVersion(JNIEnv *env) {
 }  // namespace mozc
 
 extern "C" {
+
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
   JNIEnv *env = mozc::AndroidUtil::GetEnv(vm);
   if (!env) {
@@ -192,33 +247,34 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
        "([B)[B",
        reinterpret_cast<void*>(&mozc::jni::evalCommand)},
       {"onPostLoad",
-       "(Ljava/lang/String;Ljava/nio/Buffer;Ljava/nio/Buffer;)V",
+       "(Ljava/lang/String;Ljava/lang/String;)Z",
        reinterpret_cast<void*>(&mozc::jni::onPostLoad)},
       {"getVersion",
        "()Ljava/lang/String;",
        reinterpret_cast<void*>(&mozc::jni::getVersion)},
+      {"getDataVersion",
+       "()Ljava/lang/String;",
+       reinterpret_cast<void*>(&mozc::jni::getDataVersion)},
+      {"suppressSendingStats",
+       "(Z)V",
+       reinterpret_cast<void*>(&mozc::jni::suppressSendingStats)},
   };
   jclass clazz = env->FindClass(
       "org/mozc/android/inputmethod/japanese/session/MozcJNI");
   if (env->RegisterNatives(clazz, methods, arraysize(methods))) {
     // Fatal error. No way to recover.
-     return JNI_EVERSION;
+    return JNI_EVERSION;
   }
 
-  mozc::Logging::InitLogStream("libmozc.so");
+  mozc::Logging::InitLogStream("");  // Andorid doesn't stream log to a file.
   return JNI_VERSION_1_6;
 }
 
 JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
-#ifdef MOZC_ENABLE_HTTP_CLIENT
-  mozc::jni::JavaHttpClientProxy::SetJavaVM(NULL);
-#endif  // MOZC_ENABLE_HTTP_CLIENT
-
-  // Delete global references.
-  JNIEnv *env = mozc::AndroidUtil::GetEnv(vm);
-  if (env) {
-    env->DeleteGlobalRef(mozc::jni::g_connection_data_buffer);
-    env->DeleteGlobalRef(mozc::jni::g_dictionary_buffer);
-  }
+  mozc::jni::g_session_handler.reset();
+  mozc::jni::JavaHttpClientProxy::SetJavaVM(nullptr);
 }
+
 }  // extern "C"
+
+#endif  // OS_ANDROID

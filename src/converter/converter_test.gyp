@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -49,25 +49,27 @@
       'dependencies': [
         '../composer/composer.gyp:composer',
         '../config/config.gyp:config_handler',
-        '../data_manager/data_manager.gyp:user_pos_manager',
         '../data_manager/testing/mock_data_manager.gyp:mock_data_manager',
         '../dictionary/dictionary.gyp:dictionary_mock',
         '../dictionary/dictionary.gyp:suffix_dictionary',
+        '../dictionary/dictionary_base.gyp:user_dictionary',
+        '../dictionary/dictionary_base.gyp:user_pos',
         '../dictionary/system/system_dictionary.gyp:system_dictionary',
         '../dictionary/system/system_dictionary.gyp:value_dictionary',
         '../engine/engine.gyp:engine_factory',
         '../engine/engine.gyp:mock_data_engine_factory',
         '../prediction/prediction_base.gyp:suggestion_filter',
+        '../protocol/protocol.gyp:commands_proto',
         '../rewriter/rewriter.gyp:rewriter',
         '../session/session_base.gyp:request_test_util',
-        '../session/session_base.gyp:session_protocol',
         '../testing/testing.gyp:gtest_main',
+        '../testing/testing.gyp:mozctest',
         '../transliteration/transliteration.gyp:transliteration',
         '../usage_stats/usage_stats_test.gyp:usage_stats_testing_util',
         'converter.gyp:converter',
-        'converter_base.gyp:connector_base',
+        'converter_base.gyp:connector',
         'converter_base.gyp:converter_mock',
-        'converter_base.gyp:segmenter_base',
+        'converter_base.gyp:segmenter',
         'converter_base.gyp:segments',
       ],
       'variables': {
@@ -86,16 +88,17 @@
         '../config/config.gyp:config_handler',
         '../engine/engine.gyp:engine',
         '../engine/engine.gyp:engine_factory',
+        '../protocol/protocol.gyp:commands_proto',
         '../session/session_base.gyp:request_test_util',
-        '../session/session_base.gyp:session_protocol',
         '../testing/testing.gyp:gtest_main',
+        '../testing/testing.gyp:mozctest',
       ],
     },
     {
-      'target_name': 'sparse_connector_test',
+      'target_name': 'connector_test',
       'type': 'executable',
       'sources': [
-        'sparse_connector_test.cc',
+        'connector_test.cc',
       ],
       'dependencies': [
         '../data_manager/data_manager.gyp:connection_file_reader',
@@ -103,7 +106,8 @@
         '../data_manager/testing/mock_data_manager.gyp:mock_data_manager',
         '../data_manager/testing/mock_data_manager_test.gyp:install_test_connection_txt',
         '../testing/testing.gyp:gtest_main',
-        'converter_base.gyp:sparse_connector',
+        '../testing/testing.gyp:mozctest',
+        'converter_base.gyp:connector',
       ],
       'variables': {
         'test_size': 'large',
@@ -117,21 +121,8 @@
       ],
       'dependencies': [
         '../testing/testing.gyp:gtest_main',
+        '../testing/testing.gyp:mozctest',
         'converter_base.gyp:pos_id_printer',
-      ],
-      'variables': {
-        'test_size': 'small',
-      },
-    },
-    {
-      'target_name': 'cached_connector_test',
-      'type': 'executable',
-      'sources': [
-        'cached_connector_test.cc',
-      ],
-      'dependencies': [
-        '../testing/testing.gyp:gtest_main',
-        'converter_base.gyp:cached_connector',
       ],
       'variables': {
         'test_size': 'small',
@@ -142,10 +133,9 @@
       'target_name': 'converter_all_test',
       'type': 'none',
       'dependencies': [
-        'cached_connector_test',
-        'converter_test',
+        'connector_test',
         'converter_regression_test',
-        'sparse_connector_test',
+        'converter_test',
       ],
     },
   ],

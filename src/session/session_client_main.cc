@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -28,19 +28,21 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <iostream>
+#include <memory>
 #include <string>
 
 #include "base/file_stream.h"
 #include "base/file_util.h"
+#include "base/flags.h"
+#include "base/init_mozc.h"
 #include "base/logging.h"
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "base/system_util.h"
 #include "base/util.h"
+#include "composer/key_parser.h"
 #include "engine/engine_factory.h"
 #include "engine/engine_interface.h"
-#include "session/commands.pb.h"
-#include "session/key_parser.h"
+#include "protocol/commands.pb.h"
 #include "session/session.h"
 
 DEFINE_string(input, "", "Input file");
@@ -48,9 +50,10 @@ DEFINE_string(output, "", "Output file");
 DEFINE_string(profile_dir, "", "Profile dir");
 
 namespace mozc {
-void Loop(istream *input, ostream *output) {
-  scoped_ptr<EngineInterface> engine(EngineFactory::Create());
-  scoped_ptr<session::Session> session(new session::Session(engine.get()));
+
+void Loop(std::istream *input, std::ostream *output) {
+  std::unique_ptr<EngineInterface> engine(EngineFactory::Create());
+  std::unique_ptr<session::Session> session(new session::Session(engine.get()));
 
   commands::Command command;
   string line;
@@ -61,7 +64,9 @@ void Loop(istream *input, ostream *output) {
     }
     if (line.empty()) {
       session.reset(new session::Session(engine.get()));
-      *output << endl << "## New session" << endl << endl;
+      *output << std::endl
+              << "## New session" << std::endl
+              << std::endl;
       continue;
     }
 
@@ -84,11 +89,11 @@ void Loop(istream *input, ostream *output) {
 }  // namespace mozc
 
 int main(int argc, char **argv) {
-  InitGoogle(argv[0], &argc, &argv, false);
-  scoped_ptr<mozc::InputFileStream> input_file;
-  scoped_ptr<mozc::OutputFileStream> output_file;
-  istream *input = NULL;
-  ostream *output = NULL;
+  mozc::InitMozc(argv[0], &argc, &argv, false);
+  std::unique_ptr<mozc::InputFileStream> input_file;
+  std::unique_ptr<mozc::OutputFileStream> output_file;
+  std::istream *input = NULL;
+  std::ostream *output = NULL;
 
   if (!FLAGS_profile_dir.empty()) {
     // TODO(komatsu): Make a tmp dir and use it.
@@ -101,25 +106,25 @@ int main(int argc, char **argv) {
     input_file.reset(new mozc::InputFileStream(FLAGS_input.c_str()));
     if (input_file->fail()) {
       LOG(ERROR) << "File not opend: " << FLAGS_input;
-      cerr << "File not opend: " << FLAGS_input << endl;
+      std::cerr << "File not opend: " << FLAGS_input << std::endl;
       return 1;
     }
     input = input_file.get();
   } else {
     // Interaction mode.
-    input = &cin;
+    input = &std::cin;
   }
 
   if (!FLAGS_output.empty()) {
     output_file.reset(new mozc::OutputFileStream(FLAGS_output.c_str()));
     if (output_file->fail()) {
       LOG(ERROR) << "File not opend: " << FLAGS_output;
-      cerr << "File not opend: " << FLAGS_output << endl;
+      std::cerr << "File not opend: " << FLAGS_output << std::endl;
       return 1;
     }
     output = output_file.get();
   } else {
-    output = &cout;
+    output = &std::cout;
   }
 
   mozc::Loop(input, output);

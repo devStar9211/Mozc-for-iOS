@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,13 +30,19 @@
 #ifndef MOZC_BASE_FILE_UTIL_H_
 #define MOZC_BASE_FILE_UTIL_H_
 
-#ifdef OS_WIN
+#if defined(OS_WIN)
 #include <windows.h>
-#endif  // OS_WIN
+#elif defined(OS_NACL)
+#include <ppapi/c/pp_file_info.h>
+#else  // OS_WIN or OS_NACL
+#include <sys/types.h>
+#endif
 
 #include <string>
+#include <vector>
 
 #include "base/port.h"
+#include "base/string_piece.h"
 
 // Ad-hoc workaround against macro problem on Windows.
 // On Windows, following macros, defined when you include <Windows.h>,
@@ -55,16 +61,21 @@
 
 namespace mozc {
 
+#if defined(OS_WIN)
+using FileTimeStamp = uint64;
+#elif defined(OS_NACL)
+using FileTimeStamp = PP_Time;
+#else
+using FileTimeStamp = time_t;
+#endif  // OS_WIN or OS_NACL
+
 class FileUtil {
  public:
-  // Some filesystem related methods are disabled on Native Client environment.
-#ifndef MOZC_USE_PEPPER_FILE_IO
   // Creates a directory. Does not create directories in the way to the path.
   static bool CreateDirectory(const string &path);
 
   // Removes an empty directory.
   static bool RemoveDirectory(const string &dirname);
-#endif  // MOZC_USE_PEPPER_FILE_IO
 
   // Removes a file.
   static bool Unlink(const string &filename);
@@ -97,10 +108,19 @@ class FileUtil {
   // Returns true if the file is renamed successfully.
   static bool AtomicRename(const string &from, const string &to);
 
-  // Joins the given two path components using the OS-specific path delimiter.
-  static string JoinPath(const string &path1, const string &path2);
-  static void JoinPath(const string &path1, const string &path2,
+  // Joins the give path components using the OS-specific path delimiter.
+  static string JoinPath(const std::vector<StringPiece> &components);
+  static void JoinPath(const std::vector<StringPiece> &components,
                        string *output);
+
+  // Joins the given two path components using the OS-specific path delimiter.
+  static string JoinPath(const string &path1, const string &path2) {
+    return JoinPath({path1, path2});
+  }
+  static void JoinPath(const string &path1, const string &path2,
+                       string *output) {
+    JoinPath({path1, path2}, output);
+  }
 
   static string Basename(const string &filename);
   static string Dirname(const string &filename);
@@ -108,6 +128,11 @@ class FileUtil {
   // Returns the normalized path by replacing '/' with '\\' on Windows.
   // Does nothing on other platforms.
   static string NormalizeDirectorySeparator(const string &path);
+
+  // Returns the modification time in `modified_at`.
+  // Returns false if something went wrong.
+  static bool GetModificationTime(const string &filename,
+                                  FileTimeStamp *modified_at);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(FileUtil);

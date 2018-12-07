@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,7 @@
 #ifdef OS_ANDROID
 #include "base/android_util.h"
 #endif  // OS_ANDROID
+#include "base/clock.h"
 #include "base/encryptor.h"
 #include "base/mutex.h"
 #include "base/port.h"
@@ -42,6 +43,7 @@
 #include "base/system_util.h"
 #include "base/util.h"
 #include "base/version.h"
+#include "config/config_handler.h"
 #include "config/stats_config_util.h"
 #include "storage/registry.h"
 #include "usage_stats/upload_util.h"
@@ -296,7 +298,7 @@ void UsageStatsUploader::GetClientId(string *output) {
 
 bool UsageStatsUploader::Send(void *data) {
   const string upload_key = string(kRegistryPrefix) + kLastUploadKey;
-  const uint32 current_sec = static_cast<uint32>(Util::GetTime());
+  const uint32 current_sec = static_cast<uint32>(Clock::GetTime());
   uint32 last_upload_sec = 0;
   const string mozc_version_key = string(kRegistryPrefix) + kMozcVersionKey;
   const string &current_mozc_version = Version::GetMozcVersion();
@@ -340,30 +342,37 @@ bool UsageStatsUploader::Send(void *data) {
     return false;
   }
 
-  vector<pair<string, string> > params;
-  params.push_back(make_pair("hl", "ja"));
-  params.push_back(make_pair("v", Version::GetMozcVersion()));
+  std::vector<std::pair<string, string> > params;
+  params.push_back(std::make_pair("hl", "ja"));
+  params.push_back(std::make_pair("v", Version::GetMozcVersion()));
   string client_id;
   GetClientId(&client_id);
   DCHECK(!client_id.empty());
-  params.push_back(make_pair("client_id", client_id));
-  params.push_back(make_pair("os_ver", SystemUtil::GetOSVersionString()));
+  params.push_back(std::make_pair("client_id", client_id));
+  params.push_back(std::make_pair("os_ver", SystemUtil::GetOSVersionString()));
 #ifdef OS_ANDROID
   params.push_back(
-      make_pair("model",
-                AndroidUtil::GetSystemProperty(
-                    AndroidUtil::kSystemPropertyModel, "Unknown")));
+      std::make_pair("model",
+                     AndroidUtil::GetSystemProperty(
+                         AndroidUtil::kSystemPropertyModel, "Unknown")));
 #endif  // OS_ANDROID
 
-  UsageStatsUpdater::UpdateStats();
+  {
+    config::Config config;
+    config::ConfigHandler::GetConfig(&config);
+    UsageStatsUpdater::UpdateStats(config);
+  }
 
   UploadUtil uploader;
   uploader.SetHeader("Daily", elapsed_sec, params);
-#ifdef __native_client__
-  // In NaCl Mozc we use HTTPS to send usage stats to follow Chrome OS
-  // convention. https://code.google.com/p/chromium/issues/detail?id=255327
+#if defined(OS_NACL) || defined(OS_ANDROID)
+  // We use HTTPS to send usage stats in the following platforms:
+  // - NaCl: We use HTTPS to follow Chrome OS convention.
+  // https://code.google.com/p/chromium/issues/detail?id=255327
+  // - Android: We use HTTPS to follow Android recommendation.
+  // https://developer.android.com/guide/topics/manifest/application-element.html#usesCleartextTraffic
   uploader.SetUseHttps(true);
-#endif  // __native_client__
+#endif  // OS_NACL
   LoadStats(&uploader);
 
   // Just check for confirming that we can insert the value to upload_key.

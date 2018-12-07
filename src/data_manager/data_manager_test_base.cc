@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,47 +30,40 @@
 #include "data_manager/data_manager_test_base.h"
 
 #include <cstring>
+#include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "base/file_stream.h"
 #include "base/file_util.h"
-#include "base/hash_tables.h"
 #include "base/logging.h"
+#include "base/mozc_hash_set.h"
+#include "base/serialized_string_array.h"
 #include "base/util.h"
-#include "converter/connector_base.h"
-#include "converter/connector_interface.h"
+#include "converter/connector.h"
 #include "converter/node.h"
-#include "converter/segmenter_base.h"
-#include "converter/segmenter_interface.h"
+#include "converter/segmenter.h"
 #include "data_manager/connection_file_reader.h"
 #include "data_manager/data_manager_interface.h"
 #include "dictionary/pos_matcher.h"
 #include "prediction/suggestion_filter.h"
-#include "rewriter/counter_suffix.h"
 #include "testing/base/public/gunit.h"
 
-DECLARE_string(test_srcdir);
+using mozc::dictionary::POSMatcher;
 
 namespace mozc {
-namespace {
 
-
-// Get actual file path for testing
-string GetFilePath(const string &path) {
-  return FileUtil::JoinPath(FLAGS_test_srcdir, path);
-}
-
-}  // namespace
-
-DataManagerTestBase::DataManagerTestBase(DataManagerInterface *data_manager,
-                                         const size_t lsize,
-                                         const size_t rsize,
-                                         IsBoundaryFunc is_boundary,
-                                         const char *connection_txt_file,
-                                         const int expected_resolution,
-                                         const char *dictionary_files,
-                                         const char *suggestion_filter_files)
+DataManagerTestBase::DataManagerTestBase(
+    DataManagerInterface *data_manager,
+    const size_t lsize,
+    const size_t rsize,
+    IsBoundaryFunc is_boundary,
+    const string &connection_txt_file,
+    const int expected_resolution,
+    const std::vector<string> &dictionary_files,
+    const std::vector<string> &suggestion_filter_files,
+    const std::vector<std::pair<string, string>> &typing_model_files)
     : data_manager_(data_manager),
       lsize_(lsize),
       rsize_(rsize),
@@ -78,15 +71,16 @@ DataManagerTestBase::DataManagerTestBase(DataManagerInterface *data_manager,
       connection_txt_file_(connection_txt_file),
       expected_resolution_(expected_resolution),
       dictionary_files_(dictionary_files),
-      suggestion_filter_files_(suggestion_filter_files) {}
+      suggestion_filter_files_(suggestion_filter_files),
+      typing_model_files_(typing_model_files) {}
 
-DataManagerTestBase::~DataManagerTestBase() {}
+DataManagerTestBase::~DataManagerTestBase() = default;
 
 void DataManagerTestBase::SegmenterTest_SameAsInternal() {
   // This test verifies that a segmenter created by MockDataManager provides
   // the expected boundary rule.
-  scoped_ptr<SegmenterInterface> segmenter(
-      SegmenterBase::CreateFromDataManager(*data_manager_));
+  std::unique_ptr<Segmenter> segmenter(
+      Segmenter::CreateFromDataManager(*data_manager_));
   for (size_t rid = 0; rid < lsize_; ++rid) {
     for (size_t lid = 0; lid < rsize_; ++lid) {
       EXPECT_EQ(is_boundary_(rid, lid),
@@ -96,8 +90,8 @@ void DataManagerTestBase::SegmenterTest_SameAsInternal() {
 }
 
 void DataManagerTestBase::SegmenterTest_LNodeTest() {
-  scoped_ptr<SegmenterInterface> segmenter(
-      SegmenterBase::CreateFromDataManager(*data_manager_));
+  std::unique_ptr<Segmenter> segmenter(
+      Segmenter::CreateFromDataManager(*data_manager_));
 
   // lnode is BOS
   Node lnode, rnode;
@@ -107,15 +101,15 @@ void DataManagerTestBase::SegmenterTest_LNodeTest() {
     for (size_t lid = 0; lid < rsize_; ++lid) {
       lnode.rid = rid;
       lnode.lid = lid;
-      EXPECT_TRUE(segmenter->IsBoundary(&lnode, &rnode, false));
-      EXPECT_TRUE(segmenter->IsBoundary(&lnode, &rnode, true));
+      EXPECT_TRUE(segmenter->IsBoundary(lnode, rnode, false));
+      EXPECT_TRUE(segmenter->IsBoundary(lnode, rnode, true));
     }
   }
 }
 
 void DataManagerTestBase::SegmenterTest_RNodeTest() {
-  scoped_ptr<SegmenterInterface> segmenter(
-      SegmenterBase::CreateFromDataManager(*data_manager_));
+  std::unique_ptr<Segmenter> segmenter(
+      Segmenter::CreateFromDataManager(*data_manager_));
 
   // rnode is EOS
   Node lnode, rnode;
@@ -125,15 +119,15 @@ void DataManagerTestBase::SegmenterTest_RNodeTest() {
     for (size_t lid = 0; lid < rsize_; ++lid) {
       lnode.rid = rid;
       lnode.lid = lid;
-      EXPECT_TRUE(segmenter->IsBoundary(&lnode, &rnode, false));
-      EXPECT_TRUE(segmenter->IsBoundary(&lnode, &rnode, true));
+      EXPECT_TRUE(segmenter->IsBoundary(lnode, rnode, false));
+      EXPECT_TRUE(segmenter->IsBoundary(lnode, rnode, true));
     }
   }
 }
 
 void DataManagerTestBase::SegmenterTest_NodeTest() {
-  scoped_ptr<SegmenterInterface> segmenter(
-      SegmenterBase::CreateFromDataManager(*data_manager_));
+  std::unique_ptr<Segmenter> segmenter(
+      Segmenter::CreateFromDataManager(*data_manager_));
 
   Node lnode, rnode;
   lnode.node_type = Node::NOR_NODE;
@@ -143,16 +137,16 @@ void DataManagerTestBase::SegmenterTest_NodeTest() {
       lnode.rid = rid;
       rnode.lid = lid;
       EXPECT_EQ(segmenter->IsBoundary(rid, lid),
-                segmenter->IsBoundary(&lnode, &rnode, false));
-      EXPECT_FALSE(segmenter->IsBoundary(&lnode, &rnode, true));
+                segmenter->IsBoundary(lnode, rnode, false));
+      EXPECT_FALSE(segmenter->IsBoundary(lnode, rnode, true));
     }
   }
 }
 
 void DataManagerTestBase::SegmenterTest_ParticleTest() {
-  scoped_ptr<SegmenterInterface> segmenter(
-      SegmenterBase::CreateFromDataManager(*data_manager_));
-  const POSMatcher *pos_matcher = data_manager_->GetPOSMatcher();
+  std::unique_ptr<Segmenter> segmenter(
+      Segmenter::CreateFromDataManager(*data_manager_));
+  const POSMatcher pos_matcher(data_manager_->GetPOSMatcherData());
 
   Node lnode, rnode;
   lnode.Init();
@@ -160,22 +154,22 @@ void DataManagerTestBase::SegmenterTest_ParticleTest() {
   lnode.node_type = Node::NOR_NODE;
   rnode.node_type = Node::NOR_NODE;
   // "助詞"
-  lnode.rid = pos_matcher->GetAcceptableParticleAtBeginOfSegmentId();
+  lnode.rid = pos_matcher.GetAcceptableParticleAtBeginOfSegmentId();
   // "名詞,サ変".
-  rnode.lid = pos_matcher->GetUnknownId();
-  EXPECT_TRUE(segmenter->IsBoundary(&lnode, &rnode, false));
+  rnode.lid = pos_matcher.GetUnknownId();
+  EXPECT_TRUE(segmenter->IsBoundary(lnode, rnode, false));
 
   lnode.attributes |= Node::STARTS_WITH_PARTICLE;
-  EXPECT_FALSE(segmenter->IsBoundary(&lnode, &rnode, false));
+  EXPECT_FALSE(segmenter->IsBoundary(lnode, rnode, false));
 }
 
 void DataManagerTestBase::ConnectorTest_RandomValueCheck() {
-  scoped_ptr<const ConnectorInterface> connector(
-      ConnectorBase::CreateFromDataManager(*data_manager_));
+  std::unique_ptr<const Connector> connector(
+      Connector::CreateFromDataManager(*data_manager_));
   ASSERT_TRUE(connector.get() != NULL);
 
   EXPECT_EQ(expected_resolution_, connector->GetResolution());
-  for (ConnectionFileReader reader(GetFilePath(connection_txt_file_));
+  for (ConnectionFileReader reader(connection_txt_file_);
        !reader.done(); reader.Next()) {
     // Randomly sample test entries because connection data have several
     // millions of entries.
@@ -187,7 +181,7 @@ void DataManagerTestBase::ConnectorTest_RandomValueCheck() {
     const int actual_cost =
         connector->GetTransitionCost(reader.rid_of_left_node(),
                                      reader.lid_of_right_node());
-    if (cost == ConnectorInterface::kInvalidCost) {
+    if (cost == Connector::kInvalidCost) {
       EXPECT_EQ(cost, actual_cost);
     } else {
       EXPECT_TRUE(cost == actual_cost ||
@@ -201,7 +195,7 @@ void DataManagerTestBase::SuggestionFilterTest_IsBadSuggestion() {
   const double kErrorRatio = 0.0001;
 
   // Load embedded suggestion filter (bloom filter)
-  scoped_ptr<SuggestionFilter> suggestion_filter;
+  std::unique_ptr<SuggestionFilter> suggestion_filter;
   {
     const char *data = NULL;
     size_t size;
@@ -210,14 +204,11 @@ void DataManagerTestBase::SuggestionFilterTest_IsBadSuggestion() {
   }
 
   // Load the original suggestion filter from file.
-  hash_set<string> suggestion_filter_set;
+  mozc_hash_set<string> suggestion_filter_set;
 
-  vector<string> files;
-  Util::SplitStringUsing(suggestion_filter_files_, ",", &files);
-  for (size_t i = 0; i < files.size(); ++i) {
-    const string filter_file = GetFilePath(files[i]);
-    InputFileStream input(filter_file.c_str());
-    CHECK(input) << "cannot open: " << filter_file;
+  for (size_t i = 0; i < suggestion_filter_files_.size(); ++i) {
+    InputFileStream input(suggestion_filter_files_[i].c_str());
+    CHECK(input) << "cannot open: " << suggestion_filter_files_[i];
     string line;
     while (getline(input, line)) {
       if (line.empty() || line[0] == '#') {
@@ -230,16 +221,12 @@ void DataManagerTestBase::SuggestionFilterTest_IsBadSuggestion() {
 
   LOG(INFO) << "Filter word size:\t" << suggestion_filter_set.size();
 
-  vector<string> dic_files;
-  Util::SplitStringUsing(dictionary_files_, ",", &dic_files);
   size_t false_positives = 0;
   size_t num_words = 0;
-  for (size_t i = 0; i < dic_files.size(); ++i) {
-    LOG(INFO) << dic_files[i];
-    const string dic_file = GetFilePath(dic_files[i]);
-    InputFileStream input(dic_file.c_str());
-    CHECK(input) << "cannot open: " << dic_file;
-    vector<string> fields;
+  for (size_t i = 0; i < dictionary_files_.size(); ++i) {
+    InputFileStream input(dictionary_files_[i].c_str());
+    CHECK(input) << "cannot open: " << dictionary_files_[i];
+    std::vector<string> fields;
     string line;
     while (getline(input, line)) {
       fields.clear();
@@ -274,20 +261,28 @@ void DataManagerTestBase::SuggestionFilterTest_IsBadSuggestion() {
 }
 
 void DataManagerTestBase::CounterSuffixTest_ValidateTest() {
-  const CounterSuffixEntry *suffix_array = nullptr;
-  size_t size = 0;
-  data_manager_->GetCounterSuffixSortedArray(&suffix_array, &size);
+  const char *data = nullptr;
+  size_t data_size = 0;
+  data_manager_->GetCounterSuffixSortedArray(&data, &data_size);
 
-  const char *prev_suffix = "";  // The smallest string.
-  for (size_t i = 0; i < size; ++i) {
-    const CounterSuffixEntry &entry = suffix_array[i];
+  SerializedStringArray suffix_array;
+  ASSERT_TRUE(suffix_array.Init(StringPiece(data, data_size)));
 
-    // |entry.size| must be the length of |entry.suffix|.
-    EXPECT_EQ(entry.size, strlen(entry.suffix));
+  // Check if the array is sorted in ascending order.
+  StringPiece prev_suffix;  // The smallest string.
+  for (size_t i = 0; i < suffix_array.size(); ++i) {
+    const StringPiece suffix = suffix_array[i];
+    EXPECT_LE(prev_suffix, suffix);
+    prev_suffix = suffix;
+  }
+}
 
-    // Check if the array is sorted in ascending order of suffix string.
-    EXPECT_GE(0, strcmp(prev_suffix, entry.suffix));
-    prev_suffix = entry.suffix;
+void DataManagerTestBase::TypingModelTest() {
+  // Check if typing models are included in the data set.
+  for (const auto &key_and_fname : typing_model_files_) {
+    InputFileStream ifs(key_and_fname.second.c_str(),
+                        std::ios_base::in | std::ios_base::binary);
+    EXPECT_EQ(ifs.Read(), data_manager_->GetTypingModel(key_and_fname.first));
   }
 }
 
@@ -300,6 +295,7 @@ void DataManagerTestBase::RunAllTests() {
   SegmenterTest_SameAsInternal();
   SuggestionFilterTest_IsBadSuggestion();
   CounterSuffixTest_ValidateTest();
+  TypingModelTest();
 }
 
 }  // namespace mozc

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,11 +30,11 @@
 #ifndef MOZC_PREDICTION_PREDICTOR_H_
 #define MOZC_PREDICTION_PREDICTOR_H_
 
+#include <memory>
 #include <string>
 
-#include "base/scoped_ptr.h"
-#include "converter/conversion_request.h"
 #include "prediction/predictor_interface.h"
+#include "request/conversion_request.h"
 
 namespace mozc {
 
@@ -45,41 +45,40 @@ class BasePredictor : public PredictorInterface {
   // instance.
   BasePredictor(PredictorInterface *dictionary_predictor,
                 PredictorInterface *user_history_predictor);
-  virtual ~BasePredictor();
-
-  // Overwrite predictor
-  virtual bool PredictForRequest(const ConversionRequest &request,
-                                 Segments *segments) const = 0;
+  ~BasePredictor() override;
 
   // Hook(s) for all mutable operations.
-  virtual void Finish(Segments *segments);
+  void Finish(const ConversionRequest &request, Segments *segments) override;
 
   // Reverts the last Finish operation.
-  virtual void Revert(Segments *segments);
+  void Revert(Segments *segments) override;
 
   // Clears all history data of UserHistoryPredictor.
-  virtual bool ClearAllHistory();
+  bool ClearAllHistory() override;
 
   // Clears unused history data of UserHistoryPredictor.
-  virtual bool ClearUnusedHistory();
+  bool ClearUnusedHistory() override;
 
   // Clears a specific user history data of UserHistoryPredictor.
-  virtual bool ClearHistoryEntry(const string &key, const string &value);
+  bool ClearHistoryEntry(const string &key, const string &value) override;
 
   // Syncs user history.
-  virtual bool Sync();
+  bool Sync() override;
 
   // Reloads usre history.
-  virtual bool Reload();
+  bool Reload() override;
 
   // Waits for syncer to complete.
-  virtual bool WaitForSyncerForTest();
+  bool Wait() override;
 
-  virtual const string &GetPredictorName() const = 0;
+  // The following interfaces are implemented in derived classes.
+  // const string &GetPredictorName() const = 0;
+  // bool PredictForRequest(const ConversionRequest &request,
+  //                        Segments *segments) const = 0;
 
  protected:
-  scoped_ptr<PredictorInterface> dictionary_predictor_;
-  scoped_ptr<PredictorInterface> user_history_predictor_;
+  std::unique_ptr<PredictorInterface> dictionary_predictor_;
+  std::unique_ptr<PredictorInterface> user_history_predictor_;
 };
 
 // TODO(team): The name should be DesktopPredictor
@@ -91,12 +90,12 @@ class DefaultPredictor : public BasePredictor {
 
   DefaultPredictor(PredictorInterface *dictionary_predictor,
                    PredictorInterface *user_history_predictor);
-  virtual ~DefaultPredictor();
+  ~DefaultPredictor() override;
 
-  virtual bool PredictForRequest(const ConversionRequest &request,
-                                 Segments *segments) const;
+  bool PredictForRequest(const ConversionRequest &request,
+                         Segments *segments) const override;
 
-  virtual const string &GetPredictorName() const { return predictor_name_; }
+  const string &GetPredictorName() const override { return predictor_name_; }
 
  private:
   const ConversionRequest empty_request_;
@@ -111,12 +110,12 @@ class MobilePredictor : public BasePredictor {
 
   MobilePredictor(PredictorInterface *dictionary_predictor,
                   PredictorInterface *user_history_predictor);
-  virtual ~MobilePredictor();
+  ~MobilePredictor() override;
 
-  virtual bool PredictForRequest(const ConversionRequest &request,
-                                 Segments *segments) const;
+  bool PredictForRequest(const ConversionRequest &request,
+                         Segments *segments) const override;
 
-  virtual const string &GetPredictorName() const { return predictor_name_; }
+  const string &GetPredictorName() const override { return predictor_name_; }
 
  private:
   const ConversionRequest empty_request_;
@@ -125,4 +124,4 @@ class MobilePredictor : public BasePredictor {
 
 }  // namespace mozc
 
-#endif  // MOZC_PREDICTION_INTERFACE_H_
+#endif  // MOZC_PREDICTION_PREDICTOR_H_

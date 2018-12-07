@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -48,7 +48,7 @@ class JsonPathTest : public testing::Test {
         << reader.getFormattedErrorMessages()
         << " "
         << json;
-    vector<const Json::Value *> output;
+    std::vector<const Json::Value *> output;
     if (!JsonPath::Parse(root, jsonpath, &output)) {
       return "ERROR";
     }

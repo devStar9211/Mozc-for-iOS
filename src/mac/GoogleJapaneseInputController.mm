@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -51,10 +51,10 @@
 #include "base/process.h"
 #include "base/util.h"
 #include "client/client.h"
-#include "config/config.pb.h"
 #include "ipc/ipc.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 #include "renderer/renderer_client.h"
-#include "session/commands.pb.h"
 #include "session/ime_switch_util.h"
 
 using mozc::commands::Candidates;
@@ -75,13 +75,13 @@ using mozc::MacProcess;
 
 namespace {
 // set of bundle IDs of applications on which Mozc should not open urls.
-const set<string> *gNoOpenLinkApps = NULL;
+const std::set<string> *gNoOpenLinkApps = nullptr;
 // The mapping from the CompositionMode enum to the actual id string
 // of composition modes.
-const map<CompositionMode, NSString *> *gModeIdMap = NULL;
-const set<string> *gNoSelectedRangeApps = NULL;
-const set<string> *gNoDisplayModeSwitchApps = NULL;
-const set<string> *gNoSurroundingTextApps = NULL;
+const std::map<CompositionMode, NSString *> *gModeIdMap = nullptr;
+const std::set<string> *gNoSelectedRangeApps = nullptr;
+const std::set<string> *gNoDisplayModeSwitchApps = nullptr;
+const std::set<string> *gNoSurroundingTextApps = nullptr;
 
 // TODO(horo): This value should be get from system configuration.
 //  DoubleClickInterval can be get from NSEvent (MacOSX ver >= 10.6)
@@ -98,7 +98,7 @@ NSString *GetLabelForSuffix(const string &suffix) {
 }
 
 CompositionMode GetCompositionMode(NSString *modeID) {
-  if (modeID == NULL) {
+  if (modeID == nullptr) {
     LOG(ERROR) << "modeID could not be initialized.";
     return mozc::commands::DIRECT;
   }
@@ -144,12 +144,12 @@ CompositionMode GetCompositionMode(NSString *modeID) {
   return mozc::commands::DIRECT;
 }
 
-bool IsBannedApplication(const set<string>* bundleIdSet,
+bool IsBannedApplication(const std::set<string>* bundleIdSet,
                          const string& bundleId) {
-  return bundleIdSet == NULL || bundleId.empty() ||
+  return bundleIdSet == nullptr || bundleId.empty() ||
       bundleIdSet->find(bundleId) != bundleIdSet->end();
 }
-}  // anonymous namespace
+}  // namespace
 
 
 @implementation GoogleJapaneseInputController
@@ -188,17 +188,17 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
     return self;
   }
   keyCodeMap_ = [[KeyCodeMap alloc] init];
-  clientBundle_ = new(nothrow) string;
+  clientBundle_ = new(std::nothrow) string;
   replacementRange_ = NSMakeRange(NSNotFound, 0);
   originalString_ = [[NSMutableString alloc] init];
   composedString_ = [[NSMutableAttributedString alloc] init];
-  cursorPosition_ = NSNotFound;
+  cursorPosition_ = -1;
   mode_ = mozc::commands::DIRECT;
   checkInputMode_ = YES;
   suppressSuggestion_ = NO;
   yenSignCharacter_ = mozc::config::Config::YEN_SIGN;
-  candidateController_ = new(nothrow) mozc::renderer::RendererClient;
-  rendererCommand_ = new(nothrow)RendererCommand;
+  candidateController_ = new(std::nothrow) mozc::renderer::RendererClient;
+  rendererCommand_ = new(std::nothrow)RendererCommand;
   mozcClient_ = mozc::client::ClientFactory::NewClient();
   imkServer_ = reinterpret_cast<id<ServerCallback> >(server);
   imkClientForTest_ = nil;
@@ -217,7 +217,7 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
     if (!candidateController_->Activate()) {
       LOG(ERROR) << "Cannot activate renderer";
       delete candidateController_;
-      candidateController_ = NULL;
+      candidateController_ = nullptr;
     }
     [self setupClientBundle:inputClient];
     [self setupCapability];
@@ -258,15 +258,15 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
 }
 
 + (void)initializeConstants {
-  set<string> *noOpenlinkApps = new(nothrow) set<string>;
+  std::set<string> *noOpenlinkApps = new(std::nothrow) std::set<string>;
   if (noOpenlinkApps) {
     // should not open links during screensaver.
     noOpenlinkApps->insert("com.apple.securityagent");
     gNoOpenLinkApps = noOpenlinkApps;
   }
 
-  map<CompositionMode, NSString *> *newMap =
-      new(nothrow) map<CompositionMode, NSString *>;
+  std::map<CompositionMode, NSString *> *newMap =
+      new(std::nothrow) std::map<CompositionMode, NSString *>;
   if (newMap) {
     (*newMap)[mozc::commands::DIRECT] = GetLabelForSuffix("Roman");
     (*newMap)[mozc::commands::HIRAGANA] = GetLabelForSuffix("base");
@@ -278,7 +278,7 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
     gModeIdMap = newMap;
   }
 
-  set<string> *noSelectedRangeApps = new(nothrow) set<string>;
+  std::set<string> *noSelectedRangeApps = new(std::nothrow) std::set<string>;
   if (noSelectedRangeApps) {
     // Do not call selectedRange: method for the following
     // applications because it could lead to application crash.
@@ -295,13 +295,14 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
   // mode.  When the first composition character is alphanumeric (such
   // like pressing Shift-A at first), that character is directly
   // inserted into application instead of composition starting "A".
-  set<string> *noDisplayModeSwitchApps = new(nothrow) set<string>;
+  std::set<string> *noDisplayModeSwitchApps =
+      new(std::nothrow) std::set<string>;
   if (noDisplayModeSwitchApps) {
     noDisplayModeSwitchApps->insert("com.microsoft.Word");
     gNoDisplayModeSwitchApps = noDisplayModeSwitchApps;
   }
 
-  set<string> *noSurroundingTextApps = new(nothrow) set<string>;
+  std::set<string> *noSurroundingTextApps = new(std::nothrow) std::set<string>;
   if (noSurroundingTextApps) {
     // Disables the surrounding text feature for the following application
     // because calling attributedSubstringFromRange to it is very heavy.
@@ -432,7 +433,7 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
     [self commitText:output.result().value().c_str() client:sender];
   }
   if ([composedString_ length] > 0) {
-    [self updateComposedString:NULL];
+    [self updateComposedString:nullptr];
     [self clearCandidates];
   }
 }
@@ -472,7 +473,7 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
 }
 
 - (void)switchDisplayMode {
-  if (gModeIdMap == NULL) {
+  if (gModeIdMap == nullptr) {
     LOG(ERROR) << "gModeIdMap is not initialized correctly.";
     return;
   }
@@ -480,7 +481,8 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
     return;
   }
 
-  map<CompositionMode, NSString *>::const_iterator it = gModeIdMap->find(mode_);
+  std::map<CompositionMode, NSString *>::const_iterator it =
+      gModeIdMap->find(mode_);
   if (it == gModeIdMap->end()) {
     LOG(ERROR) << "mode: " << mode_ << " is invalid";
     return;
@@ -490,7 +492,7 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
 }
 
 - (void)commitText:(const char *)text client:(id)sender {
-  if (text == NULL) {
+  if (text == nullptr) {
     return;
   }
 
@@ -579,7 +581,7 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
 }
 
 - (void)processOutput:(const mozc::commands::Output *)output client:(id)sender {
-  if (output == NULL) {
+  if (output == nullptr) {
     return;
   }
   if (!output->consumed()) {
@@ -608,7 +610,7 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
       if (selectedRange.location != NSNotFound ||
           selectedRange.length != NSNotFound ||
           selectedRange.location + deletion_range.offset() > 0) {
-        // The offset is a negative value.  See session/commands.proto for
+        // The offset is a negative value.  See protocol/commands.proto for
         // the details.
         selectedRange.location += deletion_range.offset();
         selectedRange.length += deletion_range.length();
@@ -661,16 +663,6 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
 
   // Handle callbacks.
   if (output->has_callback() && output->callback().has_session_command()) {
-    if (output->callback().has_delay_millisec()) {
-      callback_command_.CopyFrom(output->callback());
-      // In the current implementation, if the subsequent key event also makes
-      // callback, the second callback will be called in the timimg of the first
-      // callback.
-      [self performSelector:@selector(sendCallbackCommand)
-                 withObject:nil
-                 afterDelay:output->callback().has_delay_millisec() / 1000.0];
-      return;
-    }
     const SessionCommand &callback_command =
         output->callback().session_command();
     if (callback_command.type() == SessionCommand::CONVERT_REVERSE) {
@@ -708,14 +700,14 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
   // If the last and the current composed string length is 0,
   // we don't call updateComposition.
   if (([composedString_ length] == 0) &&
-      ((preedit == NULL || preedit->segment_size() == 0))) {
+      ((preedit == nullptr || preedit->segment_size() == 0))) {
     return;
   }
 
   [composedString_
     deleteCharactersInRange:NSMakeRange(0, [composedString_ length])];
-  cursorPosition_ = NSNotFound;
-  if (preedit != NULL) {
+  cursorPosition_ = -1;
+  if (preedit != nullptr) {
     cursorPosition_ = preedit->cursor();
     for (size_t i = 0; i < preedit->segment_size(); ++i) {
       NSDictionary *highlightAttributes =
@@ -757,7 +749,7 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
   command.set_type(SessionCommand::SUBMIT);
   mozcClient_->SendCommand(command, &output);
   [self clearCandidates];
-  [self updateComposedString:NULL];
+  [self updateComposedString:nullptr];
 }
 
 - (id)composedString:(id)sender {
@@ -776,7 +768,7 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
 // |selecrionRange| method is defined at IMKInputController class and
 // means the position of cursor actually.
 - (NSRange)selectionRange {
-  return (cursorPosition_ == NSNotFound) ?
+  return (cursorPosition_ == -1) ?
       [super selectionRange] : // default behavior defined at super class
       NSMakeRange(cursorPosition_, 0);
 }
@@ -837,7 +829,7 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
 }
 
 - (void)updateCandidates:(const Output *)output {
-  if (output == NULL) {
+  if (output == nullptr) {
     [self clearCandidates];
     return;
   }
@@ -900,8 +892,6 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
   if ([event type] != NSKeyDown && [event type] != NSFlagsChanged) {
     return NO;
   }
-  // Cancels the callback.
-  callback_command_.Clear();
 
   // Handle KANA key and EISU key.  We explicitly handles this here
   // for mode switch because some text area such like iPhoto person
@@ -1000,14 +990,6 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
   return output.consumed();
 }
 
-- (void)sendCallbackCommand {
-  if (callback_command_.has_session_command()) {
-    const SessionCommand command = callback_command_.session_command();
-    callback_command_.Clear();
-    [self sendCommand:command];
-  }
-}
-
 #pragma mark callbacks
 - (void)sendCommand:(const SessionCommand &)command {
   Output output;
@@ -1049,7 +1031,7 @@ bool IsBannedApplication(const set<string>* bundleIdSet,
 }
 
 - (void)outputResult:(mozc::commands::Output *)output {
-  if (output == NULL || !output->has_result()) {
+  if (output == nullptr || !output->has_result()) {
     return;
   }
   [self commitText:output->result().value().c_str() client:[self client]];

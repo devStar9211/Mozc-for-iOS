@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
 #include "renderer/unix/unix_renderer.h"
 
 #include "base/util.h"
-#include "renderer/renderer_command.pb.h"
+#include "protocol/renderer_command.pb.h"
 #include "renderer/unix/gtk_wrapper_mock.h"
 #include "renderer/unix/window_manager_mock.h"
 #include "testing/base/public/gmock.h"

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,6 +37,7 @@
 
 #include "base/codegen_bytearray_stream.h"
 
+#include <memory>
 #include <sstream>
 
 #include "base/port.h"
@@ -47,7 +48,7 @@ namespace {
 class CodeGenByteArrayStreamTest : public testing::Test {
  protected:
   virtual void SetUp() {
-    result_stream_.reset(new ostringstream());
+    result_stream_.reset(new std::ostringstream());
     codegen_stream_.reset(
         new mozc::CodeGenByteArrayOutputStream(
             result_stream_.get(),
@@ -55,8 +56,8 @@ class CodeGenByteArrayStreamTest : public testing::Test {
   }
 
   virtual void TearDown() {
-    codegen_stream_.reset(NULL);
-    result_stream_.reset(NULL);
+    codegen_stream_.reset();
+    result_stream_.reset();
   }
 
   string ExpectedOutput(const string &var_name_base,
@@ -83,8 +84,8 @@ class CodeGenByteArrayStreamTest : public testing::Test {
     return result_stream_->str();
   }
 
-  scoped_ptr<mozc::CodeGenByteArrayOutputStream> codegen_stream_;
-  scoped_ptr<ostringstream> result_stream_;
+  std::unique_ptr<mozc::CodeGenByteArrayOutputStream> codegen_stream_;
+  std::unique_ptr<std::ostringstream> result_stream_;
 };
 
 TEST_F(CodeGenByteArrayStreamTest, NoInput) {
@@ -315,7 +316,7 @@ TEST_F(CodeGenByteArrayStreamTest, CloseDoubly) {
 
 TEST_F(CodeGenByteArrayStreamTest, FlushBeforeOpen) {
   EXPECT_TRUE(codegen_stream_->good());
-  *codegen_stream_ << "hello, world" << endl;
+  *codegen_stream_ << "hello, world" << std::endl;
   EXPECT_FALSE(codegen_stream_->good());
 }
 

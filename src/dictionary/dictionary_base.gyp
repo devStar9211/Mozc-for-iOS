@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -49,11 +49,6 @@
         '../base/base.gyp:multifile',
         'pos_matcher',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'pos_util',
@@ -63,11 +58,6 @@
         '../build_tools/code_generator_util.py',
         'pos_util.py',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'gen_pos_matcher',
@@ -76,11 +66,6 @@
       'dependencies': [
         'pos_util',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'actions': [
         {
           'action_name': 'gen_pos_matcher',
@@ -112,11 +97,6 @@
       'dependencies': [
         'gen_pos_matcher#host',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'export_dependent_settings': [
         'gen_pos_matcher#host',
       ]
@@ -128,50 +108,9 @@
       'sources' : [
         'user_pos.cc',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'dependencies': [
         '../base/base.gyp:base',
       ],
-    },
-    {
-      'target_name': 'genproto_dictionary',
-      'type': 'none',
-      'toolsets': ['host'],
-      'sources': [
-        'user_dictionary_storage.proto',
-      ],
-      'includes': [
-        '../protobuf/genproto.gypi',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {
-      'target_name': 'dictionary_protocol',
-      'type': 'static_library',
-      'hard_dependency': 1,
-      'sources': [
-        '<(proto_out_dir)/<(relative_dir)/user_dictionary_storage.pb.cc',
-      ],
-      'dependencies': [
-        '../protobuf/protobuf.gyp:protobuf',
-        'genproto_dictionary#host',
-      ],
-      'export_dependent_settings': [
-        'genproto_dictionary#host',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'gen_pos_map',
@@ -181,11 +120,6 @@
         '../build_tools/code_generator_util.py',
         'gen_pos_map.py',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
 
       'actions': [
         {
@@ -193,7 +127,7 @@
           'variables': {
             'user_pos': '../data/rules/user_pos.def',
             'third_party_pos_map': '../data/rules/third_party_pos_map.def',
-            'pos_map_header': '<(gen_out_dir)/pos_map.h',
+            'pos_map_header': '<(gen_out_dir)/pos_map.inc',
           },
           'inputs': [
             'gen_pos_map.py',
@@ -222,17 +156,12 @@
       'dependencies': [
         '../base/base.gyp:base',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'user_dictionary',
       'type': 'static_library',
       'sources': [
-        '<(gen_out_dir)/pos_map.h',
+        '<(gen_out_dir)/pos_map.inc',
         'user_dictionary.cc',
         'user_dictionary_importer.cc',
         'user_dictionary_session.cc',
@@ -244,18 +173,13 @@
         '../base/base.gyp:base',
         '../base/base.gyp:config_file_stream',
         '../config/config.gyp:config_handler',
-        '../config/config.gyp:config_protocol',
+        '../protocol/protocol.gyp:config_proto',
+        '../protocol/protocol.gyp:user_dictionary_storage_proto',
         '../usage_stats/usage_stats_base.gyp:usage_stats',
-        'dictionary_protocol',
         'gen_pos_map#host',
         'pos_matcher',
         'suppression_dictionary',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
   ],
 }

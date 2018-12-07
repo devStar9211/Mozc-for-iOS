@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,9 +31,10 @@
 
 #include <jni.h>
 
+#include <memory>
+
 #include "base/logging.h"
 #include "base/mutex.h"
-#include "base/scoped_ptr.h"
 #include "net/http_client_common.h"
 
 namespace {
@@ -114,7 +115,7 @@ jbyteArray BufferToJByteArray(
 
 // Copies the contents of the given source to buf, and store the size into
 // buf_size.
-// Retruns true, if finished successfully. Otherwise, false.
+// Returns true, if finished successfully. Otherwise, false.
 bool CopyJByteArrayToBuf(JNIEnv *env, const jbyteArray &source,
                          void *buf, size_t *buf_size) {
   const jsize size = env->GetArrayLength(source);
@@ -129,7 +130,7 @@ bool CopyJByteArrayToBuf(JNIEnv *env, const jbyteArray &source,
 void AssignJByteArrayToString(JNIEnv *env, const jbyteArray &source,
                               string *dest) {
   size_t size = env->GetArrayLength(source);
-  scoped_ptr<char[]> buf(new char[size]);
+  std::unique_ptr<char[]> buf(new char[size]);
   CHECK(CopyJByteArrayToBuf(env, source, buf.get(), &size));
   dest->assign(buf.get(), size);
 }
@@ -148,7 +149,8 @@ const char *HTTPMethodTypeToChars(mozc::HTTPMethodType type) {
   }
 }
 
-// Utility to enlarge the java's local frame, as RAII idiom, like scoped_ptr.
+// Utility to enlarge the java's local frame, as RAII idiom, like
+// std::unique_ptr.
 class ScopedJavaLocalFrame {
  public:
   ScopedJavaLocalFrame(JNIEnv *env, jint capacity) : env_(env) {
@@ -228,7 +230,9 @@ class JavaHttpClientDescriptor {
 
   DISALLOW_COPY_AND_ASSIGN(JavaHttpClientDescriptor);
 };
-scoped_ptr<JavaHttpClientDescriptor> http_client_descriptor;
+
+std::unique_ptr<JavaHttpClientDescriptor> http_client_descriptor;
+
 }  // namespace
 
 namespace mozc {

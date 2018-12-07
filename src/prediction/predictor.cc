@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,28 +29,26 @@
 
 #include "prediction/predictor.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
 #include "base/flags.h"
 #include "base/logging.h"
-#include "config/config.pb.h"
-#include "config/config_handler.h"
 #include "converter/segments.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 
-// TODO(team): Implement ambiguity expansion for rewriters.
-DEFINE_bool(enable_ambiguity_expansion, true,
-            "Enable ambiguity trigger expansion for predictions");
 DECLARE_bool(enable_expansion_for_dictionary_predictor);
 DECLARE_bool(enable_expansion_for_user_history_predictor);
 
 namespace mozc {
 namespace {
+
 const int kPredictionSize = 100;
 // On Mobile mode PREDICTION (including PARTIAL_PREDICTION) behaves like as
-// conversion so very large limit is preferable.
-const int kMobilePredictionSize = 1000;
+// conversion so the limit is same as conversion's one.
+const int kMobilePredictionSize = 200;
 
 size_t GetCandidatesSize(const Segments &segments) {
   if (segments.conversion_segments_size() <= 0) {
@@ -74,17 +72,18 @@ BasePredictor::BasePredictor(PredictorInterface *dictionary_predictor,
       user_history_predictor_(user_history_predictor) {
   DCHECK(dictionary_predictor_.get());
   DCHECK(user_history_predictor_.get());
-  FLAGS_enable_expansion_for_dictionary_predictor =
-      FLAGS_enable_ambiguity_expansion;
-  FLAGS_enable_expansion_for_user_history_predictor =
-      FLAGS_enable_ambiguity_expansion;
+  // TODO(noriyukit): Now the following features are stable, so remove these
+  // flags.
+  FLAGS_enable_expansion_for_dictionary_predictor = true;
+  FLAGS_enable_expansion_for_user_history_predictor = true;
 }
 
 BasePredictor::~BasePredictor() {}
 
-void BasePredictor::Finish(Segments *segments) {
-  user_history_predictor_->Finish(segments);
-  dictionary_predictor_->Finish(segments);
+void BasePredictor::Finish(const ConversionRequest &request,
+                           Segments *segments) {
+  user_history_predictor_->Finish(request, segments);
+  dictionary_predictor_->Finish(request, segments);
 
   if (segments->conversion_segments_size() < 1 ||
       segments->request_type() == Segments::CONVERSION) {
@@ -119,8 +118,8 @@ bool BasePredictor::ClearHistoryEntry(const string &key, const string &value) {
   return user_history_predictor_->ClearHistoryEntry(key, value);
 }
 
-bool BasePredictor::WaitForSyncerForTest() {
-  return user_history_predictor_->WaitForSyncerForTest();
+bool BasePredictor::Wait() {
+  return user_history_predictor_->Wait();
 }
 
 bool BasePredictor::Sync() {
@@ -153,13 +152,14 @@ bool DefaultPredictor::PredictForRequest(const ConversionRequest &request,
          segments->request_type() == Segments::PARTIAL_PREDICTION ||
          segments->request_type() == Segments::PARTIAL_SUGGESTION);
 
-  if (GET_CONFIG(presentation_mode)) {
+  if (request.config().presentation_mode()) {
     return false;
   }
 
   int size = kPredictionSize;
   if (segments->request_type() == Segments::SUGGESTION) {
-    size = min(9, max(1, static_cast<int>(GET_CONFIG(suggestions_size))));
+    size = std::min(
+        9, std::max(1, static_cast<int>(request.config().suggestions_size())));
   }
 
   bool result = false;
@@ -209,7 +209,7 @@ bool MobilePredictor::PredictForRequest(const ConversionRequest &request,
          segments->request_type() == Segments::PARTIAL_PREDICTION ||
          segments->request_type() == Segments::PARTIAL_SUGGESTION);
 
-  if (GET_CONFIG(presentation_mode)) {
+  if (request.config().presentation_mode()) {
     return false;
   }
 
@@ -263,4 +263,5 @@ bool MobilePredictor::PredictForRequest(const ConversionRequest &request,
 
   return result;
 }
+
 }  // namespace mozc

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,15 +30,12 @@
 #ifndef MOZC_CONVERTER_NODE_H_
 #define MOZC_CONVERTER_NODE_H_
 
-#include <map>
 #include <string>
 
 #include "base/port.h"
 #include "dictionary/dictionary_token.h"
 
 namespace mozc {
-
-class Segment;
 
 struct Node {
   enum NodeType {
@@ -89,7 +86,7 @@ struct Node {
   // begin_nodes: | 0 | 1 | 2 | 3 | 4 | 5 | 6 | ... | N | (in lattice)
   //                |   |   :   :   :   :   :         :
   //                |   :
-  //                |   :          (NULL)
+  //                |   :          (nullptr)
   //                |   :           ^
   //                |   :           :
   //                v   :           |
@@ -99,14 +96,14 @@ struct Node {
   //           bnext|   :           ^
   //                v   :           |enext
   //               +-----------------+
-  //               | Node2(len4)     | (NULL)
+  //               | Node2(len4)     | (nullptr)
   //               +-----------------+  ^
   //           bnext|   :           ^   :
   //                |   :           |   :
   //                v   :           :   |enext
   //               +---------------------+
   //               | Node3(len5)         |
-  //               +---------------------+ (NULL)
+  //               +---------------------+ (nullptr)
   //           bnext|   :           :   ^   ^
   //                |   :           :   |   :
   //                v   :           :   :   |enext
@@ -116,7 +113,7 @@ struct Node {
   //           bnext|   :           :   :   ^
   //                :   :           :   :   |
   //                v   :           :   :   :
-  //             (NULL) |           :   :   :
+  //          (nullptr) |           :   :   :
   //                    v           :   |enext
   //                   +-----------------+  :
   //                   | Node5(len4)     |  :
@@ -140,7 +137,7 @@ struct Node {
   //               bnext|           :   :   ^
   //                    :           :   :   |
   //                    v           :   :   |
-  //                  (NULL)        :   :   |
+  //               (nullptr)        :   :   |
   //                                :   :   |
   //                :   :   :   :   :   |   |         :
   // end_nodes:   | 0 | 1 | 2 | 3 | 4 | 5 | 6 | ... | N |  (in lattice)
@@ -153,7 +150,7 @@ struct Node {
   Node *bnext;
   Node *enext;
 
-  // if it is not NULL, transition cost
+  // if it is not nullptr, transition cost
   // from constrained_prev to current node is defined,
   // other transition is set to be infinite
   Node *constrained_prev;
@@ -174,9 +171,6 @@ struct Node {
   NodeType node_type;
   uint32 attributes;
 
-  // Equal to that of Candidate.
-  size_t consumed_key_size;
-
   // key: The user input.
   // actual_key: The actual search key that corresponds to the value.
   //           Can differ from key when no modifier conversion is enabled.
@@ -190,11 +184,11 @@ struct Node {
   }
 
   inline void Init() {
-    prev = NULL;
-    next = NULL;
-    bnext = NULL;
-    enext = NULL;
-    constrained_prev = NULL;
+    prev = nullptr;
+    next = nullptr;
+    bnext = nullptr;
+    enext = nullptr;
+    constrained_prev = nullptr;
     rid = 0;
     lid = 0;
     begin_pos = 0;
@@ -209,12 +203,12 @@ struct Node {
     value.clear();
   }
 
-  inline void InitFromToken(const Token &token) {
-    prev = NULL;
-    next = NULL;
-    bnext = NULL;
-    enext = NULL;
-    constrained_prev = NULL;
+  inline void InitFromToken(const dictionary::Token &token) {
+    prev = nullptr;
+    next = nullptr;
+    bnext = nullptr;
+    enext = nullptr;
+    constrained_prev = nullptr;
     rid = token.rid;
     lid = token.lid;
     begin_pos = 0;
@@ -224,10 +218,10 @@ struct Node {
     cost = 0;
     raw_wcost = 0;
     attributes = 0;
-    if (token.attributes & Token::SPELLING_CORRECTION) {
+    if (token.attributes & dictionary::Token::SPELLING_CORRECTION) {
       attributes |= SPELLING_CORRECTION;
     }
-    if (token.attributes & Token::USER_DICTIONARY) {
+    if (token.attributes & dictionary::Token::USER_DICTIONARY) {
       attributes |= USER_DICTIONARY;
       attributes |= NO_VARIANTS_EXPANSION;
     }
@@ -235,77 +229,6 @@ struct Node {
     actual_key.clear();
     value = token.value;
   }
-};
-
-// this class keep multiple types of data.
-// each type should inherit NodeAllocatorData::Data
-class NodeAllocatorData {
- public:
-  ~NodeAllocatorData() {
-    clear();
-  }
-
-  bool has(const char *name) const {
-    return (data_.find(name) != data_.end());
-  }
-
-  void erase(const char *name) {
-    if (has(name)) {
-      delete data_[name];
-      data_.erase(name);
-    }
-  }
-
-  void clear() {
-    for (map<const char *, Data *>::iterator it = data_.begin();
-         it != data_.end(); ++it) {
-      delete it->second;
-    }
-    data_.clear();
-  }
-
-  template<typename Type> Type *get(const char *name) {
-    if (!has(name)) {
-      data_[name] = new Type;
-    }
-    return reinterpret_cast<Type *>(data_[name]);
-  }
-
-  class Data {
-   public:
-    virtual ~Data() {}
-  };
-
- private:
-  map<const char *, Data *> data_;
-};
-
-class NodeAllocatorInterface {
- public:
-  NodeAllocatorInterface() : max_nodes_size_(8192) {}
-  virtual ~NodeAllocatorInterface() {}
-
-  virtual Node *NewNode() = 0;
-
-  virtual size_t max_nodes_size() const {
-    return max_nodes_size_;
-  }
-
-  virtual void set_max_nodes_size(size_t max_nodes_size) {
-    max_nodes_size_ = max_nodes_size;
-  }
-
-  // Backend specific data, like cache for look up.
-  NodeAllocatorData *mutable_data() {
-    return &data_;
-  }
-  const NodeAllocatorData &data() {
-    return data_;
-  }
-
- private:
-  size_t max_nodes_size_;
-  NodeAllocatorData data_;
 };
 
 }  // namespace mozc

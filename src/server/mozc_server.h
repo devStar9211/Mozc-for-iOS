@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,10 +35,10 @@
 namespace mozc {
 namespace server {
 
-void InitGoogleAndMozcServer(const char *arg0,
-                             int *argc,
-                             char ***argv,
-                             bool remove_flags);
+void InitMozcAndMozcServer(const char *arg0,
+                           int *argc,
+                           char ***argv,
+                           bool remove_flags);
 
 class MozcServer {
  public:
@@ -52,4 +52,4 @@ class MozcServer {
 }  // namespace server
 }  // namespace mozc
 
-#endif  // IME_MOZC_SERVER_MOZC_SERVER_H_
+#endif  // MOZC_SERVER_MOZC_SERVER_H_

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -129,7 +129,7 @@ TEST(TrieTest, LookUpPrefix) {
 TEST(TrieTest, Empty) {
   Trie<string> trie;
   {
-    vector<string> values;
+    std::vector<string> values;
     trie.LookUpPredictiveAll("a", &values);
     EXPECT_EQ(0, values.size());
   }
@@ -146,85 +146,67 @@ TEST(TrieTest, Empty) {
 
 TEST(TrieTest, UTF8LookUpPrefix) {
   Trie<string> trie;
-  // "きゃ"
-  trie.AddEntry("\xe3\x81\x8d\xe3\x82\x83", "");
-  // "きゅ"
-  trie.AddEntry("\xe3\x81\x8d\xe3\x82\x85", "");
-  // "きょ"
-  trie.AddEntry("\xe3\x81\x8d\xe3\x82\x87", "");
-  // "っ"
-  trie.AddEntry("\xe3\x81\xa3", "");
-  // "か"
-  trie.AddEntry("\xe3\x81\x8b", "");
-  // "き"
-  trie.AddEntry("\xe3\x81\x8d", "");
-  // "く"
-  trie.AddEntry("\xe3\x81\x8f", "");
-  // "け"
-  trie.AddEntry("\xe3\x81\x91", "");
-  // "こ"
-  trie.AddEntry("\xe3\x81\x93", "");
+  trie.AddEntry("きゃ", "");
+  trie.AddEntry("きゅ", "");
+  trie.AddEntry("きょ", "");
+  trie.AddEntry("っ", "");
+  trie.AddEntry("か", "");
+  trie.AddEntry("き", "");
+  trie.AddEntry("く", "");
+  trie.AddEntry("け", "");
+  trie.AddEntry("こ", "");
 
   string value;
   size_t key_length = 0;
   bool has_subtrie = false;
   {
     key_length = 0;
-    // "か"
-    const string query = "\xe3\x81\x8b";
+    const string query = "か";
     EXPECT_TRUE(trie.LookUpPrefix(query, &value, &key_length, &has_subtrie));
   }
   {
     key_length = 0;
-    // "きゅ"
-    const string query = "\xe3\x81\x8d\xe3\x82\x85";
+    const string query = "きゅ";
     EXPECT_TRUE(trie.LookUpPrefix(query, &value, &key_length, &has_subtrie));
   }
   {
     key_length = 0;
-    // "くぁ"
-    const string query = "\xe3\x81\x8f\xe3\x81\x81";
+    const string query = "くぁ";
     EXPECT_TRUE(trie.LookUpPrefix(query, &value, &key_length, &has_subtrie));
   }
   {
     key_length = 0;
-    // "っあ"
-    const string query = "\xe3\x81\xa3\xe3\x81\x82";
+    const string query = "っあ";
     EXPECT_TRUE(trie.LookUpPrefix(query, &value, &key_length, &has_subtrie));
   }
   {
     key_length = 0;
-    // "き"
-    const string query = "\xe3\x81\x8d";
+    const string query = "き";
     EXPECT_TRUE(trie.LookUpPrefix(query, &value, &key_length, &has_subtrie));
   }
   {
     key_length = 0;
-    // "かかかかかか"
-    const string query = "\xe3\x81\x8b\xe3\x81\x8b\xe3\x81\x8b\xe3\x81\x8b\xe3\x81\x8b\xe3\x81\x8b";
+    const string query = "かかかかかか";
     EXPECT_TRUE(trie.LookUpPrefix(query, &value, &key_length, &has_subtrie));
   }
   {
     key_length = 0;
-    // "きゅあああ"
-    const string query = "\xe3\x81\x8d\xe3\x82\x85\xe3\x81\x82\xe3\x81\x82\xe3\x81\x82";
+    const string query = "きゅあああ";
     EXPECT_TRUE(trie.LookUpPrefix(query, &value, &key_length, &has_subtrie));
   }
   {
     key_length = 0;
-    // "きあああ"
-    const string query = "\xe3\x81\x8d\xe3\x81\x82\xe3\x81\x82\xe3\x81\x82";
+    const string query = "きあああ";
     EXPECT_TRUE(trie.LookUpPrefix(query, &value, &key_length, &has_subtrie));
   }
   {
     key_length = 0;
-    // "も"
-    const string query = "\xe3\x82\x82";
+    const string query = "も";
     EXPECT_FALSE(trie.LookUpPrefix(query, &value, &key_length, &has_subtrie));
   }
 }
 
-bool HasData(const vector<string> &values, const string &value) {
+bool HasData(const std::vector<string> &values, const string &value) {
   for (size_t i = 0; i < values.size(); ++i) {
     if (values[i] == value) {
       return true;
@@ -240,7 +222,7 @@ TEST(TrieTest, LookUpPredictiveAll) {
   trie.AddEntry("a", "[A]");
 
   {
-    vector<string> values;
+    std::vector<string> values;
     trie.LookUpPredictiveAll("a", &values);
     EXPECT_EQ(3, values.size());
     EXPECT_TRUE(HasData(values, "[ABC]"));
@@ -249,7 +231,7 @@ TEST(TrieTest, LookUpPredictiveAll) {
   }
 
   {
-    vector<string> values;
+    std::vector<string> values;
     trie.LookUpPredictiveAll("ab", &values);
     EXPECT_EQ(2, values.size());
     EXPECT_TRUE(HasData(values, "[ABC]"));
@@ -257,14 +239,14 @@ TEST(TrieTest, LookUpPredictiveAll) {
   }
 
   {
-    vector<string> values;
+    std::vector<string> values;
     trie.LookUpPredictiveAll("abc", &values);
     EXPECT_EQ(1, values.size());
     EXPECT_TRUE(HasData(values, "[ABC]"));
   }
 
   {
-    vector<string> values;
+    std::vector<string> values;
     trie.LookUpPredictiveAll("", &values);
     EXPECT_EQ(3, values.size());
     EXPECT_TRUE(HasData(values, "[ABC]"));
@@ -273,7 +255,7 @@ TEST(TrieTest, LookUpPredictiveAll) {
   }
 
   {
-    vector<string> values;
+    std::vector<string> values;
     trie.LookUpPredictiveAll("x", &values);
     EXPECT_EQ(0, values.size());
   }

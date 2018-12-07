@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -68,10 +68,10 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
-        '../config/config.gyp:config_protocol',
         '../ipc/ipc.gyp:ipc',
-        '../session/session_base.gyp:session_protocol',
-        'renderer_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
+        '../protocol/protocol.gyp:renderer_proto',
       ],
     },
     {
@@ -85,8 +85,8 @@
         '../client/client.gyp:client',
         '../config/config.gyp:config_handler',
         '../ipc/ipc.gyp:ipc',
-        '../session/session_base.gyp:session_protocol',
-        'renderer_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:renderer_proto',
       ],
     },
     {
@@ -154,7 +154,7 @@
         'renderer_style_handler.cc',
       ],
       'dependencies': [
-        'renderer_protocol',
+        '../protocol/protocol.gyp:renderer_proto',
       ],
       'variables': {
         'test_size': 'small',
@@ -167,43 +167,13 @@
         'renderer_style_handler_test.cc',
       ],
       'dependencies': [
+        '../protocol/protocol.gyp:renderer_proto',
         '../testing/testing.gyp:gtest_main',
-        'renderer_protocol',
         'renderer_style_handler',
       ],
       'variables': {
         'test_size': 'small',
       },
-    },
-    {
-      'target_name': 'genproto_renderer',
-      'type': 'none',
-      'toolsets': ['host'],
-      'sources': [
-        'renderer_command.proto',
-        'renderer_style.proto',
-      ],
-      'includes': [
-        '../protobuf/genproto.gypi',
-      ],
-    },
-    {
-      'target_name': 'renderer_protocol',
-      'type': 'static_library',
-      'hard_dependency': 1,
-      'sources': [
-        '<(proto_out_dir)/<(relative_dir)/renderer_command.pb.cc',
-        '<(proto_out_dir)/<(relative_dir)/renderer_style.pb.cc',
-      ],
-      'dependencies': [
-        '../config/config.gyp:config_protocol',
-        '../protobuf/protobuf.gyp:protobuf',
-        '../session/session_base.gyp:session_protocol',
-        'genproto_renderer#host'
-      ],
-      'export_dependent_settings': [
-        'genproto_renderer#host',
-      ],
     },
     # Test cases meta target: this target is referred from gyp/tests.gyp
     {
@@ -223,7 +193,7 @@
             'win32_renderer_core_test',
           ],
         }],
-        ['enable_gtk_renderer==1', {
+        ['target_platform=="Linux" and enable_gtk_renderer==1', {
           'dependencies': [
             'gtk_renderer_test',
           ],
@@ -260,9 +230,9 @@
           ],
           'dependencies': [
             '../base/base.gyp:base',
-            '../config/config.gyp:config_protocol',
-            '../session/session_base.gyp:session_protocol',
-            'renderer_protocol',
+            '../protocol/protocol.gyp:commands_proto',
+            '../protocol/protocol.gyp:config_proto',
+            '../protocol/protocol.gyp:renderer_proto',
           ],
         },
         {
@@ -288,9 +258,9 @@
           ],
           'dependencies': [
             '../base/base.gyp:base',
-            '../config/config.gyp:config_protocol',
-            '../session/session_base.gyp:session_protocol',
-            'renderer_protocol',
+            '../protocol/protocol.gyp:commands_proto',
+            '../protocol/protocol.gyp:config_proto',
+            '../protocol/protocol.gyp:renderer_proto',
             'win32_font_util',
           ],
         },
@@ -365,6 +335,7 @@
             '../base/base.gyp:win_font_test_helper',
             '../net/jsoncpp.gyp:jsoncpp',
             '../testing/testing.gyp:gtest_main',
+            '../testing/testing.gyp:mozctest',
             'install_renderer_core_test_data',
             'win32_renderer_core',
           ],
@@ -387,9 +358,38 @@
           ],
           'dependencies': [
             '../base/base.gyp:base',
-            'renderer_protocol',
+            '../protocol/protocol.gyp:renderer_proto',
             'renderer_style_handler',
           ],
+          'link_settings': {
+            'msvs_settings': {
+              'VCLinkerTool': {
+                'AdditionalDependencies': [
+                  'd2d1.lib',
+                  'dwrite.lib',
+                ],
+              },
+            },
+          },
+        },
+        {
+          'target_name': 'gen_pbgra32_bitmap',
+          'type': 'executable',
+          'sources': [
+            'win32/gen_pbgra32_bitmap.cc',
+          ],
+          'dependencies': [
+            '../base/base.gyp:base_core',
+            '../base/base.gyp:scoped_handle',
+          ],
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'AdditionalDependencies': [
+                'gdiplus.lib',  # used in 'gen_pbgra32_bitmap.cc'
+              ],
+              'SubSystem': '1',  # 1 == subSystemConsole
+            },
+          },
         },
         {
           'target_name': 'mozc_renderer',
@@ -409,12 +409,12 @@
             '../base/base.gyp:base',
             '../base/base.gyp:crash_report_handler',
             '../client/client.gyp:client',
-            '../config/config.gyp:config_protocol',
             '../config/config.gyp:stats_config_util',
             '../ipc/ipc.gyp:ipc',
-            '../session/session_base.gyp:session_protocol',
+            '../protocol/protocol.gyp:commands_proto',
+            '../protocol/protocol.gyp:config_proto',
+            '../protocol/protocol.gyp:renderer_proto',
             'gen_mozc_renderer_resource_header#host',
-            'renderer_protocol',
             'renderer_server',
             'renderer_style_handler',
             'table_layout',
@@ -437,8 +437,8 @@
           ],
           'dependencies': [
             '../base/base.gyp:base',
-            'renderer.gyp:renderer_client',
-            'renderer.gyp:renderer_protocol',
+            '../protocol/protocol.gyp:renderer_proto',
+            'renderer_client',
           ],
         },
       ],
@@ -470,12 +470,12 @@
             '../base/base.gyp:base',
             '../base/base.gyp:crash_report_handler',
             '../client/client.gyp:client',
-            '../config/config.gyp:config_protocol',
             '../config/config.gyp:stats_config_util',
             '../ipc/ipc.gyp:ipc',
-            '../session/session_base.gyp:session_protocol',
+            '../protocol/protocol.gyp:commands_proto',
+            '../protocol/protocol.gyp:config_proto',
+            '../protocol/protocol.gyp:renderer_proto',
             'gen_renderer_files#host',
-            'renderer_protocol',
             'renderer_server',
             'renderer_style_handler',
             'table_layout',
@@ -523,7 +523,7 @@
         },
       ],
     }],
-    ['enable_gtk_renderer==1', {
+    ['target_platform=="Linux" and enable_gtk_renderer==1', {
       'targets': [
         {
           # Meta target to set up build environment for gtk+-2.0.
@@ -543,14 +543,14 @@
           },
           'all_dependent_settings': {
             'cflags': [
-              '<!@(<(pkg_config_command) --cflags <@(target_pkgs))',
+              '<!@(pkg-config --cflags <@(target_pkgs))',
             ],
             'link_settings': {
               'libraries': [
-                '<!@(<(pkg_config_command) --libs-only-l <@(target_pkgs))',
+                '<!@(pkg-config --libs-only-l <@(target_pkgs))',
               ],
               'ldflags': [
-                '<!@(<(pkg_config_command) --libs-only-L <@(target_pkgs))',
+                '<!@(pkg-config --libs-only-L <@(target_pkgs))',
               ],
             },
           },
@@ -576,11 +576,10 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../client/client.gyp:client',
-            '../config/config.gyp:genproto_config#host',
             '../config/config.gyp:stats_config_util',
             '../ipc/ipc.gyp:ipc',
-            '../session/session_base.gyp:genproto_session#host',
-            'renderer_protocol',
+            '../protocol/protocol.gyp:genproto_config_proto#host',
+            '../protocol/protocol.gyp:renderer_proto',
             'gtk2_build_environment',
             'renderer_server',
             'renderer_style_handler',

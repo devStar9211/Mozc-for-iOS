@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,8 +33,7 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlstr.h>
 
 #include <strsafe.h>
@@ -79,7 +78,7 @@ bool MigrationUtil::IsFullIMEAvailable() {
 
 bool MigrationUtil::IsFullTIPAvailable() {
   const LANGID kLANGJaJP = MAKELANGID(LANG_JAPANESE, SUBLANG_JAPANESE_JAPAN);
-  vector<LayoutProfileInfo> profile_list;
+  std::vector<LayoutProfileInfo> profile_list;
   if (!UninstallHelper::GetInstalledProfilesByLanguage(kLANGJaJP,
                                                        &profile_list)) {
     return false;
@@ -135,18 +134,12 @@ bool MigrationUtil::DisableLegacyMozcForCurrentUserOnWin8() {
     return true;
   }
 
-  if (!InputDll::EnsureInitialized()) {
-    return false;
-  }
-  if (InputDll::enum_enabled_layout_or_tip() == nullptr) {
-    return false;
-  }
-  const UINT num_element = InputDll::enum_enabled_layout_or_tip()(
+  const UINT num_element = ::EnumEnabledLayoutOrTip(
       nullptr, nullptr, nullptr, nullptr, 0);
 
   unique_ptr<LAYOUTORTIPPROFILE[]> buffer(new LAYOUTORTIPPROFILE[num_element]);
 
-  const UINT num_copied = InputDll::enum_enabled_layout_or_tip()(
+  const UINT num_copied = ::EnumEnabledLayoutOrTip(
       nullptr, nullptr, nullptr, buffer.get(), num_element);
 
   // Look up IMM32 Mozc from |buffer|.
@@ -169,7 +162,7 @@ bool MigrationUtil::DisableLegacyMozcForCurrentUserOnWin8() {
       continue;
     }
 
-    const wstring id(profile.szId);
+    const std::wstring id(profile.szId);
     // A valid |profile.szId| should consists of language ID (LANGID) and
     // keyboard layout ID (KILD) as follows.
     //  <LangID 1>:<KLID 1>
@@ -202,8 +195,9 @@ bool MigrationUtil::DisableLegacyMozcForCurrentUserOnWin8() {
         return false;
       }
 
-      const wstring &profile = wstring(L"0x0411:") + clsid + profile_id;
-      if (!InputDll::set_default_layout_or_tip()(profile.c_str(), 0)) {
+      const std::wstring &profile =
+          std::wstring(L"0x0411:") + clsid + profile_id;
+      if (!::SetDefaultLayoutOrTip(profile.c_str(), 0)) {
         DLOG(ERROR) << "SetDefaultLayoutOrTip failed";
         return false;
       }
@@ -217,7 +211,7 @@ bool MigrationUtil::DisableLegacyMozcForCurrentUserOnWin8() {
                                    klid.ToString().c_str()))) {
         return false;
       }
-      if (!InputDll::install_layout_or_tip()(profile_str, ILOT_DISABLED)) {
+      if (!::InstallLayoutOrTip(profile_str, ILOT_DISABLED)) {
         DLOG(ERROR) << "InstallLayoutOrTip failed";
         return false;
       }

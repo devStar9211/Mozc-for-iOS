@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,7 +31,6 @@ package org.mozc.android.inputmethod.japanese;
 
 import org.mozc.android.inputmethod.japanese.mushroom.MushroomUtil;
 import org.mozc.android.inputmethod.japanese.ui.MenuDialog.MenuDialogListener;
-import org.mozc.android.inputmethod.japanese.util.ImeSwitcherFactory.ImeSwitcher;
 import com.google.common.base.Preconditions;
 
 import android.content.Context;
@@ -45,12 +44,13 @@ import android.view.inputmethod.InputConnection;
  */
 class MozcMenuDialogListenerImpl implements MenuDialogListener {
   private final InputMethodService inputMethodService;
-  private final ImeSwitcher imeSwitcher;
+  private final ViewEventListener eventListener;
   private boolean showInputMethodPicker = false;
 
-  MozcMenuDialogListenerImpl(InputMethodService inputMethodService, ImeSwitcher imeSwitcher) {
+  MozcMenuDialogListenerImpl(
+      InputMethodService inputMethodService, ViewEventListener eventListener) {
     this.inputMethodService = Preconditions.checkNotNull(inputMethodService);
-    this.imeSwitcher = Preconditions.checkNotNull(imeSwitcher);
+    this.eventListener = Preconditions.checkNotNull(eventListener);
   }
 
   @Override
@@ -86,13 +86,6 @@ class MozcMenuDialogListenerImpl implements MenuDialogListener {
   }
 
   @Override
-  public void onLaunchVoiceInputActivitySelected(Context context) {
-    if (!imeSwitcher.switchToVoiceIme("ja")) {
-      MozcLog.e("Voice IME for ja locale is not found.");
-    }
-  }
-
-  @Override
   public void onShowMushroomSelectionDialogSelected(Context context) {
     // Reset the composing text, otherwise the composing text will be committed automatically
     // and as the result the user would see the duplicated committing.
@@ -106,11 +99,11 @@ class MozcMenuDialogListenerImpl implements MenuDialogListener {
       inputConnection.setComposingText("", MozcUtil.CURSOR_POSITION_TAIL);
     }
 
+    eventListener.onShowMushroomSelectionDialog();
+
     // Launch the activity.
     Intent intent = MushroomUtil.createMushroomSelectionActivityLaunchingIntent(
         context, inputMethodService.getCurrentInputEditorInfo().fieldId, composingText);
     context.startActivity(intent);
-
-    // TODO(hidehiko): Do we need to logging?
   }
 }

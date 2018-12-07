@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,18 +32,15 @@
 
 #include <deque>
 #include <map>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <vector>
 
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "dictionary/system/words_info.h"
 
 namespace mozc {
-struct DictionaryFileSection;
-struct Token;
-
 namespace storage {
 namespace louds {
 class BitVectorBasedArrayBuilder;
@@ -52,7 +49,10 @@ class LoudsTrieBuilder;
 }  // namespace storage
 
 namespace dictionary {
+
 class SystemDictionaryCodecInterface;
+class DictionaryFileCodecInterface;
+struct Token;
 
 class SystemDictionaryBuilder {
  public:
@@ -62,22 +62,23 @@ class SystemDictionaryBuilder {
     // id of the key(=reading) string in key trie
     int id_in_key_trie;
     string key;
-    vector<TokenInfo> tokens;
+    std::vector<TokenInfo> tokens;
   };
 
   SystemDictionaryBuilder();
-  explicit SystemDictionaryBuilder(const SystemDictionaryCodecInterface *codec);
+  SystemDictionaryBuilder(const SystemDictionaryCodecInterface *codec,
+                          const DictionaryFileCodecInterface *file_codec);
   virtual ~SystemDictionaryBuilder();
-  void BuildFromTokens(const vector<Token *> &tokens);
+  void BuildFromTokens(const std::vector<Token *> &tokens);
 
   void WriteToFile(const string &output_file) const;
   void WriteToStream(const string &intermediate_output_file_base_path,
-                     ostream *output_stream) const;
+                     std::ostream *output_stream) const;
 
  private:
-  typedef deque<KeyInfo> KeyInfoList;
+  typedef std::deque<KeyInfo> KeyInfoList;
 
-  void ReadTokens(const vector<Token *>& tokens,
+  void ReadTokens(const std::vector<Token *>& tokens,
                   KeyInfoList *key_info_list) const;
 
   void BuildFrequentPos(const KeyInfoList &key_info_list);
@@ -96,15 +97,16 @@ class SystemDictionaryBuilder {
   void SetPosType(KeyInfoList *keyinfomap) const;
   void SetValueType(KeyInfoList *key_info_list) const;
 
-  scoped_ptr<mozc::storage::louds::LoudsTrieBuilder> value_trie_builder_;
-  scoped_ptr<mozc::storage::louds::LoudsTrieBuilder> key_trie_builder_;
-  scoped_ptr<mozc::storage::louds::BitVectorBasedArrayBuilder>
+  std::unique_ptr<mozc::storage::louds::LoudsTrieBuilder> value_trie_builder_;
+  std::unique_ptr<mozc::storage::louds::LoudsTrieBuilder> key_trie_builder_;
+  std::unique_ptr<mozc::storage::louds::BitVectorBasedArrayBuilder>
       token_array_builder_;
 
   // mapping from {left_id, right_id} to POS index (0--255)
-  map<uint32, int> frequent_pos_;
+  std::map<uint32, int> frequent_pos_;
 
   const SystemDictionaryCodecInterface *codec_;
+  const DictionaryFileCodecInterface *file_codec_;
 
   DISALLOW_COPY_AND_ASSIGN(SystemDictionaryBuilder);
 };

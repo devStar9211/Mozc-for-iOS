@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -97,6 +97,7 @@ public class MushroomSelectionActivity extends Activity {
 
     @Override
     public void onItemClick(AdapterView<?> adapter, View view, int position, long id) {
+      MushroomUtil.clearProxy();
       ResolveInfo resolveInfo = ResolveInfo.class.cast(adapter.getItemAtPosition(position));
       ActivityInfo activityInfo = resolveInfo.activityInfo;
       activity.startActivityForResult(

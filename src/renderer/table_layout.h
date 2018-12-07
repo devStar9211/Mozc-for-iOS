@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -175,7 +175,7 @@ class TableLayout : public TableLayoutInterface {
   int number_of_columns() const;
 
  private:
-  vector<int> column_width_list_;
+  std::vector<int> column_width_list_;
   Size padding_pixels_;
   Size total_size_;  // this value is valid only when the layout is frozen.
   Size minimum_footer_size_;

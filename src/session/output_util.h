@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,8 +27,8 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef MOZC_SESSION_OUTPUT_UTIL_
-#define MOZC_SESSION_OUTPUT_UTIL_
+#ifndef MOZC_SESSION_OUTPUT_UTIL_H_
+#define MOZC_SESSION_OUTPUT_UTIL_H_
 
 #include "base/port.h"
 
@@ -63,4 +63,4 @@ class OutputUtil {
 };
 
 }  // namespace mozc
-#endif  // MOZC_SESSION_OUTPUT_UTIL_
+#endif  // MOZC_SESSION_OUTPUT_UTIL_H_

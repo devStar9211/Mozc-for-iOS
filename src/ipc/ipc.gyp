@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -55,6 +55,11 @@
           'sources!': [
             'ipc_path_manager.cc',
             'process_watch_dog.cc',
+          ],
+        }],
+        ['target_platform=="Windows"', {
+          'dependencies': [
+            '../base/base.gyp:obfuscator_support',
           ],
         }],
       ],

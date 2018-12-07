@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,6 +29,10 @@
 
 #include "gui/config_dialog/keybinding_editor.h"
 
+#if defined(OS_ANDROID) || defined(OS_NACL)
+#error "This platform is not supported."
+#endif  // OS_ANDROID || OS_NACL
+
 #ifdef OS_WIN
 #include <windows.h>
 #include <imm.h>
@@ -39,7 +43,10 @@
 #endif
 
 #include <QtCore/QString>
-#include <QtGui/QMessageBox>
+#include <QtWidgets/QMessageBox>
+#include <QtWidgets/QMenu>
+#include <QtWidgets/QPushButton>
+#include <QtWidgets/QTableWidget>
 
 #include "base/logging.h"
 #include "base/util.h"
@@ -278,7 +285,7 @@ KeyBindingFilter::KeyState KeyBindingFilter::Encode(QString *result) const {
   }
 
   const char key = modifier_required_key_.isEmpty() ?
-      0 : modifier_required_key_[0].toAscii();
+      0 : modifier_required_key_[0].toLatin1();
 
   // Alt or Ctrl or these combinations
   if ((alt_pressed_ || ctrl_pressed_) &&
@@ -500,14 +507,15 @@ bool KeyBindingFilter::eventFilter(QObject *obj, QEvent *event) {
 KeyBindingEditor::KeyBindingEditor(QWidget *parent, QWidget *trigger_parent)
     : QDialog(parent), trigger_parent_(trigger_parent) {
   setupUi(this);
-#ifdef OS_LINUX
-  // Workaround for the issue http://code.google.com/p/mozc/issues/detail?id=9
+#if defined(OS_LINUX)
+  // Workaround for the issue https://github.com/google/mozc/issues/9
   // Seems that even after clicking the button for the keybinding dialog,
   // the edit is not raised. This might be a bug of setFocusProxy.
-  setWindowFlags(Qt::WindowSystemMenuHint | Qt::Tool |
-                 Qt::WindowStaysOnTopHint);
+  setWindowFlags(Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint |
+                 Qt::Tool | Qt::WindowStaysOnTopHint);
 #else
-  setWindowFlags(Qt::WindowSystemMenuHint | Qt::Tool);
+  setWindowFlags(Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint |
+                 Qt::Tool);
 #endif
 
   QPushButton *ok_button =
@@ -523,7 +531,7 @@ KeyBindingEditor::KeyBindingEditor(QWidget *parent, QWidget *trigger_parent)
   KeyBindingLineEdit->setAttribute(Qt::WA_InputMethodEnabled, false);
 
 #ifdef OS_WIN
-  ::ImmAssociateContext(KeyBindingLineEdit->winId(), 0);
+  ::ImmAssociateContext(reinterpret_cast<HWND>(KeyBindingLineEdit->winId()), 0);
 #endif
 
   QObject::connect(KeyBindingEditorbuttonBox,

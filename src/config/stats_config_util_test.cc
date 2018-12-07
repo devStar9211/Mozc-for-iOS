@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -40,7 +40,7 @@
 
 #ifdef OS_ANDROID
 #include "config/config_handler.h"
-#include "config/config.pb.h"
+#include "protocol/config.pb.h"
 
 DECLARE_string(test_tmpdir);
 #endif  // OS_ANDROID
@@ -75,15 +75,15 @@ bool TryGetKnownKey(HKEY key, LPCWSTR sub_key, HKEY *result_key) {
   HKEY dummy = NULL;
   HKEY &result = (result_key != NULL ? *result_key : dummy);
   if (HKEY_CURRENT_USER == key) {
-    if (wstring(kOmahaUsageKey) == sub_key) {
+    if (std::wstring(kOmahaUsageKey) == sub_key) {
       result = kHKCU_ClientState;
       return true;
     }
   } else if (HKEY_LOCAL_MACHINE == key) {
-    if (wstring(kOmahaUsageKey) == sub_key) {
+    if (std::wstring(kOmahaUsageKey) == sub_key) {
       result = kHKLM_ClientState;
       return true;
-    } else if (wstring(kOmahaUsageKeyForEveryone) == sub_key) {
+    } else if (std::wstring(kOmahaUsageKeyForEveryone) == sub_key) {
       result = kHKLM_ClientStateMedium;
       return true;
     }
@@ -116,13 +116,13 @@ class RegistryEmulator {
       usagestats_map_[key] = value;
     }
     DWORD get_entry_from_usagestats_map(HKEY key) const {
-      map<HKEY, DWORD>::const_iterator i = usagestats_map_.find(key);
+      std::map<HKEY, DWORD>::const_iterator i = usagestats_map_.find(key);
       if (i == usagestats_map_.end()) {
         return 0;
       }
       return i->second;
     }
-    map<HKEY, DWORD> & usagestats_map() const {
+    std::map<HKEY, DWORD> & usagestats_map() const {
       return usagestats_map_;
     }
     int run_level() const {
@@ -133,12 +133,12 @@ class RegistryEmulator {
     }
 
    private:
-    map<HKEY, DWORD> usagestats_map_;
+    std::map<HKEY, DWORD> usagestats_map_;
     int              run_level_;
   };
   typedef PropertySelector<Id> Property;
   RegistryEmulator() {
-    vector<WinAPITestHelper::HookRequest> requests;
+    std::vector<WinAPITestHelper::HookRequest> requests;
     requests.push_back(
         DEFINE_HOOK("advapi32.dll", RegCreateKeyExW, TestRegCreateKeyExW));
     requests.push_back(
@@ -229,7 +229,7 @@ class RegistryEmulator {
   static LSTATUS WINAPI TestRegSetValueExW(
       HKEY key, LPCWSTR value_name, DWORD reserved, DWORD type,
       const BYTE *data, DWORD num_data) {
-    if (type != REG_DWORD || wstring(kSendStatsName) != value_name) {
+    if (type != REG_DWORD || std::wstring(kSendStatsName) != value_name) {
       // Do nothing for other cases.
       return ERROR_SUCCESS;
     }
@@ -252,7 +252,7 @@ class RegistryEmulator {
   static LSTATUS WINAPI TestRegQueryValueExW(
       HKEY key, LPCWSTR value_name, LPDWORD reserved, LPDWORD type,
       LPBYTE data, LPDWORD num_data) {
-    if (wstring(kSendStatsName) != value_name) {
+    if (std::wstring(kSendStatsName) != value_name) {
       return ERROR_SUCCESS;
     }
     if (!HasUsagestatsValue(key)) {
@@ -263,7 +263,7 @@ class RegistryEmulator {
     return ERROR_SUCCESS;
   }
   static LSTATUS WINAPI TestRegDeleteValueW(HKEY key, LPCWSTR value_name) {
-    if (wstring(kSendStatsName) != value_name) {
+    if (std::wstring(kSendStatsName) != value_name) {
       return ERROR_SUCCESS;
     }
     if (!HasUsagestatsValue(key)) {
@@ -696,13 +696,11 @@ TEST(StatsConfigUtilTestAndroid, DefaultValueTest) {
 }
 #endif  // OS_ANDROID
 
-#ifdef OS_LINUX
-#ifndef OS_ANDROID
+#if defined(OS_LINUX) || defined(OS_NACL)
 TEST(StatsConfigUtilTestLinux, DefaultValueTest) {
   EXPECT_FALSE(StatsConfigUtil::IsEnabled());
 }
-#endif  // OS_ANDROID
-#endif  // OS_LINUX
+#endif  // OS_LINUX || OS_NACL
 
 #else  // !GOOGLE_JAPANESE_INPUT_BUILD
 TEST(StatsConfigUtilTestNonOfficialBuild, DefaultValueTest) {

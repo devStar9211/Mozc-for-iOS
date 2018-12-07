@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,8 +30,6 @@
 #ifndef MOZC_GUI_BASE_LOCALE_UTIL_H_
 #define MOZC_GUI_BASE_LOCALE_UTIL_H_
 
-#include <QtCore/QStringList>
-
 namespace mozc {
 namespace gui {
 
@@ -43,11 +41,6 @@ class LocaleUtil {
   // For instance, |resource_name| == "foo",
   // foo_ja.qm or foo_en.qm is loaded.
   static void InstallTranslationMessageAndFont(const char *resource_name);
-
-  // install a set of resources names.
-  // Use this function if you want to use multiple ts files.
-  static void InstallTranslationMessagesAndFont(
-      const QStringList &resource_names);
 
  private:
   LocaleUtil() {}

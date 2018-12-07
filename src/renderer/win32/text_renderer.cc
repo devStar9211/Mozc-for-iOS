@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,8 +31,7 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlcom.h>
 #include <objbase.h>
 #include <d2d1.h>
@@ -42,8 +41,7 @@
 
 #include "base/logging.h"
 #include "base/system_util.h"
-#include "base/win_util.h"
-#include "renderer/renderer_style.pb.h"
+#include "protocol/renderer_style.pb.h"
 #include "renderer/renderer_style_handler.h"
 
 namespace mozc {
@@ -63,6 +61,10 @@ using ::mozc::renderer::RendererStyle;
 using ::mozc::renderer::RendererStyleHandler;
 
 namespace {
+
+WTL::CRect ToCRect(const Rect &rect) {
+  return WTL::CRect(rect.Left(), rect.Top(), rect.Right(), rect.Bottom());
+}
 
 COLORREF GetTextColor(TextRenderer::FONT_TYPE type) {
   switch (type) {
@@ -220,7 +222,8 @@ class GdiTextRenderer : public TextRenderer {
     }
   }
 
-  virtual Size MeasureString(FONT_TYPE font_type, const wstring &str) const {
+  virtual Size MeasureString(FONT_TYPE font_type,
+                             const std::wstring &str) const {
     const auto previous_font = mem_dc_.SelectFont(render_info_[font_type].font);
     CRect rect;
     mem_dc_.DrawTextW(str.c_str(), str.length(), &rect,
@@ -230,7 +233,7 @@ class GdiTextRenderer : public TextRenderer {
   }
 
   virtual Size MeasureStringMultiLine(
-      FONT_TYPE font_type, const wstring &str, const int width) const {
+      FONT_TYPE font_type, const std::wstring &str, const int width) const {
     const auto previous_font = mem_dc_.SelectFont(render_info_[font_type].font);
     CRect rect(0, 0, width, 0);
     mem_dc_.DrawTextW(str.c_str(), str.length(), &rect,
@@ -240,17 +243,18 @@ class GdiTextRenderer : public TextRenderer {
   }
 
   virtual void RenderText(CDCHandle dc,
-                          const wstring &text,
+                          const std::wstring &text,
                           const Rect &rect,
                           FONT_TYPE font_type) const {
-    vector<TextRenderingInfo> infolist;
+    std::vector<TextRenderingInfo> infolist;
     infolist.push_back(TextRenderingInfo(text, rect));
     RenderTextList(dc, infolist, font_type);
   }
 
-  virtual void RenderTextList(CDCHandle dc,
-                              const vector<TextRenderingInfo> &display_list,
-                              FONT_TYPE font_type) const {
+  virtual void RenderTextList(
+      CDCHandle dc,
+      const std::vector<TextRenderingInfo> &display_list,
+      FONT_TYPE font_type) const {
     const auto &render_info = render_info_[font_type];
     const auto old_font = dc.SelectFont(render_info.font);
     const auto previous_color = dc.SetTextColor(render_info.color);
@@ -271,37 +275,18 @@ class GdiTextRenderer : public TextRenderer {
     DWORD style;
     CFont font;
   };
-  unique_ptr<RenderInfo[]> render_info_;
+  std::unique_ptr<RenderInfo[]> render_info_;
   mutable CDC mem_dc_;
 
   DISALLOW_COPY_AND_ASSIGN(GdiTextRenderer);
 };
 
-const D2D1_DRAW_TEXT_OPTIONS kD2D1DrawTextOptions =
-    static_cast<D2D1_DRAW_TEXT_OPTIONS>(4);
-
 class DirectWriteTextRenderer : public TextRenderer {
  public:
   static DirectWriteTextRenderer *Create() {
-    const auto d2d1 = WinUtil::LoadSystemLibrary(L"d2d1.dll");
-    const auto d2d1_create_factory  =
-        reinterpret_cast<D2D1CreateFactoryPtr>(
-            ::GetProcAddress(d2d1, "D2D1CreateFactory"));
-    if (d2d1_create_factory == nullptr) {
-      return nullptr;
-    }
-
-    const auto dwrite = WinUtil::LoadSystemLibrary(L"dwrite.dll");
-    const auto dwrite_create_factory  =
-        reinterpret_cast<DWriteCreateFactoryPtr>(
-            ::GetProcAddress(dwrite, "DWriteCreateFactory"));
-    if (dwrite_create_factory == nullptr) {
-      return nullptr;
-    }
-
     HRESULT hr = S_OK;
     CComPtr<ID2D1Factory> d2d_factory;
-    hr = d2d1_create_factory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
+    hr = ::D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
                              __uuidof(ID2D1Factory),
                              nullptr,
                              reinterpret_cast<void **>(&d2d_factory));
@@ -309,7 +294,7 @@ class DirectWriteTextRenderer : public TextRenderer {
       return nullptr;
     }
     CComPtr<IDWriteFactory> dwrite_factory;
-    hr = dwrite_create_factory(
+    hr = ::DWriteCreateFactory(
         DWRITE_FACTORY_TYPE_SHARED,
         __uuidof(IDWriteFactory),
         reinterpret_cast<IUnknown **>(&dwrite_factory));
@@ -321,43 +306,19 @@ class DirectWriteTextRenderer : public TextRenderer {
     if (FAILED(hr)) {
       return nullptr;
     }
-    const auto kernel32 = WinUtil::GetSystemModuleHandle(L"kernel32.dll");
-    const auto get_user_default_locale_name =
-        reinterpret_cast<GetUserDefaultLocaleNamePtr>(
-            ::GetProcAddress(kernel32, "GetUserDefaultLocaleName"));
-    if (get_user_default_locale_name == nullptr) {
-      return nullptr;
-    }
-    return new DirectWriteTextRenderer(
-        d2d_factory, dwrite_factory, interop, get_user_default_locale_name);
+    return new DirectWriteTextRenderer(d2d_factory, dwrite_factory, interop);
   }
   virtual ~DirectWriteTextRenderer() {
   }
 
  private:
-  typedef int (WINAPI *GetUserDefaultLocaleNamePtr)(LPWSTR locale_name,
-                                                    int locale_name_buffer_len);
-
-  typedef HRESULT (WINAPI *D2D1CreateFactoryPtr)(
-      D2D1_FACTORY_TYPE factory_type,
-      const IID &iid,
-      const D2D1_FACTORY_OPTIONS *factory_options,
-      void **factory);
-
-  typedef HRESULT (WINAPI *DWriteCreateFactoryPtr)(
-      DWRITE_FACTORY_TYPE factory_type,
-      const IID &iid,
-      IUnknown **factory);
-
   DirectWriteTextRenderer(
       ID2D1Factory *d2d2_factory,
       IDWriteFactory *dwrite_factory,
-      IDWriteGdiInterop *dwrite_interop,
-      GetUserDefaultLocaleNamePtr get_user_default_locale_name)
+      IDWriteGdiInterop *dwrite_interop)
       : d2d2_factory_(d2d2_factory),
         dwrite_factory_(dwrite_factory),
-        dwrite_interop_(dwrite_interop),
-        get_user_default_locale_name_(get_user_default_locale_name) {
+        dwrite_interop_(dwrite_interop) {
     OnThemeChanged();
   }
 
@@ -391,58 +352,83 @@ class DirectWriteTextRenderer : public TextRenderer {
   }
 
   // Retrieves the bounding box for a given string.
-  virtual Size MeasureString(FONT_TYPE font_type, const wstring &str) const {
+  virtual Size MeasureString(FONT_TYPE font_type,
+                             const std::wstring &str) const {
     return MeasureStringImpl(font_type, str, 0, false);
   }
 
-  virtual Size MeasureStringMultiLine(FONT_TYPE font_type, const wstring &str,
+  virtual Size MeasureStringMultiLine(FONT_TYPE font_type,
+                                      const std::wstring &str,
                                       const int width) const {
     return MeasureStringImpl(font_type, str, width, true);
   }
 
-  virtual void RenderText(CDCHandle dc, const wstring &text,
+  virtual void RenderText(CDCHandle dc, const std::wstring &text,
                           const Rect &rect, FONT_TYPE font_type) const {
-    vector<TextRenderingInfo> infolist;
+    std::vector<TextRenderingInfo> infolist;
     infolist.push_back(TextRenderingInfo(text, rect));
     RenderTextList(dc, infolist, font_type);
   }
 
-  virtual void RenderTextList(CDCHandle dc,
-                              const vector<TextRenderingInfo> &display_list,
-                              FONT_TYPE font_type) const {
-    CreateRenderTargetIfNecessary();
-    if (dc_render_target_ == nullptr) {
+  virtual void RenderTextList(
+      CDCHandle dc,
+      const std::vector<TextRenderingInfo> &display_list,
+      FONT_TYPE font_type) const {
+    const size_t kMaxTrial = 3;
+    size_t trial = 0;
+    while (true) {
+      CreateRenderTargetIfNecessary();
+      if (dc_render_target_ == nullptr) {
+        // This is not a recoverable error.
+        return;
+      }
+      const HRESULT hr = RenderTextListImpl(dc, display_list, font_type);
+      if (hr == D2DERR_RECREATE_TARGET && trial < kMaxTrial) {
+        // This is a recoverable error just by recreating the render target.
+        dc_render_target_.Release();
+        ++trial;
+        continue;
+      }
+      // For other error codes (including S_OK and S_FALSE), or if we exceed the
+      // maximum number of trials, we simply accept the result here.
       return;
     }
+  }
+
+  HRESULT RenderTextListImpl(CDCHandle dc,
+                             const std::vector<TextRenderingInfo> &display_list,
+                             FONT_TYPE font_type) const {
     CRect total_rect;
-    for (size_t i = 0; i < display_list.size(); ++i) {
-      const auto &item = display_list[i];
-      total_rect.right = max(total_rect.right, item.rect.Right());
-      total_rect.bottom = max(total_rect.right, item.rect.Bottom());
+    for (const auto &item : display_list) {
+      const auto &item_rect = ToCRect(item.rect);
+      total_rect.right = std::max(total_rect.right, item_rect.right);
+      total_rect.bottom = std::max(total_rect.bottom, item_rect.bottom);
     }
     HRESULT hr = S_OK;
     hr = dc_render_target_->BindDC(dc, &total_rect);
     if (FAILED(hr)) {
-      return;
+      return hr;
     }
     CComPtr<ID2D1SolidColorBrush> brush;
     hr = dc_render_target_->CreateSolidColorBrush(
         ToD2DColor(render_info_[font_type].color),
         &brush);
     if (FAILED(hr)) {
-      return;
+      return hr;
     }
     D2D1_DRAW_TEXT_OPTIONS option = D2D1_DRAW_TEXT_OPTIONS_NONE;
     if (SystemUtil::IsWindows8_1OrLater()) {
-      option |= kD2D1DrawTextOptions;
+      option |= D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT;
     }
     dc_render_target_->BeginDraw();
     dc_render_target_->SetTransform(D2D1::Matrix3x2F::Identity());
     for (size_t i = 0; i < display_list.size(); ++i) {
       const auto &item = display_list[i];
       const D2D1_RECT_F render_rect = {
-        item.rect.Left(), item.rect.Top(), item.rect.Right(),
-        item.rect.Bottom(),
+        static_cast<float>(item.rect.Left()),
+        static_cast<float>(item.rect.Top()),
+        static_cast<float>(item.rect.Right()),
+        static_cast<float>(item.rect.Bottom()),
       };
       dc_render_target_->DrawText(item.text.data(),
                                   item.text.size(),
@@ -451,13 +437,10 @@ class DirectWriteTextRenderer : public TextRenderer {
                                   brush,
                                   option);
     }
-    hr = dc_render_target_->EndDraw();
-    if (hr == D2DERR_RECREATE_TARGET) {
-      dc_render_target_.Release();
-    }
+    return dc_render_target_->EndDraw();
   }
 
-  Size MeasureStringImpl(FONT_TYPE font_type, const wstring &str,
+  Size MeasureStringImpl(FONT_TYPE font_type, const std::wstring &str,
                          const int width, bool use_width) const {
     HRESULT hr = S_OK;
     const FLOAT kLayoutLimit = 100000.0f;
@@ -512,7 +495,7 @@ class DirectWriteTextRenderer : public TextRenderer {
       return nullptr;
     }
     length += 1;  // for NUL.
-    unique_ptr<wchar_t[]> family_name(new wchar_t[length]);
+    std::unique_ptr<wchar_t[]> family_name(new wchar_t[length]);
     hr = localized_family_names->GetString(0, family_name.get(), length);
     if (FAILED(hr)) {
       return nullptr;
@@ -530,7 +513,7 @@ class DirectWriteTextRenderer : public TextRenderer {
     }
 
     wchar_t locale_name[LOCALE_NAME_MAX_LENGTH] = {};
-    if (get_user_default_locale_name_(locale_name, arraysize(locale_name))
+    if (::GetUserDefaultLocaleName(locale_name, arraysize(locale_name))
         == 0) {
       return nullptr;
     }
@@ -572,8 +555,7 @@ class DirectWriteTextRenderer : public TextRenderer {
   CComPtr<IDWriteFactory> dwrite_factory_;
   mutable CComPtr<ID2D1DCRenderTarget> dc_render_target_;
   CComPtr<IDWriteGdiInterop> dwrite_interop_;
-  vector<RenderInfo> render_info_;
-  GetUserDefaultLocaleNamePtr get_user_default_locale_name_;
+  std::vector<RenderInfo> render_info_;
 
   DISALLOW_COPY_AND_ASSIGN(DirectWriteTextRenderer);
 };
@@ -585,9 +567,16 @@ TextRenderer::~TextRenderer() {
 
 // static
 TextRenderer *TextRenderer::Create() {
-  auto *dwrite_text_renderer = DirectWriteTextRenderer::Create();
-  if (dwrite_text_renderer != nullptr) {
-    return dwrite_text_renderer;
+  // In some environments, DirectWrite cannot render characters in the
+  // candidate window or even worse may cause crash.  As a workaround,
+  // we try to use DirectWrite only on Windows 8.1 and later.
+  // TODO(yukawa): Reactivate the following code for older OSes when
+  // the root cause of b/23803925 is identified.
+  if (SystemUtil::IsWindows8_1OrLater()) {
+    auto *dwrite_text_renderer = DirectWriteTextRenderer::Create();
+    if (dwrite_text_renderer != nullptr) {
+      return dwrite_text_renderer;
+    }
   }
   return new GdiTextRenderer();
 }

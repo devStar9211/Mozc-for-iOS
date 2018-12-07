@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,17 +30,16 @@
 #ifndef MOZC_DICTIONARY_DICTIONARY_IMPL_H_
 #define MOZC_DICTIONARY_DICTIONARY_IMPL_H_
 
+#include <memory>
 #include <vector>
+
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "base/string_piece.h"
 #include "dictionary/dictionary_interface.h"
+#include "dictionary/pos_matcher.h"
+#include "dictionary/suppression_dictionary.h"
 
 namespace mozc {
-
-class POSMatcher;
-class SuppressionDictionary;
-
 namespace dictionary {
 
 class DictionaryImpl : public DictionaryInterface {
@@ -62,29 +61,29 @@ class DictionaryImpl : public DictionaryInterface {
 
   virtual ~DictionaryImpl();
 
+  virtual bool HasKey(StringPiece key) const;
   virtual bool HasValue(StringPiece value) const;
+  virtual void LookupPredictive(StringPiece key,
+                                const ConversionRequest &conversion_request,
+                                Callback *callback) const;
+  virtual void LookupPrefix(StringPiece key,
+                            const ConversionRequest &conversion_request,
+                            Callback *callback) const;
 
-  virtual void LookupPredictive(
-      StringPiece key, bool use_kana_modifier_insensitive_lookup,
-      Callback *callback) const;
-  virtual void LookupPrefix(
-      StringPiece key, bool use_kana_modifier_insensitive_lookup,
-      Callback *callback) const;
+  virtual void LookupExact(StringPiece key,
+                           const ConversionRequest &conversion_request,
+                           Callback *callback) const;
 
-  virtual void LookupExact(StringPiece key, Callback *callback) const;
-
-  virtual void LookupReverse(StringPiece str, NodeAllocatorInterface *allocator,
+  virtual void LookupReverse(StringPiece str,
+                             const ConversionRequest &conversion_request,
                              Callback *callback) const;
 
   virtual bool LookupComment(StringPiece key, StringPiece value,
+                             const ConversionRequest &conversion_request,
                              string *comment) const;
-
   virtual bool Reload();
-
-  virtual void PopulateReverseLookupCache(
-      StringPiece str, NodeAllocatorInterface *allocator) const;
-
-  virtual void ClearReverseLookupCache(NodeAllocatorInterface *allocator) const;
+  virtual void PopulateReverseLookupCache(StringPiece str) const;
+  virtual void ClearReverseLookupCache() const;
 
  private:
   enum LookupType {
@@ -98,13 +97,13 @@ class DictionaryImpl : public DictionaryInterface {
   const POSMatcher *pos_matcher_;
 
   // Main three dictionaries.
-  scoped_ptr<const DictionaryInterface> system_dictionary_;
-  scoped_ptr<const DictionaryInterface> value_dictionary_;
+  std::unique_ptr<const DictionaryInterface> system_dictionary_;
+  std::unique_ptr<const DictionaryInterface> value_dictionary_;
   DictionaryInterface *user_dictionary_;
 
   // Convenient container to handle the above three dictionaries as one
   // composite dictionary.
-  vector<const DictionaryInterface *> dics_;
+  std::vector<const DictionaryInterface *> dics_;
 
   // Suppression dictionary is used to suppress entries.
   const SuppressionDictionary *suppression_dictionary_;

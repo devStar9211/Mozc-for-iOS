@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -65,7 +65,7 @@ enum TransliterationType {
   HALF_KATAKANA,
   NUM_T13N_TYPES
 };
-typedef vector<string> Transliterations;
+typedef std::vector<string> Transliterations;
 
 static const TransliterationType TransliterationTypeArray[NUM_T13N_TYPES] = {
   HIRAGANA,

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -61,7 +61,7 @@ class CalculatorMock : public CalculatorInterface {
   virtual bool CalculateString(const string &key, string *result) const;
 
  private:
-  typedef map<string, pair<string, bool> > CalculationMap;
+  typedef std::map<string, std::pair<string, bool> > CalculationMap;
 
   CalculationMap calculation_map_;
   mutable int calculation_counter_;
@@ -69,4 +69,4 @@ class CalculatorMock : public CalculatorInterface {
 
 }  // namespace mozc
 
-#endif  // MOZC_REWRITER_CALCULATOR_MOCK_H_
+#endif  // MOZC_REWRITER_CALCULATOR_CALCULATOR_MOCK_H_

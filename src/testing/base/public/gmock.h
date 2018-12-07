@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,6 @@
 #ifndef MOZC_TESTING_BASE_PUBLIC_GMOCK_H_
 #define MOZC_TESTING_BASE_PUBLIC_GMOCK_H_
 
-#include "gmock/gmock.h"
+#include <gmock/gmock.h>
 
 #endif  // MOZC_TESTING_BASE_PUBLIC_GMOCK_H_

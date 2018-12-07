@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,26 +30,25 @@
 #ifndef MOZC_CONVERTER_NBEST_GENERATOR_H_
 #define MOZC_CONVERTER_NBEST_GENERATOR_H_
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "base/freelist.h"
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "converter/candidate_filter.h"
 #include "converter/segments.h"
+#include "dictionary/suppression_dictionary.h"
+#include "dictionary/pos_matcher.h"
 
 namespace mozc {
 
-class ConnectorInterface;
+class Connector;
 class Lattice;
-class POSMatcher;
-class SegmenterInterface;
+class Segmenter;
 class SuggestionFilter;
-class SuppressionDictionary;
 struct Node;
 
-// TODO(toshiyuki): write unittest for NBestGenerator.
 class NBestGenerator {
  public:
   enum BoundaryCheckMode {
@@ -81,12 +80,14 @@ class NBestGenerator {
   };
 
   // Try to enumurate N-best results between begin_node and end_node.
-  NBestGenerator(const SuppressionDictionary *suppression_dictionary,
-                 const SegmenterInterface *segmenter,
-                 const ConnectorInterface *connector,
-                 const POSMatcher *pos_matcher,
-                 const Lattice *lattice,
-                 const SuggestionFilter *suggestion_filter);
+  NBestGenerator(
+      const dictionary::SuppressionDictionary *suppression_dictionary,
+      const Segmenter *segmenter,
+      const Connector *connector,
+      const dictionary::POSMatcher *pos_matcher,
+      const Lattice *lattice,
+      const SuggestionFilter *suggestion_filter,
+      bool apply_suggestion_filter_for_exact_match);
   ~NBestGenerator();
 
   // Reset the iterator status.
@@ -138,7 +139,7 @@ class NBestGenerator {
     void Pop();
 
    private:
-    vector<const QueueElement*> priority_queue_;
+    std::vector<const QueueElement*> priority_queue_;
 
     DISALLOW_COPY_AND_ASSIGN(Agenda);
   };
@@ -149,7 +150,7 @@ class NBestGenerator {
 
   void MakeCandidate(Segment::Candidate *candidate,
                      int32 cost, int32 structure_cost, int32 wcost,
-                     const vector<const Node *> &nodes) const;
+                     const std::vector<const Node *> &nodes) const;
 
   // Helper functions for Next(). Checks node boundary conditions.
   BoundaryCheckResult CheckStrict(
@@ -170,10 +171,10 @@ class NBestGenerator {
                                        int32 w_gx);
 
   // References to relevant modules.
-  const SuppressionDictionary *suppression_dictionary_;
-  const SegmenterInterface *segmenter_;
-  const ConnectorInterface *connector_;
-  const POSMatcher *pos_matcher_;
+  const dictionary::SuppressionDictionary *suppression_dictionary_;
+  const Segmenter *segmenter_;
+  const Connector *connector_;
+  const dictionary::POSMatcher *pos_matcher_;
   const Lattice *lattice_;
 
   const Node *begin_node_;
@@ -181,8 +182,8 @@ class NBestGenerator {
 
   Agenda agenda_;
   FreeList<QueueElement> freelist_;
-  vector<const Node *> nodes_;
-  scoped_ptr<converter::CandidateFilter> filter_;
+  std::vector<const Node *> nodes_;
+  std::unique_ptr<converter::CandidateFilter> filter_;
   bool viterbi_result_checked_;
   BoundaryCheckMode check_mode_;
 

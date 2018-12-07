@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -36,6 +36,7 @@
   ],
   'dependencies': [
     '../../base/base.gyp:base',
+    '../../base/base.gyp:url',
     '../../client/client.gyp:client',
     '../../config/config.gyp:stats_config_util',
     '../../renderer/renderer.gyp:renderer_client',
@@ -48,6 +49,7 @@
     'VCLinkerTool': {
       'AdditionalDependencies': [
         'crypt32.lib',  # used in 'custom_action.cc'
+        'iepmapi.lib',  # used in 'custom_action.cc'
         'msi.lib',      # used in 'custom_action.cc'
       ],
     },

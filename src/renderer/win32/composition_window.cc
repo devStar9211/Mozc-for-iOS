@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,8 +32,7 @@
 #include <windows.h>
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlapp.h>
 #include <atlcrack.h>
 #include <atlgdi.h>
@@ -47,7 +46,7 @@
 #include "base/coordinates.h"
 #include "base/logging.h"
 #include "base/util.h"
-#include "renderer/renderer_command.pb.h"
+#include "protocol/renderer_command.pb.h"
 #include "renderer/win32/win32_renderer_util.h"
 
 namespace mozc {
@@ -198,7 +197,8 @@ class CompositionWindowListImpl : public CompositionWindowList {
     Destroy();
   }
 
-  virtual void UpdateLayout(const vector<CompositionWindowLayout> &layouts) {
+  virtual void UpdateLayout(
+      const std::vector<CompositionWindowLayout> &layouts) {
     // Create windows if needed.
     if (line_windows_.size() < layouts.size()) {
       const size_t num_windows = layouts.size() - line_windows_.size();
@@ -255,10 +255,10 @@ class CompositionWindowListImpl : public CompositionWindowList {
   }
 
  private:
-  vector<CompositionLineWindow *> line_windows_;
+  std::vector<CompositionLineWindow *> line_windows_;
   DISALLOW_COPY_AND_ASSIGN(CompositionWindowListImpl);
 };
-}  // anonymous namespace
+}  // namespace
 
 CompositionWindowList *CompositionWindowList::CreateInstance() {
   return new CompositionWindowListImpl();

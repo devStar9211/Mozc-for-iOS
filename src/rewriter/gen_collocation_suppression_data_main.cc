@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -44,6 +44,8 @@
 #include <vector>
 
 #include "base/file_stream.h"
+#include "base/flags.h"
+#include "base/init_mozc.h"
 #include "base/logging.h"
 #include "base/util.h"
 #include "rewriter/gen_existence_data.h"
@@ -58,7 +60,7 @@ namespace {
 
 void Convert() {
   const char kSeparator[] = "\t";
-  vector<string> entries;
+  std::vector<string> entries;
 
   if (FLAGS_suppression_data.empty()) {
     const string kDummyStr = "__NO_DATA__";
@@ -71,17 +73,18 @@ void Convert() {
       if (line.empty()) {
         continue;
       }
-      vector<string> fields;
+      std::vector<string> fields;
       Util::SplitStringUsing(line, kSeparator, &fields);
       CHECK_GE(fields.size(), 2);
       entries.push_back(fields[0] + kSeparator + fields[1]);
     }
   }
 
-  ostream *ofs = &cout;
+  std::ostream *ofs = &std::cout;
   if (!FLAGS_output.empty()) {
     if (FLAGS_binary_mode) {
-      ofs = new OutputFileStream(FLAGS_output.c_str(), ios::out | ios::binary);
+      ofs = new OutputFileStream(FLAGS_output.c_str(),
+                                 std::ios::out | std::ios::binary);
     } else {
       ofs = new OutputFileStream(FLAGS_output.c_str());
     }
@@ -94,7 +97,7 @@ void Convert() {
     OutputExistenceHeader(entries, kNameSpace, ofs, FLAGS_error_rate);
   }
 
-  if (ofs != &cout) {
+  if (ofs != &std::cout) {
     delete ofs;
   }
 }
@@ -102,7 +105,7 @@ void Convert() {
 }  // namespace mozc
 
 int main(int argc, char *argv[]) {
-  InitGoogle(argv[0], &argc, &argv, true);
+  mozc::InitMozc(argv[0], &argc, &argv, true);
 
   LOG(INFO) << FLAGS_suppression_data;
 

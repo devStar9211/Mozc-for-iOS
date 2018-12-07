@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -32,19 +32,13 @@
   'conditions': [['use_qt=="YES"', {
 
   'variables': {
-    'includes': ['qt_vars.gypi'],
     'conditions': [
-      ['qt_dir', {
+      ['target_platform=="Linux"', {
+        'uic_path': '<!(pkg-config --variable=host_bins Qt5Core)/uic',
+      }, 'qt_dir', {
         'uic_path': '<(qt_dir)/bin/uic<(EXECUTABLE_SUFFIX)',
       }, {
-        'conditions': [
-          ['pkg_config_command', {
-            'uic_path':
-              '<!(<(pkg_config_command) --variable=uic_location QtGui)',
-          }, {
-            'uic_path': '<(qt_dir_env)/bin/uic<(EXECUTABLE_SUFFIX)',
-          }],
-        ],
+        'uic_path': 'uic<(EXECUTABLE_SUFFIX)',
       }],
     ],
   },

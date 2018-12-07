@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,8 +32,7 @@
 #include <windows.h>
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <msctf.h>
 #include <objbase.h>
 
@@ -62,15 +61,6 @@ const wchar_t kTipInProcServer32[] = L"InProcServer32";
 const wchar_t kTipThreadingModel[] = L"ThreadingModel";
 const wchar_t kTipTextServiceModel[] = L"Apartment";
 
-// GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT
-const GUID KGuidTfcatTipcapImmersiveSupport = {
-  0x13a016df, 0x560b, 0x46cd, {0x94, 0x7a, 0x4c, 0x3a, 0xf1, 0xe0, 0xe3, 0x5d}
-};
-// GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT
-const GUID KGuidTfcatTipcapSystraySupport = {
-  0x25504fb4, 0x7bab, 0x4bc1, {0x9c, 0x69, 0xcf, 0x81, 0x89, 0x0f, 0x0e, 0xf5}
-};
-
 // The categories this text service is registered under.
 const GUID kCategories[] = {
   GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER,     // It supports inline input.
@@ -78,8 +68,8 @@ const GUID kCategories[] = {
   GUID_TFCAT_TIPCAP_INPUTMODECOMPARTMENT,  // It supports input mode.
   GUID_TFCAT_TIPCAP_UIELEMENTENABLED,      // It supports UI less mode.
   GUID_TFCAT_TIP_KEYBOARD,                 // It's a keyboard input method.
-  KGuidTfcatTipcapImmersiveSupport,        // It supports Metro mode.
-  KGuidTfcatTipcapSystraySupport,          // It supports Win8 systray.
+  GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT,      // It supports Metro mode.
+  GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT,        // It supports Win8 systray.
 };
 
 }  // namespace
@@ -126,7 +116,7 @@ HRESULT TsfRegistrar::RegisterCOMServer(const wchar_t *path, DWORD length) {
     return HRESULT_FROM_WIN32(result);
   }
 
-  wstring description;
+  std::wstring description;
   mozc::Util::UTF8ToWide(mozc::kProductNameInEnglish, &description);
 
   result = key.SetStringValue(nullptr, description.c_str(), REG_SZ);
@@ -203,7 +193,7 @@ HRESULT TsfRegistrar::RegisterProfiles(const wchar_t *path,
   if (result == S_OK) {
     // We use English name here as culture-invariant description.
     // Localized name is specified later by SetLanguageProfileDisplayName.
-    wstring description;
+    std::wstring description;
     mozc::Util::UTF8ToWide(mozc::kProductNameInEnglish, &description);
 
     result = profiles->AddLanguageProfile(TsfProfile::GetTextServiceGuid(),
@@ -313,18 +303,11 @@ HRESULT TsfRegistrar::GetProfileEnabled(BOOL *enabled) {
   }
   *enabled = FALSE;
 
-  // Check if input.dll is exporting EnumEnabledLayoutOrTIP API, which is the
-  // best way to enumerate enabled profiles for the current user.
-  if (InputDll::EnsureInitialized() ||
-      (InputDll::enum_enabled_layout_or_tip() == nullptr)) {
-    return E_FAIL;
-  }
-
-  const int num_profiles = InputDll::enum_enabled_layout_or_tip()(
+  const int num_profiles = ::EnumEnabledLayoutOrTip(
       nullptr, nullptr, nullptr, nullptr, 0);
   unique_ptr<LAYOUTORTIPPROFILE[]> profiles(
       new LAYOUTORTIPPROFILE[num_profiles]);
-  const int num_copied = InputDll::enum_enabled_layout_or_tip()(
+  const int num_copied = ::EnumEnabledLayoutOrTip(
       nullptr, nullptr, nullptr, profiles.get(), num_profiles);
 
   for (size_t i = 0; i < num_copied; ++i) {

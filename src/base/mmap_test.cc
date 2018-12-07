@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,15 +29,15 @@
 
 #include "base/mmap.h"
 
-#include <string.h>
+#include <cstring>
+#include <memory>
 
 #include "base/file_stream.h"
 #include "base/file_util.h"
-#include "base/scoped_ptr.h"
+#include "base/flags.h"
 #include "base/util.h"
+#include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
-
-DECLARE_string(test_tmpdir);
 
 namespace mozc {
 namespace {
@@ -48,12 +48,11 @@ TEST(MmapTest, MmapTest) {
   const size_t kFileNameSize[] = { 1, 100, 1024, 8192 };
   for (int i = 0; i < arraysize(kFileNameSize); ++i) {
     FileUtil::Unlink(filename);
-    scoped_ptr<char[]> buf(new char[kFileNameSize[i]]);
+    std::unique_ptr<char[]> buf(new char[kFileNameSize[i]]);
     memset(buf.get(), 0, kFileNameSize[i]);
 
     {
-      OutputFileStream ofs(filename.c_str(),
-                           ios::out | ios::binary);
+      OutputFileStream ofs(filename.c_str(), std::ios::out | std::ios::binary);
       EXPECT_TRUE(ofs.good());
       ofs.write(buf.get(), kFileNameSize[i]);
     }
@@ -97,5 +96,18 @@ TEST(MmapTest, MmapTest) {
     FileUtil::Unlink(filename);
   }
 }
+
+TEST(MmapTest, MaybeMLockTest) {
+  const size_t data_len = 32;
+  std::unique_ptr<void, void (*)(void*)> addr(malloc(data_len), &free);
+  if (Mmap::IsMLockSupported()) {
+    ASSERT_EQ(0, Mmap::MaybeMLock(addr.get(), data_len));
+    EXPECT_EQ(0, Mmap::MaybeMUnlock(addr.get(), data_len));
+  } else {
+    EXPECT_EQ(-1, Mmap::MaybeMLock(addr.get(), data_len));
+    EXPECT_EQ(-1, Mmap::MaybeMUnlock(addr.get(), data_len));
+  }
+}
+
 }  // namespace
 }  // namespace mozc

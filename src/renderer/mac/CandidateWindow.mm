@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,8 +34,8 @@
 
 #include "base/logging.h"
 #include "base/coordinates.h"
+#include "protocol/commands.pb.h"
 #include "renderer/mac/CandidateWindow.h"
-#include "session/commands.pb.h"
 
 using mozc::commands::Candidates;
 
@@ -44,7 +44,7 @@ namespace renderer {
 namespace mac {
 
 CandidateWindow::CandidateWindow()
-    : command_sender_(NULL) {
+    : command_sender_(nullptr) {
 }
 
 CandidateWindow::~CandidateWindow() {

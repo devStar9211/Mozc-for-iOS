@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,17 +30,19 @@
 #include "rewriter/collocation_rewriter.h"
 
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "base/flags.h"
+#include "base/hash.h"
 #include "base/logging.h"
-#include "base/singleton.h"
 #include "base/string_piece.h"
 #include "base/util.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
 #include "data_manager/data_manager_interface.h"
 #include "dictionary/pos_matcher.h"
+#include "request/conversion_request.h"
 #include "rewriter/collocation_util.h"
 #include "storage/existence_filter.h"
 
@@ -52,6 +54,7 @@ using mozc::storage::ExistenceFilter;
 
 namespace {
 const size_t kCandidateSize = 12;
+const int kMaxCostDiff = 3453;  // -500*log(1/1000)
 
 // For collocation, we use two segments.
 enum SegmentLookupType {
@@ -81,23 +84,25 @@ bool ParseCompound(const StringPiece value, const StringPiece pattern,
 
   // Find the |first_content| candidate and check if it consists of Kanji only.
   StringPiece::const_iterator pattern_begin =
-      find(value.begin(), value.end(), pattern[0]);
+      std::find(value.begin(), value.end(), pattern[0]);
   if (pattern_begin == value.end()) {
     return false;
   }
-  first_content->set(value.data(), distance(value.begin(), pattern_begin));
+  *first_content =
+      StringPiece(value.data(), std::distance(value.begin(), pattern_begin));
   if (!Util::IsScriptType(*first_content, Util::KANJI)) {
     return false;
   }
 
   // Check if the middle part matches |pattern|.
-  const StringPiece remaining_value = value.substr(first_content->size());
+  const StringPiece remaining_value =
+      ClippedSubstr(value, first_content->size());
   if (!Util::StartsWith(remaining_value, pattern)) {
     return false;
   }
 
   // Check if the last substring is eligible for |second|.
-  *second = remaining_value.substr(pattern.size());
+  *second = ClippedSubstr(remaining_value, pattern.size());
   if (second->empty() || !Util::ContainsScriptType(*second, Util::KANJI)) {
     return false;
   }
@@ -110,7 +115,7 @@ bool ParseCompound(const StringPiece value, const StringPiece pattern,
 }
 
 // Fast way of pushing back a string piece to a vector.
-inline void PushBackStringPiece(const StringPiece s, vector<string> *v) {
+inline void PushBackStringPiece(const StringPiece s, std::vector<string> *v) {
   v->push_back(string());
   v->back().assign(s.data(), s.size());
 }
@@ -118,7 +123,7 @@ inline void PushBackStringPiece(const StringPiece s, vector<string> *v) {
 // Fast way of pushing back the concatenated string of two string pieces to a
 // vector.
 inline void PushBackJoinedStringPieces(
-    const StringPiece s1, const StringPiece s2, vector<string> *v) {
+    const StringPiece s1, const StringPiece s2, std::vector<string> *v) {
   v->push_back(string());
   v->back().reserve(s1.size() + s2.size());
   v->back().assign(s1.data(), s1.size()).append(s2.data(), s2.size());
@@ -129,19 +134,18 @@ inline void PushBackJoinedStringPieces(
 // so that we can use collocation data like "厚い本"
 void ResolveCompoundSegment(const string &top_value, const string &value,
                             SegmentLookupType type,
-                            vector<string> *output) {
-  // "格助詞"
+                            std::vector<string> *output) {
   // see "http://ja.wikipedia.org/wiki/助詞"
-  static const char kPat1[] = "\xE3\x81\x8C";  // "が"
+  static const char kPat1[] = "が";
   // "の" was not good...
-  // static const char kPat2[] = "\xE3\x81\xAE";  // "の"
-  static const char kPat3[] = "\xE3\x82\x92";  // "を"
-  static const char kPat4[] = "\xE3\x81\xAB";  // "に"
-  static const char kPat5[] = "\xE3\x81\xB8";  // "へ"
-  static const char kPat6[] = "\xE3\x81\xA8";  // "と"
-  static const char kPat7[] = "\xE3\x81\x8B\xE3\x82\x89";  // "から"
-  static const char kPat8[] = "\xE3\x82\x88\xE3\x82\x8A";  // "より"
-  static const char kPat9[] = "\xE3\x81\xA7";  // "で"
+  // static const char kPat2[] = "の";
+  static const char kPat3[] = "を";
+  static const char kPat4[] = "に";
+  static const char kPat5[] = "へ";
+  static const char kPat6[] = "と";
+  static const char kPat7[] = "から";
+  static const char kPat8[] = "より";
+  static const char kPat9[] = "で";
 
   static const struct {
     const char *pat;
@@ -180,7 +184,7 @@ void ResolveCompoundSegment(const string &top_value, const string &value,
 bool IsNaturalContent(const Segment::Candidate &cand,
                       const Segment::Candidate &top_cand,
                       SegmentLookupType type,
-                      vector<string> *output) {
+                      std::vector<string> *output) {
   const string &content = cand.content_value;
   const string &value = cand.value;
   const string &top_content = top_cand.content_value;
@@ -202,7 +206,7 @@ bool IsNaturalContent(const Segment::Candidate &cand,
     output->push_back(content);
     // "舞って" workaround
     // V+"て" is often treated as one compound.
-    static const char kPat[] = "\xE3\x81\xA6";  // "て"
+    static const char kPat[] = "て";
     if (Util::EndsWith(content, StringPiece(kPat, arraysize(kPat) - 1))) {
       PushBackStringPiece(
           Util::SubStringPiece(content, 0, content_len - 1), output);
@@ -271,7 +275,7 @@ bool IsNaturalContent(const Segment::Candidate &cand,
 
   // "<XXいる|>" can be rewrited to "<YY|いる>" and vice versa
   {
-    static const char kPat[] = "\xE3\x81\x84\xE3\x82\x8B";  // "いる"
+    static const char kPat[] = "いる";  // "いる"
     const StringPiece kSuffix(kPat, arraysize(kPat) - 1);
     if (top_aux_value_len == 0 &&
         aux_value_len == 2 &&
@@ -298,7 +302,7 @@ bool IsNaturalContent(const Segment::Candidate &cand,
 
   // "<XXせる|>" can be rewrited to "<YY|せる>" and vice versa
   {
-    const char kPat[] = "\xE3\x81\x9B\xE3\x82\x8B";  // "せる"
+    const char kPat[] = "せる";
     const StringPiece kSuffix(kPat, arraysize(kPat) - 1);
     if (top_aux_value_len == 0 &&
         aux_value_len == 2 &&
@@ -327,9 +331,8 @@ bool IsNaturalContent(const Segment::Candidate &cand,
 
   // "<XX|する>" can be rewrited using "<XXす|る>" and "<XX|する>"
   // in "<XX|する>", XX must be single script type
-  // "評する"
   {
-    static const char kPat[] = "\xE3\x81\x99\xE3\x82\x8B";  // "する"
+    static const char kPat[] = "する";
     const StringPiece kSuffix(kPat, arraysize(kPat) - 1);
     if (aux_value_len == 2 &&
         Util::EndsWith(aux_value, kSuffix)) {
@@ -351,7 +354,7 @@ bool IsNaturalContent(const Segment::Candidate &cand,
   // "<XXる>" can be rewrited using "<XX|る>"
   // "まとめる", "衰える"
   {
-    static const char kPat[] = "\xE3\x82\x8B";  // "る"
+    static const char kPat[] = "る";
     const StringPiece kSuffix(kPat, arraysize(kPat) - 1);
     if (aux_value_len == 0 &&
         Util::EndsWith(value, kSuffix)) {
@@ -366,14 +369,14 @@ bool IsNaturalContent(const Segment::Candidate &cand,
 
   // "<XXす>" can be rewrited using "XXする"
   {
-    static const char kPat[] = "\xE3\x81\x99";  // "す"
+    static const char kPat[] = "す";
     const StringPiece kSuffix(kPat, arraysize(kPat) - 1);
     if (Util::EndsWith(value, kSuffix) &&
         Util::IsScriptType(
             Util::SubStringPiece(value, 0, value_len - 1),
             Util::KANJI)) {
       if (type == RIGHT) {
-        const char kRu[] = "\xE3\x82\x8B";
+        const char kRu[] = "る";
         // "YYする" in addition to "YY"
         PushBackJoinedStringPieces(
             value, StringPiece(kRu, arraysize(kRu) - 1), output);
@@ -384,7 +387,7 @@ bool IsNaturalContent(const Segment::Candidate &cand,
 
   // "<XXし|た>" can be rewrited using "<XX|した>"
   {
-    static const char kPat[] = "\xE3\x81\x97\xE3\x81\x9F";  // "した"
+    static const char kPat[] = "した";
     const StringPiece kShi(kPat, 3), kTa(kPat + 3, 3);
     if (Util::EndsWith(content, kShi) &&
         aux_value == kTa &&
@@ -448,7 +451,7 @@ bool IsNaturalContent(const Segment::Candidate &cand,
 bool VerifyNaturalContent(const Segment::Candidate &cand,
                           const Segment::Candidate &top_cand,
                           SegmentLookupType type) {
-  vector<string> nexts;
+  std::vector<string> nexts;
   return IsNaturalContent(cand, top_cand, RIGHT, &nexts);
 }
 
@@ -467,7 +470,7 @@ bool CollocationRewriter::RewriteCollocation(Segments *segments) const {
     }
   }
 
-  vector<bool> segs_changed(segments->segments_size(), false);
+  std::vector<bool> segs_changed(segments->segments_size(), false);
   bool changed = false;
 
   for (size_t i = segments->history_segments_size();
@@ -503,12 +506,12 @@ bool CollocationRewriter::RewriteCollocation(Segments *segments) const {
         // Segment is adverb if;
         //  1) lid and rid is adverb.
         //  2) or rid is adverb suffix.
-        ((pos_matcher_->IsAdverb(segments->segment(i - 1).candidate(0).lid) &&
-          pos_matcher_->IsAdverb(segments->segment(i - 1).candidate(0).rid)) ||
-         pos_matcher_->IsAdverbSegmentSuffix(
+        ((pos_matcher_.IsAdverb(segments->segment(i - 1).candidate(0).lid) &&
+          pos_matcher_.IsAdverb(segments->segment(i - 1).candidate(0).rid)) ||
+         pos_matcher_.IsAdverbSegmentSuffix(
              segments->segment(i - 1).candidate(0).rid)) &&
         (cand.content_value != cand.value ||
-         cand.value != "\xe3\x83\xbb")) {  // "・" workaround
+         cand.value != "・")) {  // "・" workaround
       if (!segs_changed[i - 2] &&
           !segs_changed[i] &&
           RewriteUsingNextSegment(segments->mutable_segment(i),
@@ -545,12 +548,12 @@ class CollocationRewriter::CollocationFilter {
     string key;
     key.reserve(left.size() + right.size());
     key.assign(left).append(right);
-    const uint64 id = Util::Fingerprint(key);
+    const uint64 id = Hash::Fingerprint(key);
     return filter_->Exists(id);
   }
 
  private:
-  scoped_ptr<ExistenceFilter> filter_;
+  std::unique_ptr<ExistenceFilter> filter_;
 
   DISALLOW_COPY_AND_ASSIGN(CollocationFilter);
 };
@@ -569,21 +572,21 @@ class CollocationRewriter::SuppressionFilter {
     string key;
     key.reserve(cand.content_value.size() + 1 + cand.content_key.size());
     key.assign(cand.content_value).append("\t").append(cand.content_key);
-    const uint64 id = Util::Fingerprint(key);
+    const uint64 id = Hash::Fingerprint(key);
     return filter_->Exists(id);
   }
 
  private:
-  scoped_ptr<ExistenceFilter> filter_;
+  std::unique_ptr<ExistenceFilter> filter_;
 
   DISALLOW_COPY_AND_ASSIGN(SuppressionFilter);
 };
 
 CollocationRewriter::CollocationRewriter(
     const DataManagerInterface *data_manager)
-    : pos_matcher_(data_manager->GetPOSMatcher()),
-      first_name_id_(pos_matcher_->GetFirstNameId()),
-      last_name_id_(pos_matcher_->GetLastNameId()) {
+    : pos_matcher_(data_manager->GetPOSMatcherData()),
+      first_name_id_(pos_matcher_.GetFirstNameId()),
+      last_name_id_(pos_matcher_.GetLastNameId()) {
   const char *data = NULL;
   size_t size = 0;
 
@@ -598,6 +601,9 @@ CollocationRewriter::~CollocationRewriter() {}
 
 bool CollocationRewriter::Rewrite(const ConversionRequest &request,
                                   Segments *segments) const {
+  if (!FLAGS_use_collocation) {
+    return false;
+  }
   return RewriteCollocation(segments);
 }
 
@@ -613,12 +619,15 @@ bool CollocationRewriter::RewriteFromPrevSegment(
   string prev;
   CollocationUtil::GetNormalizedScript(prev_cand.value, true, &prev);
 
-  const size_t i_max = min(seg->candidates_size(), kCandidateSize);
+  const size_t i_max = std::min(seg->candidates_size(), kCandidateSize);
 
   // Reuse |curs| and |cur| in the loop as this method is performance critical.
-  vector<string> curs;
+  std::vector<string> curs;
   string cur;
   for (size_t i = 0; i < i_max; ++i) {
+    if (seg->candidate(i).cost > seg->candidate(0).cost + kMaxCostDiff) {
+      continue;
+    }
     if (IsName(seg->candidate(i))) {
       continue;
     }
@@ -649,15 +658,15 @@ bool CollocationRewriter::RewriteFromPrevSegment(
 
 bool CollocationRewriter::RewriteUsingNextSegment(Segment *next_seg,
                                                   Segment *seg) const {
-  const size_t i_max = min(seg->candidates_size(), kCandidateSize);
-  const size_t j_max = min(next_seg->candidates_size(), kCandidateSize);
+  const size_t i_max = std::min(seg->candidates_size(), kCandidateSize);
+  const size_t j_max = std::min(next_seg->candidates_size(), kCandidateSize);
 
   // Cache the results for the next segment
-  vector<int> next_seg_ok(j_max);  // Avoiding vector<bool>
-  vector<vector<string> > normalized_string(j_max);
+  std::vector<int> next_seg_ok(j_max);  // Avoiding std::vector<bool>
+  std::vector<std::vector<string> > normalized_string(j_max);
 
   // Reuse |nexts| in the loop as this method is performance critical.
-  vector<string> nexts;
+  std::vector<string> nexts;
   for (size_t j = 0; j < j_max; ++j) {
     next_seg_ok[j] = 0;
 
@@ -674,7 +683,7 @@ bool CollocationRewriter::RewriteUsingNextSegment(Segment *next_seg,
     }
 
     next_seg_ok[j] = 1;
-    for (vector<string>::const_iterator it = nexts.begin();
+    for (std::vector<string>::const_iterator it = nexts.begin();
          it != nexts.end(); ++it) {
       normalized_string[j].push_back(string());
       CollocationUtil::GetNormalizedScript(
@@ -683,9 +692,12 @@ bool CollocationRewriter::RewriteUsingNextSegment(Segment *next_seg,
   }
 
   // Reuse |curs| and |cur| in the loop as this method is performance critical.
-  vector<string> curs;
+  std::vector<string> curs;
   string cur;
   for (size_t i = 0; i < i_max; ++i) {
+    if (seg->candidate(i).cost > seg->candidate(0).cost + kMaxCostDiff) {
+      continue;
+    }
     if (IsName(seg->candidate(i))) {
       continue;
     }
@@ -701,6 +713,10 @@ bool CollocationRewriter::RewriteUsingNextSegment(Segment *next_seg,
       cur.clear();
       CollocationUtil::GetNormalizedScript(curs[k], true, &cur);
       for (size_t j = 0; j < j_max; ++j) {
+        if (next_seg->candidate(j).cost >
+            next_seg->candidate(0).cost + kMaxCostDiff) {
+          continue;
+        }
         if (!next_seg_ok[j]) {
           continue;
         }

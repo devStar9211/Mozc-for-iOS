@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,14 +35,12 @@
 
 #include "base/port.h"
 #include "base/string_piece.h"
-#include "base/trie.h"
+#include "dictionary/dictionary_token.h"
+#include "request/conversion_request.h"
 
 namespace mozc {
+namespace dictionary {
 
-class NodeAllocatorInterface;  // converter/node.h
-struct Token;                  // dictionary/dictionary_token.h
-
-// TODO(noriyukit): Move this interface into dictionary namespace.
 class DictionaryInterface {
  public:
   // Callback interface for dictionary traversal (currently implemented only for
@@ -112,37 +110,42 @@ class DictionaryInterface {
 
   virtual ~DictionaryInterface() {}
 
+  // Returns true if the dictionary has an entry for the given key.
+  virtual bool HasKey(StringPiece key) const = 0;
+
   // Returns true if the dictionary has an entry for the given value.
   virtual bool HasValue(StringPiece value) const = 0;
 
-  virtual void LookupPredictive(
-      StringPiece key, bool use_kana_modifier_insensitive_lookup,
-      Callback *callback) const = 0;
+  virtual void LookupPredictive(StringPiece key,
+                                const ConversionRequest &conversion_request,
+                                Callback *callback) const = 0;
 
-  virtual void LookupPrefix(
-      StringPiece key, bool use_kana_modifier_insensitive_lookup,
-      Callback *callback) const = 0;
+  virtual void LookupPrefix(StringPiece key,
+                            const ConversionRequest &conversion_request,
+                            Callback *callback) const = 0;
 
-  virtual void LookupExact(StringPiece key, Callback *callback) const = 0;
+  virtual void LookupExact(StringPiece key,
+                           const ConversionRequest &conversion_request,
+                           Callback *callback) const = 0;
 
   // For reverse lookup, the reading is stored in Token::value and the word
   // is stored in Token::key.
-  // TODO(hsumita): Remove a dependency on NodeAllocatorInterface.
-  virtual void LookupReverse(StringPiece str, NodeAllocatorInterface *allocator,
+  virtual void LookupReverse(StringPiece str,
+                             const ConversionRequest &conversion_request,
                              Callback *callback) const = 0;
 
   // Looks up a user comment from a pair of key and value.  When (key, value)
   // doesn't exist in this dictionary or user comment is empty, bool is
   // returned and string is kept as-is.
   virtual bool LookupComment(StringPiece key, StringPiece value,
+                             const ConversionRequest &conversion_request,
                              string *comment) const { return false; }
 
   // Populates cache for LookupReverse().
-  // TODO(hsumita): Remove a dependency on NodeAllocatorInterface.
-  virtual void PopulateReverseLookupCache(
-      StringPiece str, NodeAllocatorInterface *allocator) const {}
-  virtual void ClearReverseLookupCache(
-      NodeAllocatorInterface *allocator) const {}
+  // TODO(noriyukit): These cache initialize/finalize mechanism shouldn't be a
+  // part of the interface.
+  virtual void PopulateReverseLookupCache(StringPiece str) const {}
+  virtual void ClearReverseLookupCache() const {}
 
   // Sync mutable dictionary data into local disk.
   virtual bool Sync() { return true; }
@@ -155,6 +158,7 @@ class DictionaryInterface {
   DictionaryInterface() {}
 };
 
+}  // namespace dictionary
 }  // namespace mozc
 
 #endif  // MOZC_DICTIONARY_DICTIONARY_INTERFACE_H_

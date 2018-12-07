@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -32,6 +32,7 @@
     'relative_dir': 'mac',
     'gen_out_dir': '<(SHARED_INTERMEDIATE_DIR)/<(relative_dir)',
     'build_type': 'stable',
+    'mac_auto_updater_dir%': '',
   },
   # Add a dummy target because at least one target is needed in a gyp file.
   'targets': [
@@ -42,11 +43,11 @@
         '../base/base.gyp:base',
         '../client/client.gyp:client',
         '../client/client.gyp:client_mock',
-        '../config/config.gyp:config_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
+        '../protocol/protocol.gyp:renderer_proto',
         '../renderer/renderer.gyp:renderer_client',
-        '../renderer/renderer.gyp:renderer_protocol',
         '../session/session_base.gyp:ime_switch_util',
-        '../session/session_base.gyp:session_protocol',
         '../testing/testing.gyp:gtest_main',
         'gen_key_mappings',
       ],
@@ -235,6 +236,7 @@
           'product_name': 'Uninstall<(branding)',
           'dependencies': [
             '../base/base.gyp:base',
+            '../base/base.gyp:url',
             'gen_client_info_plist',
           ],
           'mac_bundle_resources': [
@@ -269,7 +271,6 @@
             '../base/base.gyp:crash_report_handler',
             '../client/client.gyp:client',
             '../config/config.gyp:stats_config_util',
-            '../gui/gui.gyp:mozc_tool',
             '../gui/gui.gyp:about_dialog_mac',
             '../gui/gui.gyp:character_palette_mac',
             '../gui/gui.gyp:config_dialog_mac',
@@ -294,7 +295,6 @@
             '../data/images/mac/hiragana.tiff',
             '../data/images/mac/product_icon.icns',
             '../data/installer/credits_en.html',
-            '../data/installer/credits_ja.html',
             'English.lproj/Config.xib',
             '<(gen_out_dir)/English.lproj/InfoPlist.strings',
             'Japanese.lproj/Config.xib',
@@ -304,13 +304,14 @@
             'INFOPLIST_FILE': '<(gen_out_dir)/Info.plist',
             'GCC_ENABLE_CPP_EXCEPTIONS': 'YES',
           },
+          # Ninja does not consider symlinks on mac_bundle_resources.
+          # So 'copies' should be used to copy app directories.
           'copies': [
             {
               'files': [
                 '<(PRODUCT_DIR)/<(branding)Converter.app',
                 '<(PRODUCT_DIR)/<(branding)Prelauncher.app',
                 '<(PRODUCT_DIR)/<(branding)Renderer.app',
-                '<(PRODUCT_DIR)/<(branding)Tool.app',
                 '<(PRODUCT_DIR)/AboutDialog.app',
                 '<(PRODUCT_DIR)/CharacterPalette.app',
                 '<(PRODUCT_DIR)/ConfigDialog.app',
@@ -534,8 +535,8 @@
                 '--input', 'installer/<(branding)_template.pkgproj',
                 '--version_file', '../mozc_version.txt',
                 '--gen_out_dir', '<(gen_out_dir)',
-                '--build_dir', '$(BUILT_PRODUCTS_DIR)',
-                '--keystone_dir', '<(mac_dir)/Releases/Keystone',
+                '--build_dir', '<(PRODUCT_DIR)',
+                '--auto_updater_dir', '<(mac_auto_updater_dir)',
                 '--build_type', '<(build_type)',
               ],
             },
@@ -549,13 +550,13 @@
             {
               'action_name': 'generate',
               'inputs': [
-                '$(BUILT_PRODUCTS_DIR)/ActivatePane.bundle',
-                '$(BUILT_PRODUCTS_DIR)/<(branding).app',
-                '$(BUILT_PRODUCTS_DIR)/Uninstall<(branding).app',
+                '<(PRODUCT_DIR)/ActivatePane.bundle',
+                '<(PRODUCT_DIR)/<(branding).app',
+                '<(PRODUCT_DIR)/Uninstall<(branding).app',
                 '<(gen_out_dir)/<(branding).pkgproj',
               ],
               'outputs': [
-                '$(BUILT_PRODUCTS_DIR)/<(branding).pkg',
+                '<(PRODUCT_DIR)/<(branding).pkg',
               ],
               'action': [
                 'python', '../build_tools/build_and_sign_pkg_mac.py',
@@ -564,10 +565,10 @@
               'conditions': [
                 ['branding=="GoogleJapaneseInput"', {
                   'inputs': [
-                    '$(BUILT_PRODUCTS_DIR)/DevConfirmPane.bundle',
+                    '<(PRODUCT_DIR)/DevConfirmPane.bundle',
                   ],
                   'action': [
-                    '--signpkg', '$(BUILT_PRODUCTS_DIR)/<(branding).pkg',
+                    '--signpkg', '<(PRODUCT_DIR)/<(branding).pkg',
                   ],
                 }],
               ],

@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -43,31 +43,9 @@
         'request_test_util.cc',
       ],
       'dependencies': [
-        '../config/config.gyp:config_protocol',
-        'session_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {
-      'target_name': 'key_parser',
-      'type': 'static_library',
-      'sources': [
-        'key_parser.cc',
-      ],
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../config/config.gyp:config_protocol',
-        'session_protocol',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'keymap',
@@ -77,17 +55,12 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../composer/composer.gyp:key_event_util',
+        '../composer/composer.gyp:key_parser',
         '../config/config.gyp:config_handler',
-        '../config/config.gyp:config_protocol',
-        'key_event_util',
-        'key_parser',
-        'session_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'keymap_factory',
@@ -97,15 +70,10 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
-        '../config/config.gyp:config_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
         'keymap',
-        'session_protocol',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'ime_switch_util',
@@ -116,31 +84,10 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../config/config.gyp:config_handler',
-        '../config/config.gyp:config_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
         'key_info_util',
-        'session_protocol',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {
-      'target_name': 'key_event_util',
-      'type': 'static_library',
-      'sources': [
-        'key_event_util.cc',
-      ],
-      'dependencies': [
-        '../base/base.gyp:base',
-        'session_protocol',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'key_info_util',
@@ -151,18 +98,13 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:config_file_stream',
+        '../composer/composer.gyp:key_event_util',
+        '../composer/composer.gyp:key_parser',
         '../config/config.gyp:config_handler',
-        '../config/config.gyp:config_protocol',
-        'key_event_util',
-        'key_parser',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
         'keymap',
-        'session_protocol',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'output_util',
@@ -172,13 +114,8 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
-        'session_protocol',
+        '../protocol/protocol.gyp:commands_proto',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'session_usage_stats_util',
@@ -189,14 +126,9 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../protobuf/protobuf.gyp:protobuf',
+        '../protocol/protocol.gyp:commands_proto',
         '../usage_stats/usage_stats_base.gyp:usage_stats',
-        'session_protocol',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'generic_storage_manager',
@@ -207,60 +139,9 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:config_file_stream',
+        '../protocol/protocol.gyp:commands_proto',
         '../storage/storage.gyp:storage',
-        'session_protocol',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {
-      'target_name': 'genproto_session',
-      'type': 'none',
-      'toolsets': ['host'],
-      'sources': [
-        'candidates.proto',
-        'commands.proto',
-        'state.proto',
-      ],
-      'includes': [
-        '../protobuf/genproto.gypi',
-      ],
-      'dependencies': [
-        '../config/config.gyp:genproto_config',
-        '../dictionary/dictionary_base.gyp:genproto_dictionary',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-    },
-    {
-      'target_name': 'session_protocol',
-      'type': 'static_library',
-      'hard_dependency': 1,
-      'sources': [
-        '<(proto_out_dir)/<(relative_dir)/candidates.pb.cc',
-        '<(proto_out_dir)/<(relative_dir)/commands.pb.cc',
-        '<(proto_out_dir)/<(relative_dir)/state.pb.cc',
-      ],
-      'dependencies': [
-        '../config/config.gyp:config_protocol',
-        '../protobuf/protobuf.gyp:protobuf',
-        '../dictionary/dictionary_base.gyp:dictionary_protocol',
-        'genproto_session#host',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
-      'export_dependent_settings': [
-        'genproto_session#host',
-      ],
+      ]
     },
   ],
 }

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -66,10 +66,10 @@ def GenerateBuildProfile():
   Returns:
     Build profile string.
   """
-  build_details = ''
+  build_details = []
 
 
-  return build_details
+  return '; '.join(build_details)
 
 
 def main():

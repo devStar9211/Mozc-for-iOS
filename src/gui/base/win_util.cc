@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,14 +30,8 @@
 #include "gui/base/win_util.h"
 
 #ifdef OS_WIN
-#define NTDDI_VERSION NTDDI_WIN7  // for JumpList.
-#include <dwmapi.h>
-#include <uxtheme.h>
-#include <vssym32.h>
 #include <windows.h>
-#include <winuser.h>
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlcom.h>
 #include <atlstr.h>
 #include <atlwin.h>
@@ -50,157 +44,18 @@
 #include <shobjidl.h>
 #endif  // OS_WIN
 
-#include <QtCore/QFile>
-#include <QtCore/QLibrary>
-#include <QtCore/QList>
-#include <QtCore/QPointer>
-#include <QtGui/QApplication>
-#include <QtGui/QDesktopWidget>
-#include <QtGui/QPainter>
-#include <QtGui/QPaintEngine>
-#include <QtGui/QWidget>
-
 #ifdef OS_WIN
 #include "base/const.h"
 #endif  // OS_WIN
 #include "base/logging.h"
-#include "base/singleton.h"
 #include "base/system_util.h"
 #include "base/util.h"
-#include "base/win_util.h"
-
-#ifdef OS_WIN
-#ifndef WM_DWMCOMPOSITIONCHANGED
-#define WM_DWMCOMPOSITIONCHANGED        0x031E
-#endif  // WM_DWMCOMPOSITIONCHANGED
-
-// DWM API
-typedef HRESULT (WINAPI *FPDwmIsCompositionEnabled)
-    (BOOL *pfEnabled);
-typedef HRESULT (WINAPI *FPDwmExtendFrameIntoClientArea)
-    (HWND hWnd,
-     const MARGINS *pMarInset);
-typedef HRESULT (WINAPI *FPDwmEnableBlurBehindWindow)
-    (HWND hWnd,
-     const DWM_BLURBEHIND *pBlurBehind);
-
-// Theme API
-typedef HANDLE (WINAPI *FPOpenThemeData)
-    (HWND hwnd, LPCWSTR pszClassList);
-typedef HRESULT (WINAPI *FPCloseThemeData)
-    (HANDLE hTheme);
-typedef HRESULT (WINAPI *FPDrawThemeTextEx)
-    (HANDLE hTheme, HDC hdc, int iPartId, int iStateId,
-     LPCWSTR pszText, int cchText, DWORD dwTextFlags,
-     LPRECT pRect, const DTTOPTS *pOptions);
-typedef HRESULT (WINAPI *FPGetThemeSysFont)
-    (HANDLE hTheme, int iFontId, LOGFONTW *plf);
-
-#endif  // OS_WIN
 
 namespace mozc {
 namespace gui {
 
 #ifdef OS_WIN
 namespace {
-
-FPDwmIsCompositionEnabled      gDwmIsCompositionEnabled      = NULL;
-FPDwmEnableBlurBehindWindow    gDwmEnableBlurBehindWindow    = NULL;
-FPDwmExtendFrameIntoClientArea gDwmExtendFrameIntoClientArea = NULL;
-FPOpenThemeData                gOpenThemeData                = NULL;
-FPCloseThemeData               gCloseThemeData               = NULL;
-FPDrawThemeTextEx              gDrawThemeTextEx              = NULL;
-FPGetThemeSysFont              gGetThemeSysFont              = NULL;
-
-class WindowNotifier : public QWidget {
- public:
-  WindowNotifier() {
-    winId();   // to make a window handle
-  }
-
-  virtual ~WindowNotifier() {}
-
-  void AddWidget(QWidget *widget) {
-    widgets_.append(widget);
-  }
-
-  void RemoveWidget(QWidget *widget) {
-    widgets_.removeAll(widget);
-  }
-
-  bool winEvent(MSG *message, long *result);
-
-  void InstallStyleSheets(const QString &dwm_on_style,
-                          const QString &dwm_off_style) {
-    dwm_on_style_ = dwm_on_style;
-    dwm_off_style_ = dwm_off_style;
-  }
-
-  static WindowNotifier *Get() {
-    return Singleton<WindowNotifier>::get();
-  }
-
- private:
-  QWidgetList widgets_;
-  QString dwm_on_style_;
-  QString dwm_off_style_;
-};
-
-class DwmResolver {
- public:
-  DwmResolver() : dwmlib_(NULL), themelib_(NULL) {
-    dwmlib_ = mozc::WinUtil::LoadSystemLibrary(L"dwmapi.dll");
-    themelib_ = mozc::WinUtil::LoadSystemLibrary(L"uxtheme.dll");
-
-    if (NULL != dwmlib_) {
-      gDwmIsCompositionEnabled =
-          reinterpret_cast<FPDwmIsCompositionEnabled>
-          (::GetProcAddress(dwmlib_,
-                            "DwmIsCompositionEnabled"));
-      gDwmExtendFrameIntoClientArea =
-          reinterpret_cast<FPDwmExtendFrameIntoClientArea>
-          (::GetProcAddress(dwmlib_,
-                            "DwmExtendFrameIntoClientArea"));
-      gDwmEnableBlurBehindWindow =
-          reinterpret_cast<FPDwmEnableBlurBehindWindow>
-          (::GetProcAddress(dwmlib_,
-                            "DwmEnableBlurBehindWindow"));
-    }
-
-    if (NULL != themelib_) {
-      gOpenThemeData =
-          reinterpret_cast<FPOpenThemeData>(
-              ::GetProcAddress(themelib_, "OpenThemeData"));
-      gCloseThemeData =
-          reinterpret_cast<FPCloseThemeData>(
-              ::GetProcAddress(themelib_, "CloseThemeData"));
-      gDrawThemeTextEx =
-          reinterpret_cast<FPDrawThemeTextEx>(
-              ::GetProcAddress(themelib_, "DrawThemeTextEx"));
-      gGetThemeSysFont =
-          reinterpret_cast<FPGetThemeSysFont>(
-              ::GetProcAddress(themelib_, "GetThemeSysFont"));
-    }
-  }
-
-  bool IsAvailable() const {
-    return (gDwmIsCompositionEnabled != NULL &&
-            gDwmExtendFrameIntoClientArea != NULL &&
-            gDwmEnableBlurBehindWindow != NULL &&
-            gOpenThemeData != NULL &&
-            gCloseThemeData != NULL &&
-            gDrawThemeTextEx != NULL &&
-            gGetThemeSysFont != NULL);
-  }
-
-  static bool ResolveLibs() {
-    return Singleton<DwmResolver>::get()->IsAvailable();
-  }
-
- private:
-  HMODULE dwmlib_;
-  HMODULE themelib_;
-};
 
 CComPtr<IShellLink> InitializeShellLinkItem(const char *argument,
                                             const char *item_title) {
@@ -213,7 +68,7 @@ CComPtr<IShellLink> InitializeShellLinkItem(const char *argument,
   }
 
   {
-    wstring mozc_tool_path_wide;
+    std::wstring mozc_tool_path_wide;
     Util::UTF8ToWide(SystemUtil::GetToolPath(), &mozc_tool_path_wide);
     hr = link->SetPath(mozc_tool_path_wide.c_str());
     if (FAILED(hr)) {
@@ -223,7 +78,7 @@ CComPtr<IShellLink> InitializeShellLinkItem(const char *argument,
   }
 
   {
-    wstring argument_wide;
+    std::wstring argument_wide;
     Util::UTF8ToWide(argument, &argument_wide);
     hr = link->SetArguments(argument_wide.c_str());
     if (FAILED(hr)) {
@@ -239,7 +94,7 @@ CComPtr<IShellLink> InitializeShellLinkItem(const char *argument,
   }
 
   {
-    wstring item_title_wide;
+    std::wstring item_title_wide;
     Util::UTF8ToWide(item_title, &item_title_wide);
     PROPVARIANT prop_variant;
     hr = ::InitPropVariantFromString(item_title_wide.c_str(), &prop_variant);
@@ -284,28 +139,11 @@ bool AddTasksToList(CComPtr<ICustomDestinationList> destination_list) {
 
   // TODO(yukawa): Investigate better way to localize strings.
   const LinkInfo kLinks[] = {
-    // "手書き文字入力"
-    {"--mode=hand_writing",
-     "Hand Wrinting",
-     "\xE6\x89\x8B\xE6\x9B\xB8\xE3\x81\x8D\xE6\x96\x87\xE5\xAD\x97"
-     "\xE5\x85\xA5\xE5\x8A\x9B"},
-    // "文字パレット"
-    {"--mode=character_palette",
-     "Character Palette",
-     "\xE6\x96\x87\xE5\xAD\x97\xE3\x83\x91\xE3\x83\xAC\xE3\x83\x83"
-     "\xE3\x83\x88"},
-    // "辞書ツール"
-    {"--mode=dictionary_tool",
-     "Dictionary Tool",
-     "\xE8\xBE\x9E\xE6\x9B\xB8\xE3\x83\x84\xE3\x83\xBC\xE3\x83\xAB"},
-    // "単語登録"
-    {"--mode=word_register_dialog",
-     "Add Word",
-     "\xE5\x8D\x98\xE8\xAA\x9E\xE7\x99\xBB\xE9\x8C\xB2"},
-    // "プロパティ"
-    {"--mode=config_dialog",
-     "Properties",
-     "\xE3\x83\x97\xE3\x83\xAD\xE3\x83\x91\xE3\x83\x86\xE3\x82\xA3"},
+      {"--mode=hand_writing", "Hand Wrinting", "手書き文字入力"},
+      {"--mode=character_palette", "Character Palette", "文字パレット"},
+      {"--mode=dictionary_tool", "Dictionary Tool", "辞書ツール"},
+      {"--mode=word_register_dialog", "Add Word", "単語登録"},
+      {"--mode=config_dialog", "Properties", "プロパティ"},
   };
 
   const LANGID kJapaneseLangId = MAKELANGID(LANG_JAPANESE,
@@ -374,210 +212,6 @@ void InitializeJumpList() {
 }  // namespace
 #endif  // OS_WIN
 
-bool WinUtil::IsCompositionEnabled() {
-#ifdef OS_WIN
-  if (!DwmResolver::ResolveLibs()) {
-    return false;
-  }
-
-  HRESULT hr = S_OK;
-  BOOL is_enabled = false;
-  hr = gDwmIsCompositionEnabled(&is_enabled);
-  if (SUCCEEDED(hr)) {
-    return is_enabled;
-  } else {
-    LOG(ERROR) << "DwmIsCompositionEnabled() failed: "
-               << static_cast<long>(hr);
-  }
-#endif  // OS_WIN
-
-  return false;
-}
-
-bool WinUtil::ExtendFrameIntoClientArea(QWidget *widget,
-                                        int left, int top,
-                                        int right, int bottom) {
-  DCHECK(widget);
-
-#ifdef OS_WIN
-  if (!DwmResolver::ResolveLibs()) {
-    return false;
-  }
-
-  HRESULT hr = S_OK;
-  MARGINS margin = { left, top, right, bottom };
-  hr = gDwmExtendFrameIntoClientArea(widget->winId(), &margin);
-  if (SUCCEEDED(hr)) {
-    WindowNotifier::Get()->AddWidget(widget);
-    widget->setAttribute(Qt::WA_TranslucentBackground, true);
-    return true;
-  } else {
-    LOG(ERROR) << "DwmExtendFrameIntoClientArea() failed: "
-               << static_cast<long>(hr);
-  }
-#endif  // OS_WIN
-
-  return false;
-}
-
-#ifdef OS_WIN
-bool WindowNotifier::winEvent(MSG *message, long *result) {
-  if (message != NULL && message->message == WM_DWMCOMPOSITIONCHANGED) {
-    const bool composition_enabled = WinUtil::IsCompositionEnabled();
-
-    // switch styles if need be
-    if (!dwm_on_style_.isEmpty() && !dwm_off_style_.isEmpty()) {
-      if (composition_enabled) {
-        qApp->setStyleSheet(dwm_on_style_);
-      } else {
-        qApp->setStyleSheet(dwm_off_style_);
-      }
-    }
-
-    foreach(QWidget *widget, widgets_) {
-      if (widget != NULL) {
-        widget->setAttribute(Qt::WA_NoSystemBackground,
-                             composition_enabled);
-        // TODO(taku): left/top/right/bottom are not updated.
-        // need to be fixed.
-        if (composition_enabled) {
-          MARGINS margin = { -1, 0, 0, 0 };
-          gDwmExtendFrameIntoClientArea(widget->winId(), &margin);
-          widget->setAttribute(Qt::WA_TranslucentBackground, true);
-        }
-        widget->update();
-      }
-    }
-  }
-
-  // call default
-  return QWidget::winEvent(message, result);
-}
-#endif  // OS_WIN
-
-QRect WinUtil::GetTextRect(QWidget *widget, const QString &text) {
-  DCHECK(widget);
-  const QFont font = QApplication::font(widget);
-  const QFontMetrics fontMetrics(font);
-  return fontMetrics.boundingRect(text);
-}
-
-void WinUtil::InstallStyleSheets(const QString &dwm_on_style,
-                                 const QString &dwm_off_style) {
-#ifdef OS_WIN
-  WindowNotifier::Get()->InstallStyleSheets(dwm_on_style,
-                                            dwm_off_style);
-#endif  // OS_WIN
-}
-
-void WinUtil::InstallStyleSheetsFiles(const QString &dwm_on_style_file,
-                                      const QString &dwm_off_style_file) {
-#ifdef OS_WIN
-  QFile file1(dwm_on_style_file);
-  file1.open(QFile::ReadOnly);
-  QFile file2(dwm_off_style_file);
-  file2.open(QFile::ReadOnly);
-  WinUtil::InstallStyleSheets(QLatin1String(file1.readAll()),
-                              QLatin1String(file2.readAll()));
-#endif  // OS_WIN
-}
-
-void WinUtil::DrawThemeText(const QString &text,
-                            const QRect &rect,
-                            int glow_size,
-                            QPainter *painter) {
-  DCHECK(painter);
-
-#ifdef OS_WIN
-  if (!DwmResolver::ResolveLibs()) {
-    return;
-  }
-
-  HDC hdc = painter->paintEngine()->getDC();
-  if (NULL == hdc) {
-    LOG(ERROR) << "hdc is NULL";
-    return;
-  }
-
-  HANDLE theme = gOpenThemeData(qApp->desktop()->winId(), L"WINDOW");
-  if (theme == NULL) {
-    LOG(ERROR) << "::OpenThemaData() failed";
-    return;
-  }
-
-  // Set up a memory DC and bitmap that we'll draw into
-  HDC dc_mem = ::CreateCompatibleDC(hdc);
-  if (dc_mem == NULL) {
-    gCloseThemeData(theme);
-    LOG(ERROR) << "::CreateCompatibleDC() failed: " << ::GetLastError();
-    return;
-  }
-
-  BITMAPINFO dib = { 0 };
-  dib.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-  dib.bmiHeader.biWidth = rect.width();
-  dib.bmiHeader.biHeight = -rect.height();
-  dib.bmiHeader.biPlanes = 1;
-  dib.bmiHeader.biBitCount = 32;
-  dib.bmiHeader.biCompression = BI_RGB;
-
-  HBITMAP bmp = ::CreateDIBSection(hdc, &dib,
-                                   DIB_RGB_COLORS, NULL, NULL, 0);
-  if (NULL == bmp) {
-    ::DeleteDC(dc_mem);
-    gCloseThemeData(theme);
-    LOG(ERROR) << "::CreateDIBSection() failed: " << ::GetLastError();
-    return;
-  }
-
-  LOGFONT lf = { 0 };
-  if (NULL != theme) {
-    gGetThemeSysFont(theme, TMT_CAPTIONFONT, &lf);
-  } else {
-    NONCLIENTMETRICS ncm = { sizeof(NONCLIENTMETRICS) };
-    ::SystemParametersInfo(SPI_GETNONCLIENTMETRICS,
-                           sizeof(NONCLIENTMETRICS), &ncm, false);
-    lf = ncm.lfMessageFont;
-  }
-
-  HFONT caption_font = ::CreateFontIndirect(&lf);
-  HBITMAP old_bmp = reinterpret_cast<HBITMAP>(
-      ::SelectObject(dc_mem,
-                     reinterpret_cast<HGDIOBJ>(bmp)));
-  HFONT old_font = reinterpret_cast<HFONT>(
-      ::SelectObject(dc_mem,
-                     reinterpret_cast<HGDIOBJ>(caption_font)));
-
-  DTTOPTS dto = { sizeof(DTTOPTS) };
-  const UINT format = DT_SINGLELINE | DT_CENTER | DT_VCENTER | DT_NOPREFIX;
-  RECT rctext = { 0, 0, rect.width(), rect.height() };
-
-  dto.dwFlags = DTT_COMPOSITED | DTT_GLOWSIZE;
-  dto.iGlowSize = glow_size;
-
-  const HRESULT hr =
-      gDrawThemeTextEx(theme, dc_mem, 0, 0,
-                       reinterpret_cast<LPCWSTR>(text.utf16()),
-                       -1, format, &rctext, &dto);
-  if (SUCCEEDED(hr)) {
-    // Copy to the painter's HDC
-    if (!::BitBlt(hdc, rect.left(), rect.top(), rect.width(), rect.height(),
-                  dc_mem, 0, 0, SRCCOPY)) {
-      LOG(ERROR) << "::BitBlt() failed: " << ::GetLastError();
-    }
-  } else {
-    LOG(ERROR) << "::DrawThemeTextEx() failed: " << static_cast<long>(hr);
-  }
-
-  ::SelectObject(dc_mem, reinterpret_cast<HGDIOBJ>(old_bmp));
-  ::SelectObject(dc_mem, reinterpret_cast<HGDIOBJ>(old_font));
-  ::DeleteObject(bmp);
-  ::DeleteObject(caption_font);
-  ::DeleteDC(dc_mem);
-  gCloseThemeData(theme);
-
-#endif  // OS_WIN
-}
 
 #ifdef OS_WIN
 namespace {
@@ -618,7 +252,7 @@ void WinUtil::ActivateWindow(uint32 process_id) {
     LOG(ERROR) << "Could not find the exsisting window.";
   }
   const CWindow window(info.found_window_handle);
-  wstring window_title_wide;
+  std::wstring window_title_wide;
   {
     CString buf;
     window.GetWindowTextW(buf);
@@ -676,7 +310,7 @@ bool WinUtil::GetIMEHotKeyDisabled() {
   // can return |true|
   if (ERROR_SUCCESS == result &&
       num_chars < arraysize(data) &&
-      wstring(data) == kIMEHotKeyEntryData) {
+      std::wstring(data) == kIMEHotKeyEntryData) {
     return true;
   }
 

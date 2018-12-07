@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,8 +30,10 @@
 #include "gui/dictionary_tool/find_dialog.h"
 
 #include <QtGui/QtGui>
+#include <QtWidgets/QTableWidget>
+#include <QtWidgets/QMessageBox>
+
 #include "base/logging.h"
-#include "base/util.h"
 
 namespace mozc {
 namespace gui {
@@ -104,8 +106,8 @@ void FindDialog::FindBackward() {
 
 void FindDialog::Find(FindDialog::Direction direction) {
   const QString &query = QuerylineEdit->text();
-  const int start_row = max(0, table_->currentRow());
-  int start_column = min(1,  max(0, table_->currentColumn()));
+  const int start_row = std::max(0, table_->currentRow());
+  int start_column = std::min(1, std::max(0, table_->currentColumn()));
   int matched_column = -1;
   int matched_row = -1;
 

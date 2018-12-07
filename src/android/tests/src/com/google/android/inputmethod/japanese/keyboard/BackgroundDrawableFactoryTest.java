@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,8 +37,11 @@ import static org.easymock.EasyMock.isA;
 import org.mozc.android.inputmethod.japanese.keyboard.BackgroundDrawableFactory.DrawableType;
 import org.mozc.android.inputmethod.japanese.testing.InstrumentationTestCaseWithMock;
 import org.mozc.android.inputmethod.japanese.testing.MozcMatcher.DeepCopyPaintCapture;
+import org.mozc.android.inputmethod.japanese.testing.VisibilityProxy;
+import org.mozc.android.inputmethod.japanese.vectorgraphic.BufferedDrawable;
 import org.mozc.android.inputmethod.japanese.view.SkinType;
 
+import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.ComposeShader;
 import android.graphics.LinearGradient;
@@ -48,9 +51,12 @@ import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.StateListDrawable;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import org.easymock.Capture;
+
+import java.lang.reflect.InvocationTargetException;
 
 /**
  */
@@ -60,13 +66,35 @@ public class BackgroundDrawableFactoryTest extends InstrumentationTestCaseWithMo
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    factory = new BackgroundDrawableFactory(1f);
+    Resources resources = getInstrumentation().getTargetContext().getResources();
+    factory = new BackgroundDrawableFactory(resources);
+    factory.setSkin(SkinType.TEST.getSkin(resources));
   }
 
   @Override
   public void tearDown() throws Exception {
     factory = null;
     super.tearDown();
+  }
+
+  private Drawable getStateDrawable(Drawable drawable) {
+    if (!(drawable instanceof StateListDrawable)) {
+      return drawable;
+    }
+    try {
+      int stateIndex = VisibilityProxy.invokeByName(drawable, "getStateDrawableIndex",
+                                                    drawable.getState());
+      return VisibilityProxy.invokeByName(drawable, "getStateDrawable", stateIndex);
+    } catch (InvocationTargetException e) {
+      fail(e.toString());
+    }
+    throw new IllegalStateException("Never reach here");
+  }
+
+  private Drawable maybeGetBaseDrawable(Drawable drawable) {
+    return drawable instanceof BufferedDrawable
+        ? BufferedDrawable.class.cast(drawable).getBaseDrawable()
+        : drawable;
   }
 
   @SmallTest
@@ -77,7 +105,8 @@ public class BackgroundDrawableFactoryTest extends InstrumentationTestCaseWithMo
     canvas.drawCircle(gt(0f), gt(0f), gt(0f), capture(paintCapture));
     replayAll();
 
-    Drawable drawable = factory.getDrawable(DrawableType.TWELVEKEYS_CENTER_FLICK);
+    Drawable drawable = maybeGetBaseDrawable(
+        factory.getDrawable(DrawableType.TWELVEKEYS_CENTER_FLICK));
     drawable.setBounds(0, 0, 100, 100);
     drawable.draw(canvas);
 
@@ -118,7 +147,7 @@ public class BackgroundDrawableFactoryTest extends InstrumentationTestCaseWithMo
       canvas.drawPath(capture(pathCapture), capture(paintCapture));
       replayAll();
 
-      Drawable drawable = factory.getDrawable(drawableType);
+      Drawable drawable = maybeGetBaseDrawable(factory.getDrawable(drawableType));
       drawable.setBounds(0, 0, 100, 100);
       drawable.draw(canvas);
 
@@ -151,6 +180,9 @@ public class BackgroundDrawableFactoryTest extends InstrumentationTestCaseWithMo
         DrawableType.TWELVEKEYS_REGULAR_KEY_BACKGROUND,
         DrawableType.TWELVEKEYS_FUNCTION_KEY_BACKGROUND,
     };
+    // Expectations depend on ORANGE_LIGHTGRAY skin.
+    factory.setSkin(
+        SkinType.ORANGE_LIGHTGRAY.getSkin(getInstrumentation().getTargetContext().getResources()));
 
     for (DrawableType drawableType : drawableTypeList) {
       Capture<Paint> paintCapture = new DeepCopyPaintCapture();
@@ -166,7 +198,7 @@ public class BackgroundDrawableFactoryTest extends InstrumentationTestCaseWithMo
       Drawable drawable = factory.getDrawable(drawableType);
       drawable.setBounds(0, 0, 100, 100);
       drawable.setState(new int[] {});
-      drawable.draw(canvas);
+      maybeGetBaseDrawable(getStateDrawable(drawable)).draw(canvas);
 
       verifyAll();
       Shader shader1 = paintCapture.getValue().getShader();
@@ -183,7 +215,7 @@ public class BackgroundDrawableFactoryTest extends InstrumentationTestCaseWithMo
       canvas.drawRect(geq(0f), geq(0f), geq(0f), geq(0f), isA(Paint.class));  // Bottom shade.
       replayAll();
       drawable.setBounds(0, 0, 200, 200);
-      drawable.draw(canvas);
+      maybeGetBaseDrawable(getStateDrawable(drawable)).draw(canvas);
 
       verifyAll();
       Shader shader2 = paintCapture.getValue().getShader();
@@ -210,7 +242,7 @@ public class BackgroundDrawableFactoryTest extends InstrumentationTestCaseWithMo
       Drawable drawable = factory.getDrawable(drawableType);
       drawable.setBounds(0, 0, 100, 100);
       drawable.setState(new int[] { android.R.attr.state_pressed });
-      drawable.draw(canvas);
+      maybeGetBaseDrawable(getStateDrawable(drawable)).draw(canvas);
 
       verifyAll();
       Shader shader1 = paintCapture.getValue().getShader();
@@ -222,7 +254,7 @@ public class BackgroundDrawableFactoryTest extends InstrumentationTestCaseWithMo
       canvas.drawRect(geq(0f), geq(0f), geq(0f), geq(0f), capture(paintCapture));
       replayAll();
       drawable.setBounds(0, 0, 200, 200);
-      drawable.draw(canvas);
+      maybeGetBaseDrawable(getStateDrawable(drawable)).draw(canvas);
 
       verifyAll();
       Shader shader2 = paintCapture.getValue().getShader();
@@ -238,8 +270,6 @@ public class BackgroundDrawableFactoryTest extends InstrumentationTestCaseWithMo
     DrawableType[] drawableTypeList = {
         DrawableType.QWERTY_REGULAR_KEY_BACKGROUND,
         DrawableType.QWERTY_FUNCTION_KEY_BACKGROUND,
-        DrawableType.QWERTY_FUNCTION_KEY_LIGHT_ON_BACKGROUND,
-        DrawableType.QWERTY_FUNCTION_KEY_LIGHT_OFF_BACKGROUND,
     };
 
     int[][] stateList = {
@@ -254,19 +284,12 @@ public class BackgroundDrawableFactoryTest extends InstrumentationTestCaseWithMo
         canvas.drawRoundRect(isA(RectF.class), gt(0f), gt(0f), isA(Paint.class));  // Shadow.
         canvas.drawRoundRect(isA(RectF.class), gt(0f), gt(0f), capture(paintCapture));  // Base.
 
-        if (drawableType == DrawableType.QWERTY_FUNCTION_KEY_LIGHT_ON_BACKGROUND ||
-            drawableType == DrawableType.QWERTY_FUNCTION_KEY_LIGHT_OFF_BACKGROUND) {
-          // Light mark should be drawn.
-          canvas.drawCircle(gt(0f), gt(0f), gt(0f), isA(Paint.class));  // Base.
-          canvas.drawCircle(gt(0f), gt(0f), gt(0f), isA(Paint.class));  // Shade.
-        }
-
         replayAll();
 
-        Drawable drawable = factory.getDrawable(drawableType);
+        Drawable drawable = maybeGetBaseDrawable(factory.getDrawable(drawableType));
         drawable.setBounds(0, 0, 100, 100);
         drawable.setState(state);
-        drawable.draw(canvas);
+        maybeGetBaseDrawable(getStateDrawable(drawable)).draw(canvas);
 
         verifyAll();
         Shader shader1 = paintCapture.getValue().getShader();
@@ -278,15 +301,9 @@ public class BackgroundDrawableFactoryTest extends InstrumentationTestCaseWithMo
         canvas.drawRoundRect(isA(RectF.class), gt(0f), gt(0f), isA(Paint.class));  // Shadow.
         canvas.drawRoundRect(isA(RectF.class), gt(0f), gt(0f), capture(paintCapture));  // Base.
 
-        if (drawableType == DrawableType.QWERTY_FUNCTION_KEY_LIGHT_ON_BACKGROUND ||
-            drawableType == DrawableType.QWERTY_FUNCTION_KEY_LIGHT_OFF_BACKGROUND) {
-          // Light mark should be drawn.
-          canvas.drawCircle(gt(0f), gt(0f), gt(0f), isA(Paint.class));  // Base.
-          canvas.drawCircle(gt(0f), gt(0f), gt(0f), isA(Paint.class));  // Shade.
-        }
         replayAll();
         drawable.setBounds(0, 0, 200, 200);
-        drawable.draw(canvas);
+        maybeGetBaseDrawable(getStateDrawable(drawable)).draw(canvas);
 
         verifyAll();
         Shader shader2 = paintCapture.getValue().getShader();
@@ -299,6 +316,9 @@ public class BackgroundDrawableFactoryTest extends InstrumentationTestCaseWithMo
 
   @SmallTest
   public void testSetSkinType() {
+    Resources resources = getInstrumentation().getTargetContext().getResources();
+    // With skin, getDrawable method returns concrete drawable.
+    factory.setSkin(SkinType.ORANGE_LIGHTGRAY.getSkin(resources));
     Drawable drawable = factory.getDrawable(DrawableType.TWELVEKEYS_REGULAR_KEY_BACKGROUND);
     assertNotNull(drawable);
 
@@ -307,12 +327,12 @@ public class BackgroundDrawableFactoryTest extends InstrumentationTestCaseWithMo
 
     // If setSkinType is invoked, but actually skin is not changed,
     // the same instance should be used.
-    factory.setSkinType(SkinType.ORANGE_LIGHTGRAY);
+    factory.setSkin(SkinType.ORANGE_LIGHTGRAY.getSkin(resources));
     assertSame(drawable, factory.getDrawable(DrawableType.TWELVEKEYS_REGULAR_KEY_BACKGROUND));
 
     // If setSkinType is invoked, and actually the skin is changed,
     // the difference instance should be created.
-    factory.setSkinType(SkinType.TEST);
+    factory.setSkin(SkinType.TEST.getSkin(resources));
     assertNotSame(drawable, factory.getDrawable(DrawableType.TWELVEKEYS_REGULAR_KEY_BACKGROUND));
   }
 }

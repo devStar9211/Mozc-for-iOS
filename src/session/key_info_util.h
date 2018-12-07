@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,7 +33,7 @@
 #include <vector>
 
 #include "base/port.h"
-#include "session/key_event_util.h"
+#include "composer/key_event_util.h"
 
 namespace mozc {
 namespace commands {
@@ -46,12 +46,12 @@ class Config;
 class KeyInfoUtil {
  public:
   // Returns a sorted list of KeyInformation that is assigned in DIRECT mode.
-  static vector<KeyInformation> ExtractSortedDirectModeKeys(
+  static std::vector<KeyInformation> ExtractSortedDirectModeKeys(
       const config::Config &config);
 
   // Returns true if |sorted_keys| contains |key_event|. |sorted_keys| must be
   // sorted.
-  static bool ContainsKey(const vector<KeyInformation> &sorted_keys,
+  static bool ContainsKey(const std::vector<KeyInformation> &sorted_keys,
                           const commands::KeyEvent &key_event);
 
  private:

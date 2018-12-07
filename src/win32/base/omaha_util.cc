@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -39,9 +39,7 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-#define _ATL_NO_HOSTING
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 
 #include <string>
 
@@ -63,10 +61,10 @@ LONG OpenClientStateKey(CRegKey *key, REGSAM base_sam) {
                      REG_NONE, REG_OPTION_NON_VOLATILE,
                      sam_desired);
 }
-}  // anonymous namespace
+}  // namespace
 
 // Writes a REG_SZ channel name into "ap" in Mozc's client state key.
-bool OmahaUtil::WriteChannel(const wstring &value) {
+bool OmahaUtil::WriteChannel(const std::wstring &value) {
   CRegKey key;
   LONG result = OpenClientStateKey(&key, KEY_READ | KEY_WRITE);
   if (ERROR_SUCCESS != result) {
@@ -80,7 +78,7 @@ bool OmahaUtil::WriteChannel(const wstring &value) {
 }
 
 // Reads a REG_SZ channel name from "ap" in Mozc's client state key.
-wstring OmahaUtil::ReadChannel() {
+std::wstring OmahaUtil::ReadChannel() {
   CRegKey key;
   LONG result = OpenClientStateKey(&key, KEY_READ);
   if (ERROR_SUCCESS != result) {
@@ -92,7 +90,7 @@ wstring OmahaUtil::ReadChannel() {
   if (ERROR_SUCCESS != result) {
     return L"";
   }
-  return wstring(buf);
+  return std::wstring(buf);
 }
 
 bool OmahaUtil::ClearOmahaError() {
@@ -112,8 +110,8 @@ bool OmahaUtil::ClearOmahaError() {
   return true;
 }
 
-bool OmahaUtil::WriteOmahaError(const wstring &ui_message,
-                                const wstring &header) {
+bool OmahaUtil::WriteOmahaError(const std::wstring &ui_message,
+                                const std::wstring &header) {
   CRegKey key;
   LONG result = OpenClientStateKey(&key, KEY_READ | KEY_WRITE);
   if (ERROR_SUCCESS != result) {
@@ -125,8 +123,8 @@ bool OmahaUtil::WriteOmahaError(const wstring &ui_message,
   }
 
   // Leaves Mozc version in addition to UI message for customer support.
-  const wstring &message = header.length() > 0 ? header + L"\r\n" + ui_message
-                                               : ui_message;
+  const std::wstring &message =
+      header.length() > 0 ? header + L"\r\n" + ui_message : ui_message;
 
   // This message will be displayed by Omaha meta installer in the error
   // dialog.

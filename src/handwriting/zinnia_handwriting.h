@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,19 +32,14 @@
 #ifndef MOZC_HANDWRITING_ZINNIA_HANDWRITING_H_
 #define MOZC_HANDWRITING_ZINNIA_HANDWRITING_H_
 
+#include <memory>
 #include <string>
 
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "base/string_piece.h"
 #include "handwriting/handwriting_manager.h"
 
-#ifdef USE_LIBZINNIA
-// Use default zinnia installed in /usr/include
 #include <zinnia.h>
-#else  // USE_LIBZINNIA
-#include "third_party/zinnia/v0_04/zinnia.h"
-#endif  // USE_LIBZINNIA
 
 namespace mozc {
 class Mmap;
@@ -59,14 +54,14 @@ class ZinniaHandwriting : public HandwritingInterface {
   static string GetModelFileName();
 
   HandwritingStatus Recognize(const Strokes &strokes,
-                              vector<string> *candidates) const;
+                              std::vector<string> *candidates) const;
 
   HandwritingStatus Commit(const Strokes &strokes, const string &result);
 
  private:
-  scoped_ptr<zinnia::Recognizer> recognizer_;
-  scoped_ptr<zinnia::Character> character_;
-  scoped_ptr<Mmap> mmap_;
+  std::unique_ptr<zinnia::Recognizer> recognizer_;
+  std::unique_ptr<zinnia::Character> character_;
+  std::unique_ptr<Mmap> mmap_;
   bool zinnia_model_error_;
 
   DISALLOW_COPY_AND_ASSIGN(ZinniaHandwriting);

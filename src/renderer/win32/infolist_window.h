@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,20 +33,19 @@
 #include <windows.h>
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlwin.h>
 #include <atlapp.h>
 #include <atlcrack.h>
 #include <atlmisc.h>
 #include <atlgdi.h>
 
+#include <memory>
 #include <string>
 
 #include "base/const.h"
 #include "base/coordinates.h"
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 
 namespace mozc {
 
@@ -114,15 +113,17 @@ class InfolistWindow : public ATL::CWindowImpl<InfolistWindow,
   Size DoPaintRow(WTL::CDCHandle dc, int row, int ypos);
 
   client::SendCommandInterface *send_command_interface_;
-  scoped_ptr<commands::Candidates> candidates_;
-  scoped_ptr<TextRenderer> text_renderer_;
-  scoped_ptr<renderer::RendererStyle> style_;
+  std::unique_ptr<commands::Candidates> candidates_;
+  std::unique_ptr<TextRenderer> text_renderer_;
+  std::unique_ptr<renderer::RendererStyle> style_;
   bool metrics_changed_;
   bool visible_;
 
   DISALLOW_COPY_AND_ASSIGN(InfolistWindow);
 };
+
 }  // namespace win32
 }  // namespace renderer
 }  // namespace mozc
+
 #endif  // MOZC_RENDERER_WIN32_INFOLIST_WINDOW_H_

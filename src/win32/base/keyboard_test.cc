@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,7 +36,7 @@ namespace win32 {
 namespace {
 const BYTE kPressed = 0x80;
 const BYTE kToggled = 0x01;
-}  // anonymous namespace
+}  // namespace
 
 class ImeKeyboardTest : public testing::Test {
  protected:

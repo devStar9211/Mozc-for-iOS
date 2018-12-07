@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -51,6 +51,18 @@ public class MushroomUtil {
 
   // Disallow instantiation.
   private MushroomUtil() {
+  }
+
+  /**
+   * Clears the proxy which is used to communicate between Mushroom activity and MozcService.
+   * <p>
+   * Should be called prior to launching Mushroom activity to avoid contamination of the results.
+   */
+  public static void clearProxy() {
+    MushroomResultProxy resultProxy = MushroomResultProxy.getInstance();
+    synchronized (resultProxy) {
+      resultProxy.clear();
+    }
   }
 
   /**

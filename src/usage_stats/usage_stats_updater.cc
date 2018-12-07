@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,7 @@
 #include "usage_stats/usage_stats_updater.h"
 
 #include <algorithm>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <vector>
@@ -38,16 +39,15 @@
 #include "base/android_util.h"
 #endif  // OS_ANDROID
 #include "base/config_file_stream.h"
+#include "base/logging.h"
 #include "base/mac_util.h"
 #include "base/number_util.h"
 #include "base/port.h"
-#include "base/scoped_ptr.h"
-#include "base/singleton.h"
 #include "base/system_util.h"
 #include "base/util.h"
 #include "base/win_util.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
+#include "protocol/config.pb.h"
 #include "session/internal/keymap.h"
 #include "usage_stats/usage_stats.h"
 
@@ -63,7 +63,7 @@ const config::Config::SessionKeymap kKeyMaps[] = {
   config::Config::KOTOERI,
 };
 
-void ExtractActivationKeys(istream *ifs, set<string> *keys) {
+void ExtractActivationKeys(std::istream *ifs, std::set<string> *keys) {
   DCHECK(keys);
   string line;
   getline(*ifs, line);  // first line is comment.
@@ -73,7 +73,7 @@ void ExtractActivationKeys(istream *ifs, set<string> *keys) {
       // empty or comment
       continue;
     }
-    vector<string> rules;
+    std::vector<string> rules;
     Util::SplitStringUsing(line, "\t", &rules);
     if (rules.size() == 3 &&
         (rules[2] == kIMEOnCommand || rules[2] == kIMEOffCommand)) {
@@ -82,27 +82,28 @@ void ExtractActivationKeys(istream *ifs, set<string> *keys) {
   }
 }
 
-bool IMEActivationKeyCustomized() {
-  const config::Config::SessionKeymap keymap = GET_CONFIG(session_keymap);
+bool IMEActivationKeyCustomized(const config::Config &config) {
+  const config::Config::SessionKeymap keymap = config.session_keymap();
   if (keymap != config::Config::CUSTOM) {
     return false;
   }
-  const string &custom_keymap_table = GET_CONFIG(custom_keymap_table);
-  istringstream ifs_custom(custom_keymap_table);
-  set<string> customized;
+  const string &custom_keymap_table = config.custom_keymap_table();
+  std::istringstream ifs_custom(custom_keymap_table);
+  std::set<string> customized;
   ExtractActivationKeys(&ifs_custom, &customized);
   for (size_t i = 0; i < arraysize(kKeyMaps); ++i) {
     const char *keymap_file =
         keymap::KeyMapManager::GetKeyMapFileName(kKeyMaps[i]);
-    scoped_ptr<istream> ifs(ConfigFileStream::LegacyOpen(keymap_file));
+    std::unique_ptr<std::istream> ifs(
+        ConfigFileStream::LegacyOpen(keymap_file));
     if (ifs.get() == NULL) {
       LOG(ERROR) << "can not open default keymap table " << i;
       continue;
     }
-    set<string> keymap_table;
+    std::set<string> keymap_table;
     ExtractActivationKeys(ifs.get(), &keymap_table);
-    if (includes(keymap_table.begin(), keymap_table.end(),
-                 customized.begin(), customized.end())) {
+    if (std::includes(keymap_table.begin(), keymap_table.end(),
+                      customized.begin(), customized.end())) {
       // customed keymap is subset of preset keymap
       return false;
     }
@@ -110,9 +111,7 @@ bool IMEActivationKeyCustomized() {
   return true;
 }
 
-void UpdateConfigStats() {
-  const mozc::config::Config config = mozc::config::ConfigHandler::GetConfig();
-
+void UpdateConfigStats(const config::Config &config) {
   UsageStats::SetInteger("ConfigSessionKeymap", config.session_keymap());
   const uint32 preedit_method = config.preedit_method();
   UsageStats::SetInteger("ConfigPreeditMethod", preedit_method);
@@ -179,7 +178,7 @@ void UpdateConfigStats() {
   UsageStats::SetBoolean("ConfigUseJapaneseLayout",
                          config.use_japanese_layout());
   UsageStats::SetBoolean("IMEActivationKeyCustomized",
-                         IMEActivationKeyCustomized());
+                         IMEActivationKeyCustomized(config));
 
   UsageStats::SetBoolean("ConfigAllowCloudHandwriting",
                          config.allow_cloud_handwriting());
@@ -196,8 +195,8 @@ void UpdateConfigStats() {
 }
 }  // namespace
 
-void UsageStatsUpdater::UpdateStats() {
-  UpdateConfigStats();
+void UsageStatsUpdater::UpdateStats(const config::Config &config) {
+  UpdateConfigStats(config);
 
   // Get total memory in MB.
   const uint32 memory_in_mb =
@@ -208,23 +207,6 @@ void UsageStatsUpdater::UpdateStats() {
   UsageStats::SetBoolean("WindowsX64", SystemUtil::IsWindowsX64());
   UsageStats::SetBoolean("PerUserInputSettingsEnabled",
                          WinUtil::IsPerUserInputSettingsEnabled());
-  UsageStats::SetBoolean("CuasEnabled", WinUtil::IsCuasEnabled());
-  {
-    // get msctf version
-    int major, minor, build, revision;
-    const wchar_t kDllName[] = L"msctf.dll";
-    wstring path = SystemUtil::GetSystemDir();
-    path += L"\\";
-    path += kDllName;
-    if (SystemUtil::GetFileVersion(path, &major, &minor, &build, &revision)) {
-      UsageStats::SetInteger("MsctfVerMajor", major);
-      UsageStats::SetInteger("MsctfVerMinor", minor);
-      UsageStats::SetInteger("MsctfVerBuild", build);
-      UsageStats::SetInteger("MsctfVerRevision", revision);
-    } else {
-      LOG(ERROR) << "get file version for msctf.dll failed";
-    }
-  }
 #endif  // OS_WIN
 
 #ifdef OS_MACOSX

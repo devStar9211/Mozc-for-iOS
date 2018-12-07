@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,9 +31,7 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-#define _ATL_NO_HOSTING
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlapp.h>
 #include <atlwin.h>
 #include <atlstr.h>
@@ -42,7 +40,6 @@
 
 #include "base/logging.h"
 #include "base/port.h"
-#include "base/system_util.h"
 #include "base/win_util.h"
 
 namespace mozc {
@@ -53,14 +50,14 @@ using ATL::CWindow;
 using ATL::CStringW;
 using std::unique_ptr;
 
-wstring SafeGetWindowText(HWND window_handle) {
+std::wstring SafeGetWindowText(HWND window_handle) {
   if (!::IsWindow(window_handle)) {
-    return wstring();
+    return std::wstring();
   }
 
   const int text_len_without_null = GetWindowTextLength(window_handle);
   if (text_len_without_null <= 0) {
-    return wstring();
+    return std::wstring();
   }
 
   const size_t buffer_len = text_len_without_null + 1;
@@ -70,15 +67,15 @@ wstring SafeGetWindowText(HWND window_handle) {
       window_handle, buffer.get(), buffer_len);
 
   if (copied_len_without_null <= 0) {
-    return wstring();
+    return std::wstring();
   }
 
-  return wstring(buffer.get(), copied_len_without_null);
+  return std::wstring(buffer.get(), copied_len_without_null);
 }
 
 }  // namespace
 
-wstring WindowUtil::GetWindowClassName(HWND window_handle) {
+std::wstring WindowUtil::GetWindowClassName(HWND window_handle) {
   // Maximum length of WindowClass is assumed to be 256.
   // http://msdn.microsoft.com/en-us/library/ms633576.aspx
   wchar_t buffer[256 + 1] = {};
@@ -87,26 +84,17 @@ wstring WindowUtil::GetWindowClassName(HWND window_handle) {
   if (num_copied_without_null + 1 >= arraysize(buffer)) {
     return L"";
   }
-  return wstring(buffer, num_copied_without_null);
+  return std::wstring(buffer, num_copied_without_null);
 }
 
 // static
 bool WindowUtil::ChangeMessageFilter(HWND window_handle, UINT message) {
-  typedef BOOL (WINAPI *FPChangeWindowMessageFilter)(UINT, DWORD);
   typedef BOOL (WINAPI *FPChangeWindowMessageFilterEx)(
       HWND, UINT, DWORD, LPVOID);
 
-  // Following constants are not available unless we change the WINVER
+  // The following constant is not available unless we change the WINVER
   // higher enough.
-  const int kMessageFilterAdd = 1;    // MSGFLT_ADD    (WINVER >=0x0600)
   const int kMessageFilterAllow = 1;  // MSGFLT_ALLOW  (WINVER >=0x0601)
-
-  // Skip windows XP.
-  // ChangeWindowMessageFilter is only available on Windows Vista or Later
-  if (!SystemUtil::IsVistaOrLater()) {
-    LOG(ERROR) << "Skip ChangeWindowMessageFilter on Windows XP";
-    return true;
-  }
 
   const HMODULE lib = WinUtil::GetSystemModuleHandle(L"user32.dll");
   if (lib == nullptr) {
@@ -133,17 +121,7 @@ bool WindowUtil::ChangeMessageFilter(HWND window_handle, UINT message) {
   }
 
   // Windows Vista
-  FPChangeWindowMessageFilter change_window_message_filter
-      = reinterpret_cast<FPChangeWindowMessageFilter>(
-          ::GetProcAddress(lib, "ChangeWindowMessageFilter"));
-  if (change_window_message_filter == nullptr) {
-    const int error = ::GetLastError();
-    LOG(ERROR) << L"GetProcAddress failed. error = " << error;
-    return false;
-  }
-
-  DCHECK(change_window_message_filter != nullptr);
-  if (!(*change_window_message_filter)(message, kMessageFilterAdd)) {
+  if (!::ChangeWindowMessageFilter(message, MSGFLT_ADD)) {
     const int error = ::GetLastError();
     LOG(ERROR) << L"ChangeWindowMessageFilter failed. error = " << error;
     return false;

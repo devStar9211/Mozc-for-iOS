@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -42,15 +42,15 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../config/config.gyp:config_handler',
-        '../config/config.gyp:config_protocol',
         '../engine/engine.gyp:engine_factory',
         '../engine/engine.gyp:mock_data_engine_factory',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
         '../testing/testing.gyp:testing',
         '../usage_stats/usage_stats_test.gyp:usage_stats_testing_util',
         'session.gyp:session',
         'session.gyp:session_handler',
         'session.gyp:session_usage_observer',
-        'session_base.gyp:session_protocol',
       ],
     },
     {
@@ -76,11 +76,13 @@
       ],
       'dependencies': [
         '../converter/converter_base.gyp:converter_mock',
-        '../data_manager/data_manager.gyp:user_pos_manager',
+        '../data_manager/testing/mock_data_manager.gyp:mock_data_manager',
+        '../engine/engine.gyp:engine',
         '../engine/engine.gyp:mock_converter_engine',
-        "../engine/engine.gyp:mock_data_engine_factory",
+        '../engine/engine.gyp:mock_data_engine_factory',
         '../rewriter/rewriter.gyp:rewriter',
         '../testing/testing.gyp:gtest_main',
+        '../testing/testing.gyp:mozctest',
         '../usage_stats/usage_stats_test.gyp:usage_stats_testing_util',
         'session.gyp:session',
       ],
@@ -95,6 +97,7 @@
         'session_regression_test.cc',
       ],
       'dependencies': [
+        '../data_manager/testing/mock_data_manager.gyp:mock_data_manager',
         '../engine/engine.gyp:engine_factory',
         '../testing/testing.gyp:gtest_main',
         'session.gyp:session',
@@ -111,10 +114,11 @@
         'session_handler_test.cc',
       ],
       'dependencies': [
+        '../base/base_test.gyp:clock_mock',
         '../converter/converter_base.gyp:converter_mock',
         '../engine/engine.gyp:mock_converter_engine',
         '../testing/testing.gyp:gtest_main',
-        "../usage_stats/usage_stats_test.gyp:usage_stats_testing_util",
+        '../usage_stats/usage_stats_test.gyp:usage_stats_testing_util',
         'session.gyp:session',
         'session.gyp:session_server',
         'session_handler_test_util',
@@ -138,6 +142,7 @@
       ],
       'dependencies': [
         '../converter/converter_base.gyp:converter_mock',
+        '../data_manager/testing/mock_data_manager.gyp:mock_data_manager',
         '../testing/testing.gyp:gtest_main',
         '../testing/testing.gyp:testing_util',
         '../usage_stats/usage_stats_test.gyp:usage_stats_testing_util',
@@ -153,14 +158,15 @@
         'session_observer_handler_test.cc',
         'session_usage_observer_test.cc',
         'session_usage_stats_util_test.cc',
-        'session_watch_dog_test.cc',
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base_test.gyp:clock_mock',
         '../base/base_test.gyp:scheduler_stub',
         '../client/client.gyp:client_mock',
         '../config/config.gyp:config_handler',
         '../config/config.gyp:stats_config_util',
+        '../protocol/protocol.gyp:commands_proto',
         '../testing/testing.gyp:gtest_main',
         '../usage_stats/usage_stats_base.gyp:usage_stats',
         '../usage_stats/usage_stats_test.gyp:usage_stats_testing_util',
@@ -169,15 +175,24 @@
         'session_base.gyp:keymap',
         'session_base.gyp:keymap_factory',
         'session_base.gyp:output_util',
-        'session_base.gyp:session_protocol',
         'session_base.gyp:session_usage_stats_util',
       ],
-      'conditions': [
-        ['target_platform=="Android"', {
-          'sources!': [
-            'session_watch_dog_test.cc',
-          ],
-        }],
+      'variables': {
+        'test_size': 'small',
+      },
+    },
+    {
+      # Android is not supported.
+      'target_name': 'session_watch_dog_test',
+      'type': 'executable',
+      'sources': [
+        'session_watch_dog_test.cc',
+      ],
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../client/client.gyp:client_mock',
+        '../testing/testing.gyp:gtest_main',
+        'session.gyp:session_watch_dog',
       ],
       'variables': {
         'test_size': 'small',
@@ -188,18 +203,14 @@
       'type': 'executable',
       'sources': [
         'ime_switch_util_test.cc',
-        'key_event_util_test.cc',
         'key_info_util_test.cc',
-        'key_parser_test.cc',
       ],
       'dependencies': [
         '../base/base.gyp:base',
         '../config/config.gyp:config_handler',
+        '../protocol/protocol.gyp:commands_proto',
         '../testing/testing.gyp:gtest_main',
         'session_base.gyp:ime_switch_util',
-        'session_base.gyp:key_event_util',
-        'session_base.gyp:key_parser',
-        'session_base.gyp:session_protocol',
       ],
       'variables': {
         'test_size': 'small',
@@ -218,13 +229,13 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
-        '../config/config.gyp:config_protocol',
         '../converter/converter_base.gyp:converter_mock',
         '../engine/engine.gyp:mock_converter_engine',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
         '../testing/testing.gyp:gtest_main',
         '../testing/testing.gyp:testing_util',
         'session.gyp:session',
-        'session_base.gyp:session_protocol',
       ],
       'variables': {
         'test_size': 'small',
@@ -255,9 +266,9 @@
         'random_keyevents_generator_test.cc',
       ],
       'dependencies': [
+        '../protocol/protocol.gyp:commands_proto',
         '../testing/testing.gyp:gtest_main',
         'session.gyp:random_keyevents_generator',
-        'session_base.gyp:session_protocol',
       ],
       'variables': {
         'test_size': 'large',
@@ -318,11 +329,13 @@
         '../base/base.gyp:base',
         '../data/test/session/scenario/scenario.gyp:install_session_handler_scenario_test_data',
         '../data/test/session/scenario/usage_stats/usage_stats.gyp:install_session_handler_usage_stats_scenario_test_data',
+        '../engine/engine.gyp:mock_data_engine_factory',
+        '../protocol/protocol.gyp:commands_proto',
         '../testing/testing.gyp:gtest_main',
+        '../testing/testing.gyp:mozctest',
         '../usage_stats/usage_stats_test.gyp:usage_stats_testing_util',
         'session.gyp:session_handler',
         'session_base.gyp:request_test_util',
-        'session_base.gyp:session_protocol',
         'session_handler_test_util',
       ],
       'variables': {
@@ -349,11 +362,13 @@
         'session_regression_test',
         'session_server_test',
         'session_test',
+        'session_watch_dog_test',
       ],
       'conditions': [
         ['target_platform=="Android"', {
           'dependencies!': [
             'session_server_test',
+            'session_watch_dog_test',
             # These tests have been disabled as it takes long execution time.
             # In addition currently they fail.
             # Here we also disable the tests temporarirly.

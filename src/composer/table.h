@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,12 +33,14 @@
 #define MOZC_COMPOSER_TABLE_H_
 
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
+
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "base/trie.h"
+#include "data_manager/data_manager_interface.h"
 
 namespace mozc {
 
@@ -99,7 +101,8 @@ class Table {
   virtual ~Table();
 
   bool InitializeWithRequestAndConfig(const commands::Request &request,
-                                      const config::Config &config);
+                                      const config::Config &config,
+                                      const DataManagerInterface &data_manager);
 
 
   // Return true if adding the input-pending pair makes a loop of
@@ -124,7 +127,7 @@ class Table {
                             size_t *key_length,
                             bool *fixed) const;
   void LookUpPredictiveAll(const string &input,
-                           vector<const Entry *> *results) const;
+                           std::vector<const Entry *> *results) const;
   // TODO(komatsu): Delete this function.
   bool HasSubRules(const string &input) const;
 
@@ -148,21 +151,21 @@ class Table {
   friend class TypingCorrectorTest;
   friend class TypingCorrectionTest;
 
-  bool LoadFromStream(istream *is);
+  bool LoadFromStream(std::istream *is);
   void DeleteEntry(const Entry *entry);
   void ResetEntrySet();
 
   typedef Trie<const Entry*> EntryTrie;
-  scoped_ptr<EntryTrie> entries_;
-  typedef set<const Entry*> EntrySet;
+  std::unique_ptr<EntryTrie> entries_;
+  typedef std::set<const Entry*> EntrySet;
   EntrySet entry_set_;
 
   // If false, input alphabet characters are normalized to lower
   // characters.  The default value is false.
   bool case_sensitive_;
 
-  // Typing model. NULL if no corresponding model is available.
-  const TypingModel* typing_model_;
+  // Typing model. nullptr if no corresponding model is available.
+  std::unique_ptr<const TypingModel> typing_model_;
 
   DISALLOW_COPY_AND_ASSIGN(Table);
 };
@@ -174,7 +177,10 @@ class TableManager {
   // Return Table for the request and the config
   // TableManager has ownership of the return value;
   const Table *GetTable(const commands::Request &request,
-                        const config::Config &config);
+                        const config::Config &config,
+                        const DataManagerInterface &data_manager);
+
+  void ClearCaches();
 
  private:
   // Table caches.
@@ -183,7 +189,7 @@ class TableManager {
   //  config::Config::PreeditMethod
   //  config::Config::PunctuationMethod
   //  config::Config::SymbolMethod
-  map<uint32, const Table*> table_map_;
+  std::map<uint32, std::unique_ptr<const Table>> table_map_;
   // Fingerprint for Config::custom_roman_table;
   uint32 custom_roman_table_fingerprint_;
 };

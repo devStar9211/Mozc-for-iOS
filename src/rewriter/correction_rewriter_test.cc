@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,18 +29,20 @@
 
 #include "rewriter/correction_rewriter.h"
 
+#include <memory>
 #include <string>
-#include "config/config.pb.h"
+
+#include "base/port.h"
+#include "base/serialized_string_array.h"
 #include "config/config_handler.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
+#include "request/conversion_request.h"
 #include "testing/base/public/gunit.h"
 
 namespace mozc {
 namespace {
-static const ReadingCorrectionItem kReadingCorrectionTestItems[] = {
-  { "TSUKIGIME", "gekkyoku", "tsukigime" },
-};
 
 Segment *AddSegment(const string &key, Segments *segments) {
   Segment *segment = segments->push_back_segment();
@@ -64,33 +66,41 @@ Segment::Candidate *AddCandidate(
 
 class CorrectionRewriterTest : public testing::Test {
  protected:
-  virtual void SetUp() {
+  CorrectionRewriterTest() {
+    convreq_.set_request(&request_);
+    convreq_.set_config(&config_);
+  }
+
+  void SetUp() override {
+    // Create a rewriter with one entry: (TSUKIGIME, gekkyoku, tsukigime)
+    const std::vector<StringPiece> values = {"TSUKIGIME"};
+    const std::vector<StringPiece> errors = {"gekkyoku"};
+    const std::vector<StringPiece> corrections = {"tsukigime"};
     rewriter_.reset(new CorrectionRewriter(
-                        kReadingCorrectionTestItems,
-                        arraysize(kReadingCorrectionTestItems)));
-    config::ConfigHandler::GetDefaultConfig(&default_config_);
-    config::Config config(default_config_);
-    config.set_use_spelling_correction(true);
-    config::ConfigHandler::SetConfig(config);
+        SerializedStringArray::SerializeToBuffer(values, &values_buf_),
+        SerializedStringArray::SerializeToBuffer(errors, &errors_buf_),
+        SerializedStringArray::SerializeToBuffer(corrections,
+                                                 &corrections_buf_)));
+    config::ConfigHandler::GetDefaultConfig(&config_);
+    config_.set_use_spelling_correction(true);
   }
 
-  virtual void TearDown() {
-    config::ConfigHandler::SetConfig(default_config_);
-  }
-
-  scoped_ptr<CorrectionRewriter> rewriter_;
+  std::unique_ptr<CorrectionRewriter> rewriter_;
+  ConversionRequest convreq_;
+  commands::Request request_;
+  config::Config config_;
 
  private:
-  config::Config default_config_;
+  std::unique_ptr<uint32[]> values_buf_;
+  std::unique_ptr<uint32[]> errors_buf_;
+  std::unique_ptr<uint32[]> corrections_buf_;
 };
 
 TEST_F(CorrectionRewriterTest, CapabilityTest) {
-  const ConversionRequest request;
-  EXPECT_EQ(RewriterInterface::ALL, rewriter_->capability(request));
+  EXPECT_EQ(RewriterInterface::ALL, rewriter_->capability(convreq_));
 }
 
 TEST_F(CorrectionRewriterTest, RewriteTest) {
-  ConversionRequest request;
   Segments segments;
 
   Segment *segment = AddSegment("gekkyokuwo", &segments);
@@ -101,31 +111,25 @@ TEST_F(CorrectionRewriterTest, RewriteTest) {
 
   AddCandidate("gekkyokuwo", "GEKKYOKUwo", "gekkyoku", "GEKKYOKU", segment);
 
-  config::Config config;
-  config.set_use_spelling_correction(false);
-  config::ConfigHandler::SetConfig(config);
+  config_.set_use_spelling_correction(false);
 
-  EXPECT_FALSE(rewriter_->Rewrite(request, &segments));
+  EXPECT_FALSE(rewriter_->Rewrite(convreq_, &segments));
 
-  config.set_use_spelling_correction(true);
-  config::ConfigHandler::SetConfig(config);
-  EXPECT_TRUE(rewriter_->Rewrite(request, &segments));
+  config_.set_use_spelling_correction(true);
+  EXPECT_TRUE(rewriter_->Rewrite(convreq_, &segments));
 
   // candidate 0
   EXPECT_EQ(
       (Segment::Candidate::RERANKED | Segment::Candidate::SPELLING_CORRECTION),
       segments.conversion_segment(0).candidate(0).attributes);
   EXPECT_EQ(
-      // "もしかして"
-      "<\xE3\x82\x82\xE3\x81\x97\xE3\x81\x8B\xE3\x81\x97\xE3\x81\xA6: "
-      "tsukigime>",
+      "<もしかして: tsukigime>",
       segments.conversion_segment(0).candidate(0).description);
 
   // candidate 1
   EXPECT_EQ(Segment::Candidate::DEFAULT_ATTRIBUTE,
             segments.conversion_segment(0).candidate(1).attributes);
   EXPECT_TRUE(segments.conversion_segment(0).candidate(1).description.empty());
-
 }
 
 }  // namespace mozc

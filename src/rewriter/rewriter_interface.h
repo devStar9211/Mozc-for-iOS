@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,10 +32,10 @@
 
 #include <cstddef>  // for size_t
 
-namespace mozc {
+#include "converter/segments.h"
+#include "request/conversion_request.h"
 
-class ConversionRequest;
-class Segments;
+namespace mozc {
 
 class RewriterInterface {
  public:
@@ -85,7 +85,6 @@ class RewriterInterface {
  protected:
   RewriterInterface() {}
 };
-
 
 }  // namespace mozc
 

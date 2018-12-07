@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,21 +29,22 @@
 
 package org.mozc.android.inputmethod.japanese;
 
-import org.mozc.android.inputmethod.japanese.JapaneseKeyboard.KeyboardSpecification;
 import org.mozc.android.inputmethod.japanese.KeycodeConverter.KeyEventInterface;
 import org.mozc.android.inputmethod.japanese.emoji.EmojiProviderType;
+import org.mozc.android.inputmethod.japanese.hardwarekeyboard.HardwareKeyboard.CompositionSwitchMode;
+import org.mozc.android.inputmethod.japanese.keyboard.Keyboard.KeyboardSpecification;
 import org.mozc.android.inputmethod.japanese.keyboard.KeyboardActionListener;
 import org.mozc.android.inputmethod.japanese.model.JapaneseSoftwareKeyboardModel;
+import org.mozc.android.inputmethod.japanese.preference.ClientSidePreference.HardwareKeyMap;
 import org.mozc.android.inputmethod.japanese.preference.ClientSidePreference.InputStyle;
 import org.mozc.android.inputmethod.japanese.preference.ClientSidePreference.KeyboardLayout;
 import org.mozc.android.inputmethod.japanese.protobuf.ProtoCommands.Command;
-import org.mozc.android.inputmethod.japanese.protobuf.ProtoCommands.CompositionMode;
-import org.mozc.android.inputmethod.japanese.view.SkinType;
+import org.mozc.android.inputmethod.japanese.util.CursorAnchorInfoWrapper;
+import org.mozc.android.inputmethod.japanese.view.Skin;
 import com.google.common.annotations.VisibleForTesting;
 
 import android.content.Context;
 import android.content.res.Configuration;
-import android.content.res.Resources;
 import android.inputmethodservice.InputMethodService;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -98,6 +99,8 @@ public interface ViewManagerInterface extends MemoryManageable {
    */
   public void consumeKeyOnViewSynchronously(KeyEvent event);
 
+  public void onHardwareKeyEvent(KeyEvent keyEvent);
+
   /**
    * @return whether the view should consume the generic motion event or not.
    */
@@ -113,7 +116,7 @@ public interface ViewManagerInterface extends MemoryManageable {
   /**
    * @return the current keyboard specification.
    */
-  public KeyboardSpecification getJapaneseKeyboardSpecification();
+  public KeyboardSpecification getKeyboardSpecification();
 
   /**
    * Set {@code EditorInfo} instance to the current view.
@@ -154,26 +157,33 @@ public interface ViewManagerInterface extends MemoryManageable {
 
   public void setEmojiProviderType(EmojiProviderType emojiProviderType);
 
-  /**
-   * @param isNarrowMode Whether mozc view shows in narrow mode or normal.
-   */
-  public void setNarrowMode(boolean isNarrowMode);
-
   public void maybeTransitToNarrowMode(Command command, KeyEventInterface keyEvent);
 
   public boolean isNarrowMode();
 
+  public boolean isFloatingCandidateMode();
+
   public void setPopupEnabled(boolean popupEnabled);
 
-  public void setHardwareKeyboardCompositionMode(CompositionMode compositionMode);
+  public void switchHardwareKeyboardCompositionMode(CompositionSwitchMode mode);
 
-  public void setSkinType(SkinType skinType);
+  public void setHardwareKeyMap(HardwareKeyMap hardwareKeyMap);
 
-  public void setLayoutAdjustment(Resources resources, LayoutAdjustment layoutAdjustment);
+  public void setSkin(Skin skin);
+
+  public void setMicrophoneButtonEnabledByPreference(boolean microphoneButtonEnabled);
+
+  public void setLayoutAdjustment(LayoutAdjustment layoutAdjustment);
 
   public void setKeyboardHeightRatio(int keyboardHeightRatio);
 
   public void onConfigurationChanged(Configuration newConfig);
+
+  public void onStartInputView(EditorInfo editorInfo);
+
+  public void setCursorAnchorInfo(CursorAnchorInfoWrapper info);
+
+  public void setCursorAnchorInfoEnabled(boolean enabled);
 
   /**
    * Reset the status of the current input view.
@@ -183,11 +193,14 @@ public interface ViewManagerInterface extends MemoryManageable {
   public void computeInsets(
       Context context, InputMethodService.Insets outInsets, Window window);
 
+  public void onShowSymbolInputView();
+  public void onCloseSymbolInputView();
+
   @VisibleForTesting
   public ViewEventListener getEventListener();
 
   @VisibleForTesting
-  public JapaneseSoftwareKeyboardModel getJapaneseSoftwareKeyboardModel();
+  public JapaneseSoftwareKeyboardModel getActiveSoftwareKeyboardModel();
 
   @VisibleForTesting
   public boolean isPopupEnabled();
@@ -199,7 +212,10 @@ public interface ViewManagerInterface extends MemoryManageable {
   public EmojiProviderType getEmojiProviderType();
 
   @VisibleForTesting
-  public SkinType getSkinType();
+  public Skin getSkin();
+
+  @VisibleForTesting
+  public boolean isMicrophoneButtonEnabledByPreference();
 
   @VisibleForTesting
   public LayoutAdjustment getLayoutAdjustment();
@@ -207,9 +223,16 @@ public interface ViewManagerInterface extends MemoryManageable {
   @VisibleForTesting
   public int getKeyboardHeightRatio();
 
+  @VisibleForTesting
+  public HardwareKeyMap getHardwareKeyMap();
+
   /**
    * Used for testing to inject key events.
    */
   @VisibleForTesting
   public KeyboardActionListener getKeyboardActionListener();
+
+  void updateGlobeButtonEnabled();
+
+  void updateMicrophoneButtonEnabled();
 }

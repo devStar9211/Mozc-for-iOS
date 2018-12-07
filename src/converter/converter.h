@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,10 +30,12 @@
 #ifndef MOZC_CONVERTER_CONVERTER_H_
 #define MOZC_CONVERTER_CONVERTER_H_
 
+#include <memory>
 #include <string>
 
-#include "base/scoped_ptr.h"
 #include "converter/converter_interface.h"
+#include "dictionary/pos_matcher.h"
+#include "dictionary/suppression_dictionary.h"
 //  for FRIEND_TEST()
 #include "testing/base/public/gunit_prod.h"
 
@@ -41,11 +43,9 @@ namespace mozc {
 
 class ConversionRequest;
 class ImmutableConverterInterface;
-class POSMatcher;
 class PredictorInterface;
 class RewriterInterface;
 class Segments;
-class SuppressionDictionary;
 
 class ConverterImpl : public ConverterInterface {
  public:
@@ -53,8 +53,8 @@ class ConverterImpl : public ConverterInterface {
   virtual ~ConverterImpl();
 
   // Lazily initializes the internal members. Must be called before the use.
-  void Init(const POSMatcher *pos_matcher,
-            const SuppressionDictionary *suppression_dictionary,
+  void Init(const dictionary::POSMatcher *pos_matcher,
+            const dictionary::SuppressionDictionary *suppression_dictionary,
             PredictorInterface *predictor,
             RewriterInterface *rewriter,
             ImmutableConverterInterface *immutable_converter);
@@ -110,7 +110,7 @@ class ConverterImpl : public ConverterInterface {
   virtual bool FreeSegmentValue(Segments *segments,
                                 size_t segment_index) const;
   virtual bool CommitSegments(Segments *segments,
-                              const vector<size_t> &candidate_index) const;
+                              const std::vector<size_t> &candidate_index) const;
   virtual bool ResizeSegment(Segments *segments,
                              const ConversionRequest &requset,
                              size_t segment_index,
@@ -154,6 +154,11 @@ class ConverterImpl : public ConverterInterface {
   void RewriteAndSuppressCandidates(const ConversionRequest &request,
                                     Segments *segments) const;
 
+  // Limits the number of candidates based on a request.
+  // This method doesn't drop meta candidates for T13n conversion.
+  void TrimCandidates(const ConversionRequest &request,
+                      Segments *segments) const;
+
   // Commits usage stats for committed text.
   // |begin_segment_index| is a index of whole segments. (history and conversion
   // segments)
@@ -168,10 +173,10 @@ class ConverterImpl : public ConverterInterface {
                              string *value,
                              uint16 *id) const;
 
-  const POSMatcher *pos_matcher_;
-  const SuppressionDictionary *suppression_dictionary_;
-  scoped_ptr<PredictorInterface> predictor_;
-  scoped_ptr<RewriterInterface> rewriter_;
+  const dictionary::POSMatcher *pos_matcher_;
+  const dictionary::SuppressionDictionary *suppression_dictionary_;
+  std::unique_ptr<PredictorInterface> predictor_;
+  std::unique_ptr<RewriterInterface> rewriter_;
   const ImmutableConverterInterface *immutable_converter_;
   uint16 general_noun_id_;
 };

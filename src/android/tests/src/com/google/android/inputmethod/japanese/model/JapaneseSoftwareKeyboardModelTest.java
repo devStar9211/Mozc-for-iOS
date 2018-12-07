@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,12 +29,13 @@
 
 package org.mozc.android.inputmethod.japanese.model;
 
-import org.mozc.android.inputmethod.japanese.JapaneseKeyboard.KeyboardSpecification;
+import org.mozc.android.inputmethod.japanese.keyboard.Keyboard.KeyboardSpecification;
 import org.mozc.android.inputmethod.japanese.model.JapaneseSoftwareKeyboardModel.KeyboardMode;
 import org.mozc.android.inputmethod.japanese.preference.ClientSidePreference.InputStyle;
 import org.mozc.android.inputmethod.japanese.preference.ClientSidePreference.KeyboardLayout;
 import org.mozc.android.inputmethod.japanese.testing.Parameter;
 
+import android.test.suitebuilder.annotation.SmallTest;
 import android.text.InputType;
 
 import junit.framework.TestCase;
@@ -43,6 +44,7 @@ import junit.framework.TestCase;
  */
 public class JapaneseSoftwareKeyboardModelTest extends TestCase {
 
+  @SmallTest
   public void testGetKeyboardSpecification() {
     class TestData extends Parameter {
       final KeyboardLayout keyboardLayout;
@@ -99,42 +101,6 @@ public class JapaneseSoftwareKeyboardModelTest extends TestCase {
         new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.ALPHABET,
                      InputStyle.TOGGLE_FLICK, true,
                      KeyboardSpecification.TWELVE_KEY_TOGGLE_QWERTY_ALPHABET),
-        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.KANA_NUMBER,
-                     InputStyle.TOGGLE, false,
-                     KeyboardSpecification.TWELVE_KEY_TOGGLE_NUMBER),
-        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.KANA_NUMBER,
-                     InputStyle.TOGGLE, true,
-                     KeyboardSpecification.TWELVE_KEY_TOGGLE_NUMBER),
-        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.KANA_NUMBER,
-                     InputStyle.FLICK, false,
-                     KeyboardSpecification.TWELVE_KEY_FLICK_NUMBER),
-        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.KANA_NUMBER,
-                     InputStyle.FLICK, true,
-                     KeyboardSpecification.TWELVE_KEY_FLICK_NUMBER),
-        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.KANA_NUMBER,
-                     InputStyle.TOGGLE_FLICK, false,
-                     KeyboardSpecification.TWELVE_KEY_TOGGLE_FLICK_NUMBER),
-        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.KANA_NUMBER,
-                     InputStyle.TOGGLE_FLICK, true,
-                     KeyboardSpecification.TWELVE_KEY_TOGGLE_FLICK_NUMBER),
-        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.ALPHABET_NUMBER,
-                     InputStyle.TOGGLE, false,
-                     KeyboardSpecification.TWELVE_KEY_TOGGLE_ALPHABET),
-        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.ALPHABET_NUMBER,
-                     InputStyle.TOGGLE, true,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
-        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.ALPHABET_NUMBER,
-                     InputStyle.FLICK, false,
-                     KeyboardSpecification.TWELVE_KEY_FLICK_ALPHABET),
-        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.ALPHABET_NUMBER,
-                     InputStyle.FLICK, true,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
-        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.ALPHABET_NUMBER,
-                     InputStyle.TOGGLE_FLICK, false,
-                     KeyboardSpecification.TWELVE_KEY_TOGGLE_FLICK_ALPHABET),
-        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.ALPHABET_NUMBER,
-                     InputStyle.TOGGLE_FLICK, true,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
 
         new TestData(KeyboardLayout.QWERTY, KeyboardMode.KANA,
                      InputStyle.TOGGLE, false,
@@ -172,42 +138,6 @@ public class JapaneseSoftwareKeyboardModelTest extends TestCase {
         new TestData(KeyboardLayout.QWERTY, KeyboardMode.ALPHABET,
                      InputStyle.TOGGLE_FLICK, true,
                      KeyboardSpecification.QWERTY_ALPHABET),
-        new TestData(KeyboardLayout.QWERTY, KeyboardMode.KANA_NUMBER,
-                     InputStyle.TOGGLE, false,
-                     KeyboardSpecification.QWERTY_KANA_NUMBER),
-        new TestData(KeyboardLayout.QWERTY, KeyboardMode.KANA_NUMBER,
-                     InputStyle.TOGGLE, true,
-                     KeyboardSpecification.QWERTY_KANA_NUMBER),
-        new TestData(KeyboardLayout.QWERTY, KeyboardMode.KANA_NUMBER,
-                     InputStyle.FLICK, false,
-                     KeyboardSpecification.QWERTY_KANA_NUMBER),
-        new TestData(KeyboardLayout.QWERTY, KeyboardMode.KANA_NUMBER,
-                     InputStyle.FLICK, true,
-                     KeyboardSpecification.QWERTY_KANA_NUMBER),
-        new TestData(KeyboardLayout.QWERTY, KeyboardMode.KANA_NUMBER,
-                     InputStyle.TOGGLE_FLICK, false,
-                     KeyboardSpecification.QWERTY_KANA_NUMBER),
-        new TestData(KeyboardLayout.QWERTY, KeyboardMode.KANA_NUMBER,
-                     InputStyle.TOGGLE_FLICK, true,
-                     KeyboardSpecification.QWERTY_KANA_NUMBER),
-        new TestData(KeyboardLayout.QWERTY, KeyboardMode.ALPHABET_NUMBER,
-                     InputStyle.TOGGLE, false,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
-        new TestData(KeyboardLayout.QWERTY, KeyboardMode.ALPHABET_NUMBER,
-                     InputStyle.TOGGLE, true,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
-        new TestData(KeyboardLayout.QWERTY, KeyboardMode.ALPHABET_NUMBER,
-                     InputStyle.FLICK, false,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
-        new TestData(KeyboardLayout.QWERTY, KeyboardMode.ALPHABET_NUMBER,
-                     InputStyle.FLICK, true,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
-        new TestData(KeyboardLayout.QWERTY, KeyboardMode.ALPHABET_NUMBER,
-                     InputStyle.TOGGLE_FLICK, false,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
-        new TestData(KeyboardLayout.QWERTY, KeyboardMode.ALPHABET_NUMBER,
-                     InputStyle.TOGGLE_FLICK, true,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
 
         new TestData(KeyboardLayout.GODAN, KeyboardMode.KANA,
                      InputStyle.TOGGLE, false,
@@ -245,24 +175,81 @@ public class JapaneseSoftwareKeyboardModelTest extends TestCase {
         new TestData(KeyboardLayout.GODAN, KeyboardMode.ALPHABET,
                      InputStyle.TOGGLE_FLICK, true,
                      KeyboardSpecification.QWERTY_ALPHABET),
-        new TestData(KeyboardLayout.GODAN, KeyboardMode.ALPHABET_NUMBER,
+
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.NUMBER,
                      InputStyle.TOGGLE, false,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
-        new TestData(KeyboardLayout.GODAN, KeyboardMode.ALPHABET_NUMBER,
+                     KeyboardSpecification.NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.NUMBER,
                      InputStyle.TOGGLE, true,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
-        new TestData(KeyboardLayout.GODAN, KeyboardMode.ALPHABET_NUMBER,
+                     KeyboardSpecification.NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.NUMBER,
                      InputStyle.FLICK, false,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
-        new TestData(KeyboardLayout.GODAN, KeyboardMode.ALPHABET_NUMBER,
+                     KeyboardSpecification.NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.NUMBER,
                      InputStyle.FLICK, true,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
-        new TestData(KeyboardLayout.GODAN, KeyboardMode.ALPHABET_NUMBER,
+                     KeyboardSpecification.NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.NUMBER,
                      InputStyle.TOGGLE_FLICK, false,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
-        new TestData(KeyboardLayout.GODAN, KeyboardMode.ALPHABET_NUMBER,
+                     KeyboardSpecification.NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.NUMBER,
                      InputStyle.TOGGLE_FLICK, true,
-                     KeyboardSpecification.QWERTY_ALPHABET_NUMBER),
+                     KeyboardSpecification.NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.NUMBER,
+                     InputStyle.TOGGLE, false,
+                     KeyboardSpecification.NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.NUMBER,
+                     InputStyle.TOGGLE, true,
+                     KeyboardSpecification.NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.NUMBER,
+                     InputStyle.FLICK, false,
+                     KeyboardSpecification.NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.NUMBER,
+                     InputStyle.FLICK, true,
+                     KeyboardSpecification.NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.NUMBER,
+                     InputStyle.TOGGLE_FLICK, false,
+                     KeyboardSpecification.NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.NUMBER,
+                     InputStyle.TOGGLE_FLICK, true,
+                     KeyboardSpecification.NUMBER),
+
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.SYMBOL_NUMBER,
+                     InputStyle.TOGGLE, false,
+                     KeyboardSpecification.SYMBOL_NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.SYMBOL_NUMBER,
+                     InputStyle.TOGGLE, true,
+                     KeyboardSpecification.SYMBOL_NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.SYMBOL_NUMBER,
+                     InputStyle.FLICK, false,
+                     KeyboardSpecification.SYMBOL_NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.SYMBOL_NUMBER,
+                     InputStyle.FLICK, true,
+                     KeyboardSpecification.SYMBOL_NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.SYMBOL_NUMBER,
+                     InputStyle.TOGGLE_FLICK, false,
+                     KeyboardSpecification.SYMBOL_NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.SYMBOL_NUMBER,
+                     InputStyle.TOGGLE_FLICK, true,
+                     KeyboardSpecification.SYMBOL_NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.SYMBOL_NUMBER,
+                     InputStyle.TOGGLE, false,
+                     KeyboardSpecification.SYMBOL_NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.SYMBOL_NUMBER,
+                     InputStyle.TOGGLE, true,
+                     KeyboardSpecification.SYMBOL_NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.SYMBOL_NUMBER,
+                     InputStyle.FLICK, false,
+                     KeyboardSpecification.SYMBOL_NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.SYMBOL_NUMBER,
+                     InputStyle.FLICK, true,
+                     KeyboardSpecification.SYMBOL_NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.SYMBOL_NUMBER,
+                     InputStyle.TOGGLE_FLICK, false,
+                     KeyboardSpecification.SYMBOL_NUMBER),
+        new TestData(KeyboardLayout.TWELVE_KEYS, KeyboardMode.SYMBOL_NUMBER,
+                     InputStyle.TOGGLE_FLICK, true,
+                     KeyboardSpecification.SYMBOL_NUMBER),
+
     };
 
     JapaneseSoftwareKeyboardModel model = new JapaneseSoftwareKeyboardModel();
@@ -277,6 +264,7 @@ public class JapaneseSoftwareKeyboardModelTest extends TestCase {
     }
   }
 
+  @SmallTest
   public void testInputType() {
     class TestData extends Parameter {
       final int inputType;
@@ -289,19 +277,18 @@ public class JapaneseSoftwareKeyboardModelTest extends TestCase {
     }
 
     TestData[] testDataListForTwelveKeys = {
-        new TestData(InputType.TYPE_CLASS_DATETIME, KeyboardMode.KANA_NUMBER),
+        new TestData(InputType.TYPE_CLASS_DATETIME, KeyboardMode.NUMBER),
         new TestData(InputType.TYPE_CLASS_DATETIME | InputType.TYPE_DATETIME_VARIATION_DATE,
-                     KeyboardMode.KANA_NUMBER),
+                     KeyboardMode.NUMBER),
         new TestData(InputType.TYPE_CLASS_DATETIME | InputType.TYPE_DATETIME_VARIATION_NORMAL,
-                     KeyboardMode.KANA_NUMBER),
+                     KeyboardMode.NUMBER),
         new TestData(InputType.TYPE_CLASS_DATETIME | InputType.TYPE_DATETIME_VARIATION_TIME,
-                     KeyboardMode.KANA_NUMBER),
-        new TestData(InputType.TYPE_CLASS_NUMBER, KeyboardMode.KANA_NUMBER),
-        new TestData(InputType.TYPE_CLASS_PHONE, KeyboardMode.KANA_NUMBER),
+                     KeyboardMode.NUMBER),
+        new TestData(InputType.TYPE_CLASS_NUMBER, KeyboardMode.NUMBER),
+        new TestData(InputType.TYPE_CLASS_PHONE, KeyboardMode.NUMBER),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
-                     null),
-        new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT,
-                     null),
+                     KeyboardMode.ALPHABET),
+        new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT, null),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_FILTER, null),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE, null),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_NORMAL, null),
@@ -311,14 +298,11 @@ public class JapaneseSoftwareKeyboardModelTest extends TestCase {
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PHONETIC, null),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_POSTAL_ADDRESS,
                      null),
-        new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE,
-                     null),
-        new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI,
-                     null),
+        new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE, null),
+        new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI, null),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
                      KeyboardMode.ALPHABET),
-        new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT,
-                     null),
+        new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT, null),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
                      KeyboardMode.ALPHABET),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
@@ -357,19 +341,18 @@ public class JapaneseSoftwareKeyboardModelTest extends TestCase {
     }
 
     TestData[] testDataListForQwertyAndGodan = {
-        new TestData(InputType.TYPE_CLASS_DATETIME, KeyboardMode.ALPHABET_NUMBER),
+        new TestData(InputType.TYPE_CLASS_DATETIME, KeyboardMode.NUMBER),
         new TestData(InputType.TYPE_CLASS_DATETIME | InputType.TYPE_DATETIME_VARIATION_DATE,
-                     KeyboardMode.ALPHABET_NUMBER),
+                     KeyboardMode.NUMBER),
         new TestData(InputType.TYPE_CLASS_DATETIME | InputType.TYPE_DATETIME_VARIATION_NORMAL,
-                     KeyboardMode.ALPHABET_NUMBER),
+                     KeyboardMode.NUMBER),
         new TestData(InputType.TYPE_CLASS_DATETIME | InputType.TYPE_DATETIME_VARIATION_TIME,
-                     KeyboardMode.ALPHABET_NUMBER),
-        new TestData(InputType.TYPE_CLASS_NUMBER, KeyboardMode.ALPHABET_NUMBER),
-        new TestData(InputType.TYPE_CLASS_PHONE, KeyboardMode.ALPHABET_NUMBER),
+                     KeyboardMode.NUMBER),
+        new TestData(InputType.TYPE_CLASS_NUMBER, KeyboardMode.NUMBER),
+        new TestData(InputType.TYPE_CLASS_PHONE, KeyboardMode.NUMBER),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
-                     null),
-        new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT,
-                     null),
+                     KeyboardMode.ALPHABET),
+        new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT, null),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_FILTER, null),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE, null),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_NORMAL, null),
@@ -379,18 +362,17 @@ public class JapaneseSoftwareKeyboardModelTest extends TestCase {
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PHONETIC, null),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_POSTAL_ADDRESS,
                      null),
-        new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE,
-                     null),
+        new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE, null),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI, null),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
                      KeyboardMode.ALPHABET),
-        new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT,
-                     null),
+        new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT, null),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
                      KeyboardMode.ALPHABET),
         new TestData(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
                      KeyboardMode.ALPHABET),
     };
+
 
     // Reset to qwerty.
     model.setInputType(InputType.TYPE_NULL);
@@ -458,12 +440,13 @@ public class JapaneseSoftwareKeyboardModelTest extends TestCase {
 
   }
 
+  @SmallTest
   public void testInputTypeScenario() {
     JapaneseSoftwareKeyboardModel model = new JapaneseSoftwareKeyboardModel();
     model.setKeyboardLayout(KeyboardLayout.TWELVE_KEYS);
     model.setKeyboardMode(KeyboardMode.KANA);
     model.setInputType(InputType.TYPE_CLASS_NUMBER);
-    assertEquals(KeyboardMode.KANA_NUMBER, model.getKeyboardMode());
+    assertEquals(KeyboardMode.NUMBER, model.getKeyboardMode());
     model.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
     assertEquals(KeyboardMode.ALPHABET, model.getKeyboardMode());
     model.setInputType(InputType.TYPE_NULL);
@@ -472,11 +455,25 @@ public class JapaneseSoftwareKeyboardModelTest extends TestCase {
 
     model.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
     assertEquals(KeyboardMode.ALPHABET, model.getKeyboardMode());
-    model.setKeyboardMode(KeyboardMode.KANA_NUMBER);
-    assertEquals(KeyboardMode.KANA_NUMBER, model.getKeyboardMode());
+    model.setKeyboardMode(KeyboardMode.SYMBOL_NUMBER);
+    assertEquals(KeyboardMode.SYMBOL_NUMBER, model.getKeyboardMode());
     // Even after the keyboard mode overwriting, the keyboard mode should be revereted before
     // input-type-setting.
     model.setInputType(InputType.TYPE_NULL);
+    assertEquals(KeyboardMode.KANA, model.getKeyboardMode());
+  }
+
+  @SmallTest
+  public void testNumberKeyboardSwitchingIssue_b22676055() {
+    JapaneseSoftwareKeyboardModel model = new JapaneseSoftwareKeyboardModel();
+    model.setKeyboardLayout(KeyboardLayout.TWELVE_KEYS);
+    assertEquals(KeyboardMode.KANA, model.getKeyboardMode());
+    model.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+    assertEquals(KeyboardMode.ALPHABET, model.getKeyboardMode());
+    model.setKeyboardLayout(KeyboardLayout.QWERTY);
+    model.setInputType(InputType.TYPE_CLASS_NUMBER);
+    assertEquals(KeyboardMode.NUMBER, model.getKeyboardMode());
+    model.setInputType(InputType.TYPE_CLASS_TEXT);
     assertEquals(KeyboardMode.KANA, model.getKeyboardMode());
   }
 }

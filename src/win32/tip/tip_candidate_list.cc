@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,8 +32,7 @@
 #include <Windows.h>
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlcom.h>
 #include <ctffunc.h>
 
@@ -54,7 +53,7 @@ namespace {
 
 class CandidateStringImpl : public ITfCandidateString {
  public:
-  CandidateStringImpl(ULONG index, const wstring &value)
+  CandidateStringImpl(ULONG index, const std::wstring &value)
       : index_(index),
         value_(value) {
   }
@@ -113,14 +112,14 @@ class CandidateStringImpl : public ITfCandidateString {
 
   TipRefCount ref_count_;
   const ULONG index_;
-  const wstring value_;
+  const std::wstring value_;
 
   DISALLOW_COPY_AND_ASSIGN(CandidateStringImpl);
 };
 
 class EnumTfCandidatesImpl : public IEnumTfCandidates {
  public:
-  explicit EnumTfCandidatesImpl(const vector<wstring> &candidates)
+  explicit EnumTfCandidatesImpl(const std::vector<std::wstring> &candidates)
       : candidates_(candidates),
         current_(0) {
   }
@@ -211,7 +210,7 @@ class EnumTfCandidatesImpl : public IEnumTfCandidates {
 
   TipRefCount ref_count_;
 
-  vector<wstring> candidates_;
+  std::vector<std::wstring> candidates_;
   size_t current_;
 
   DISALLOW_COPY_AND_ASSIGN(EnumTfCandidatesImpl);
@@ -219,7 +218,7 @@ class EnumTfCandidatesImpl : public IEnumTfCandidates {
 
 class CandidateListImpl : public ITfCandidateList {
  public:
-  CandidateListImpl(const vector<wstring> &candidates,
+  CandidateListImpl(const std::vector<std::wstring> &candidates,
                     TipCandidateListCallback *callback)
       : candidates_(candidates),
         callback_(callback) {
@@ -307,7 +306,7 @@ class CandidateListImpl : public ITfCandidateList {
   }
 
   TipRefCount ref_count_;
-  vector<wstring> candidates_;
+  std::vector<std::wstring> candidates_;
   unique_ptr<TipCandidateListCallback> callback_;
 
   DISALLOW_COPY_AND_ASSIGN(CandidateListImpl);
@@ -319,8 +318,9 @@ TipCandidateListCallback::~TipCandidateListCallback() {
 }
 
 // static
-ITfCandidateList *TipCandidateList::New(const vector<wstring> &candidates,
-                                        TipCandidateListCallback *callback) {
+ITfCandidateList *TipCandidateList::New(
+    const std::vector<std::wstring> &candidates,
+    TipCandidateListCallback *callback) {
   return new CandidateListImpl(candidates, callback);
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,8 +32,7 @@
 #include <Windows.h>
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlcom.h>
 #include <Ctffunc.h>
 
@@ -47,32 +46,6 @@
 
 using ::ATL::CComPtr;
 using ::std::unique_ptr;
-
-// ITfFnSearchCandidateProvider is available on Windows 8 SDK and later.
-#ifndef __ITfFnSearchCandidateProvider_INTERFACE_DEFINED__
-#define __ITfFnSearchCandidateProvider_INTERFACE_DEFINED__
-
-// {87a2ad8f-f27b-4920-8501-67602280175d}
-const IID IID_ITfFnSearchCandidateProvider = {
-  0x87a2ad8f, 0xf27b, 0x4920, {0x85, 0x01, 0x67, 0x60, 0x22, 0x80, 0x17, 0x5d}
-};
-
-// Note: "87a2ad8f-f27b-4920-8501-67602280175d" is equivalent to
-// IID_ITfFnSearchCandidateProvider
-struct __declspec(uuid("87a2ad8f-f27b-4920-8501-67602280175d"))
-ITfFnSearchCandidateProvider : public ITfFunction {
- public:
-  virtual HRESULT STDMETHODCALLTYPE GetSearchCandidates(
-      BSTR query,
-      BSTR application_id,
-      ITfCandidateList **candidate_list) = 0;
-
-  virtual HRESULT STDMETHODCALLTYPE SetResult(
-      BSTR query,
-      BSTR application_id,
-      BSTR result) = 0;
-};
-#endif  // !__ITfFnSearchCandidateProvider_INTERFACE_DEFINED__
 
 namespace mozc {
 namespace win32 {
@@ -146,7 +119,7 @@ class SearchCandidateProviderImpl : public ITfFnSearchCandidateProvider {
     if (candidate_list == nullptr) {
       return E_INVALIDARG;
     }
-    std::vector<wstring> candidates;
+    std::vector<std::wstring> candidates;
     if (!provider_->Query(query, TipQueryProvider::kDefault, &candidates)) {
       return E_FAIL;
     }

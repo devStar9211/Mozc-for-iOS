@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,7 @@
 #include "unix/ibus/key_translator.h"
 
 #include <map>
+#include <set>
 #include <string>
 
 #include "base/logging.h"
@@ -130,23 +131,23 @@ const struct SpecialKeyMap {
   //   - IBUS_Kana_Lock? IBUS_KEY_Kana_Shift?
 };
 
-const struct ModifierKeyMap {
+const struct ModifierKeyMapData {
   guint from;
   mozc::commands::KeyEvent::ModifierKey to;
-} modifier_key_map[] = {
-  {IBUS_Shift_L, mozc::commands::KeyEvent::LEFT_SHIFT},
-  {IBUS_Shift_R, mozc::commands::KeyEvent::RIGHT_SHIFT},
-  {IBUS_Control_L, mozc::commands::KeyEvent::LEFT_CTRL},
-  {IBUS_Control_R, mozc::commands::KeyEvent::RIGHT_CTRL},
-  {IBUS_Alt_L, mozc::commands::KeyEvent::LEFT_ALT},
-  {IBUS_Alt_R, mozc::commands::KeyEvent::RIGHT_ALT},
+} modifier_key_map_data[] = {
+  {IBUS_Shift_L, mozc::commands::KeyEvent::SHIFT},
+  {IBUS_Shift_R, mozc::commands::KeyEvent::SHIFT},
+  {IBUS_Control_L, mozc::commands::KeyEvent::CTRL},
+  {IBUS_Control_R, mozc::commands::KeyEvent::CTRL},
+  {IBUS_Alt_L, mozc::commands::KeyEvent::ALT},
+  {IBUS_Alt_R, mozc::commands::KeyEvent::ALT},
   {IBUS_LOCK_MASK, mozc::commands::KeyEvent::CAPS},
 };
 
-const struct ModifierMaskMap {
+const struct ModifierMaskMapData {
   guint from;
   mozc::commands::KeyEvent::ModifierKey to;
-} modifier_mask_map[] = {
+} modifier_mask_map_data[] = {
   {IBUS_SHIFT_MASK, mozc::commands::KeyEvent::SHIFT},
   {IBUS_CONTROL_MASK, mozc::commands::KeyEvent::CTRL},
   {IBUS_MOD1_MASK, mozc::commands::KeyEvent::ALT},
@@ -158,198 +159,198 @@ const struct KanaMap {
   const char *no_shift;
   const char *shift;
 } kana_map_jp[] = {
-  { '1' , "\xe3\x81\xac", "\xe3\x81\xac" },  // "ぬ", "ぬ"
-  { '!' , "\xe3\x81\xac", "\xe3\x81\xac" },  // "ぬ", "ぬ"
-  { '2' , "\xe3\x81\xb5", "\xe3\x81\xb5" },  // "ふ", "ふ"
-  { '\"', "\xe3\x81\xb5", "\xe3\x81\xb5" },  // "ふ", "ふ"
-  { '3' , "\xe3\x81\x82", "\xe3\x81\x81" },  // "あ", "ぁ"
-  { '#' , "\xe3\x81\x82", "\xe3\x81\x81" },  // "あ", "ぁ"
-  { '4' , "\xe3\x81\x86", "\xe3\x81\x85" },  // "う", "ぅ"
-  { '$' , "\xe3\x81\x86", "\xe3\x81\x85" },  // "う", "ぅ"
-  { '5' , "\xe3\x81\x88", "\xe3\x81\x87" },  // "え", "ぇ"
-  { '%' , "\xe3\x81\x88", "\xe3\x81\x87" },  // "え", "ぇ"
-  { '6' , "\xe3\x81\x8a", "\xe3\x81\x89" },  // "お", "ぉ"
-  { '&' , "\xe3\x81\x8a", "\xe3\x81\x89" },  // "お", "ぉ"
-  { '7' , "\xe3\x82\x84", "\xe3\x82\x83" },  // "や", "ゃ"
-  { '\'', "\xe3\x82\x84", "\xe3\x82\x83" },  // "や", "ゃ"
-  { '8' , "\xe3\x82\x86", "\xe3\x82\x85" },  // "ゆ", "ゅ"
-  { '(' , "\xe3\x82\x86", "\xe3\x82\x85" },  // "ゆ", "ゅ"
-  { '9' , "\xe3\x82\x88", "\xe3\x82\x87" },  // "よ", "ょ"
-  { ')' , "\xe3\x82\x88", "\xe3\x82\x87" },  // "よ", "ょ"
-  { '0' , "\xe3\x82\x8f", "\xe3\x82\x92" },  // "わ", "を"
-  { '-' , "\xe3\x81\xbb", "\xe3\x81\xbb" },  // "ほ", "ほ"
-  { '=' , "\xe3\x81\xbb", "\xe3\x81\xbb" },  // "ほ", "ほ"
-  { '^' , "\xe3\x81\xb8", "\xe3\x82\x92" },  // "へ", "を"
-  { '~' , "\xe3\x81\xb8", "\xe3\x82\x92" },  // "へ", "を"
-  { '|' , "\xe3\x83\xbc", "\xe3\x83\xbc" },  // "ー", "ー"
-  { 'q' , "\xe3\x81\x9f", "\xe3\x81\x9f" },  // "た", "た"
-  { 'Q' , "\xe3\x81\x9f", "\xe3\x81\x9f" },  // "た", "た"
-  { 'w' , "\xe3\x81\xa6", "\xe3\x81\xa6" },  // "て", "て"
-  { 'W' , "\xe3\x81\xa6", "\xe3\x81\xa6" },  // "て", "て"
-  { 'e' , "\xe3\x81\x84", "\xe3\x81\x83" },  // "い", "ぃ"
-  { 'E' , "\xe3\x81\x84", "\xe3\x81\x83" },  // "い", "ぃ"
-  { 'r' , "\xe3\x81\x99", "\xe3\x81\x99" },  // "す", "す"
-  { 'R' , "\xe3\x81\x99", "\xe3\x81\x99" },  // "す", "す"
-  { 't' , "\xe3\x81\x8b", "\xe3\x81\x8b" },  // "か", "か"
-  { 'T' , "\xe3\x81\x8b", "\xe3\x81\x8b" },  // "か", "か"
-  { 'y' , "\xe3\x82\x93", "\xe3\x82\x93" },  // "ん", "ん"
-  { 'Y' , "\xe3\x82\x93", "\xe3\x82\x93" },  // "ん", "ん"
-  { 'u' , "\xe3\x81\xaa", "\xe3\x81\xaa" },  // "な", "な"
-  { 'U' , "\xe3\x81\xaa", "\xe3\x81\xaa" },  // "な", "な"
-  { 'i' , "\xe3\x81\xab", "\xe3\x81\xab" },  // "に", "に"
-  { 'I' , "\xe3\x81\xab", "\xe3\x81\xab" },  // "に", "に"
-  { 'o' , "\xe3\x82\x89", "\xe3\x82\x89" },  // "ら", "ら"
-  { 'O' , "\xe3\x82\x89", "\xe3\x82\x89" },  // "ら", "ら"
-  { 'p' , "\xe3\x81\x9b", "\xe3\x81\x9b" },  // "せ", "せ"
-  { 'P' , "\xe3\x81\x9b", "\xe3\x81\x9b" },  // "せ", "せ"
-  { '@' , "\xe3\x82\x9b", "\xe3\x82\x9b" },  // "゛", "゛"
-  { '`' , "\xe3\x82\x9b", "\xe3\x82\x9b" },  // "゛", "゛"
-  { '[' , "\xe3\x82\x9c", "\xe3\x80\x8c" },  // "゜", "「"
-  { '{' , "\xe3\x82\x9c", "\xe3\x80\x8c" },  // "゜", "「"
-  { 'a' , "\xe3\x81\xa1", "\xe3\x81\xa1" },  // "ち", "ち"
-  { 'A' , "\xe3\x81\xa1", "\xe3\x81\xa1" },  // "ち", "ち"
-  { 's' , "\xe3\x81\xa8", "\xe3\x81\xa8" },  // "と", "と"
-  { 'S' , "\xe3\x81\xa8", "\xe3\x81\xa8" },  // "と", "と"
-  { 'd' , "\xe3\x81\x97", "\xe3\x81\x97" },  // "し", "し"
-  { 'D' , "\xe3\x81\x97", "\xe3\x81\x97" },  // "し", "し"
-  { 'f' , "\xe3\x81\xaf", "\xe3\x81\xaf" },  // "は", "は"
-  { 'F' , "\xe3\x81\xaf", "\xe3\x81\xaf" },  // "は", "は"
-  { 'g' , "\xe3\x81\x8d", "\xe3\x81\x8d" },  // "き", "き"
-  { 'G' , "\xe3\x81\x8d", "\xe3\x81\x8d" },  // "き", "き"
-  { 'h' , "\xe3\x81\x8f", "\xe3\x81\x8f" },  // "く", "く"
-  { 'H' , "\xe3\x81\x8f", "\xe3\x81\x8f" },  // "く", "く"
-  { 'j' , "\xe3\x81\xbe", "\xe3\x81\xbe" },  // "ま", "ま"
-  { 'J' , "\xe3\x81\xbe", "\xe3\x81\xbe" },  // "ま", "ま"
-  { 'k' , "\xe3\x81\xae", "\xe3\x81\xae" },  // "の", "の"
-  { 'K' , "\xe3\x81\xae", "\xe3\x81\xae" },  // "の", "の"
-  { 'l' , "\xe3\x82\x8a", "\xe3\x82\x8a" },  // "り", "り"
-  { 'L' , "\xe3\x82\x8a", "\xe3\x82\x8a" },  // "り", "り"
-  { ';' , "\xe3\x82\x8c", "\xe3\x82\x8c" },  // "れ", "れ"
-  { '+' , "\xe3\x82\x8c", "\xe3\x82\x8c" },  // "れ", "れ"
-  { ':' , "\xe3\x81\x91", "\xe3\x81\x91" },  // "け", "け"
-  { '*' , "\xe3\x81\x91", "\xe3\x81\x91" },  // "け", "け"
-  { ']' , "\xe3\x82\x80", "\xe3\x80\x8d" },  // "む", "」"
-  { '}' , "\xe3\x82\x80", "\xe3\x80\x8d" },  // "む", "」"
-  { 'z' , "\xe3\x81\xa4", "\xe3\x81\xa3" },  // "つ", "っ"
-  { 'Z' , "\xe3\x81\xa4", "\xe3\x81\xa3" },  // "つ", "っ"
-  { 'x' , "\xe3\x81\x95", "\xe3\x81\x95" },  // "さ", "さ"
-  { 'X' , "\xe3\x81\x95", "\xe3\x81\x95" },  // "さ", "さ"
-  { 'c' , "\xe3\x81\x9d", "\xe3\x81\x9d" },  // "そ", "そ"
-  { 'C' , "\xe3\x81\x9d", "\xe3\x81\x9d" },  // "そ", "そ"
-  { 'v' , "\xe3\x81\xb2", "\xe3\x81\xb2" },  // "ひ", "ひ"
-  { 'V' , "\xe3\x81\xb2", "\xe3\x81\xb2" },  // "ひ", "ひ"
-  { 'b' , "\xe3\x81\x93", "\xe3\x81\x93" },  // "こ", "こ"
-  { 'B' , "\xe3\x81\x93", "\xe3\x81\x93" },  // "こ", "こ"
-  { 'n' , "\xe3\x81\xbf", "\xe3\x81\xbf" },  // "み", "み"
-  { 'N' , "\xe3\x81\xbf", "\xe3\x81\xbf" },  // "み", "み"
-  { 'm' , "\xe3\x82\x82", "\xe3\x82\x82" },  // "も", "も"
-  { 'M' , "\xe3\x82\x82", "\xe3\x82\x82" },  // "も", "も"
-  { ',' , "\xe3\x81\xad", "\xe3\x80\x81" },  // "ね", "、"
-  { '<' , "\xe3\x81\xad", "\xe3\x80\x81" },  // "ね", "、"
-  { '.' , "\xe3\x82\x8b", "\xe3\x80\x82" },  // "る", "。"
-  { '>' , "\xe3\x82\x8b", "\xe3\x80\x82" },  // "る", "。"
-  { '/' , "\xe3\x82\x81", "\xe3\x83\xbb" },  // "め", "・"
-  { '?' , "\xe3\x82\x81", "\xe3\x83\xbb" },  // "め", "・"
-  { '_' , "\xe3\x82\x8d", "\xe3\x82\x8d" },  // "ろ", "ろ"
+  { '1' , "ぬ", "ぬ" },
+  { '!' , "ぬ", "ぬ" },
+  { '2' , "ふ", "ふ" },
+  { '\"', "ふ", "ふ" },
+  { '3' , "あ", "ぁ" },
+  { '#' , "あ", "ぁ" },
+  { '4' , "う", "ぅ" },
+  { '$' , "う", "ぅ" },
+  { '5' , "え", "ぇ" },
+  { '%' , "え", "ぇ" },
+  { '6' , "お", "ぉ" },
+  { '&' , "お", "ぉ" },
+  { '7' , "や", "ゃ" },
+  { '\'', "や", "ゃ" },
+  { '8' , "ゆ", "ゅ" },
+  { '(' , "ゆ", "ゅ" },
+  { '9' , "よ", "ょ" },
+  { ')' , "よ", "ょ" },
+  { '0' , "わ", "を" },
+  { '-' , "ほ", "ほ" },
+  { '=' , "ほ", "ほ" },
+  { '^' , "へ", "を" },
+  { '~' , "へ", "を" },
+  { '|' , "ー", "ー" },
+  { 'q' , "た", "た" },
+  { 'Q' , "た", "た" },
+  { 'w' , "て", "て" },
+  { 'W' , "て", "て" },
+  { 'e' , "い", "ぃ" },
+  { 'E' , "い", "ぃ" },
+  { 'r' , "す", "す" },
+  { 'R' , "す", "す" },
+  { 't' , "か", "か" },
+  { 'T' , "か", "か" },
+  { 'y' , "ん", "ん" },
+  { 'Y' , "ん", "ん" },
+  { 'u' , "な", "な" },
+  { 'U' , "な", "な" },
+  { 'i' , "に", "に" },
+  { 'I' , "に", "に" },
+  { 'o' , "ら", "ら" },
+  { 'O' , "ら", "ら" },
+  { 'p' , "せ", "せ" },
+  { 'P' , "せ", "せ" },
+  { '@' , "゛", "゛" },
+  { '`' , "゛", "゛" },
+  { '[' , "゜", "「" },
+  { '{' , "゜", "「" },
+  { 'a' , "ち", "ち" },
+  { 'A' , "ち", "ち" },
+  { 's' , "と", "と" },
+  { 'S' , "と", "と" },
+  { 'd' , "し", "し" },
+  { 'D' , "し", "し" },
+  { 'f' , "は", "は" },
+  { 'F' , "は", "は" },
+  { 'g' , "き", "き" },
+  { 'G' , "き", "き" },
+  { 'h' , "く", "く" },
+  { 'H' , "く", "く" },
+  { 'j' , "ま", "ま" },
+  { 'J' , "ま", "ま" },
+  { 'k' , "の", "の" },
+  { 'K' , "の", "の" },
+  { 'l' , "り", "り" },
+  { 'L' , "り", "り" },
+  { ';' , "れ", "れ" },
+  { '+' , "れ", "れ" },
+  { ':' , "け", "け" },
+  { '*' , "け", "け" },
+  { ']' , "む", "」" },
+  { '}' , "む", "」" },
+  { 'z' , "つ", "っ" },
+  { 'Z' , "つ", "っ" },
+  { 'x' , "さ", "さ" },
+  { 'X' , "さ", "さ" },
+  { 'c' , "そ", "そ" },
+  { 'C' , "そ", "そ" },
+  { 'v' , "ひ", "ひ" },
+  { 'V' , "ひ", "ひ" },
+  { 'b' , "こ", "こ" },
+  { 'B' , "こ", "こ" },
+  { 'n' , "み", "み" },
+  { 'N' , "み", "み" },
+  { 'm' , "も", "も" },
+  { 'M' , "も", "も" },
+  { ',' , "ね", "、" },
+  { '<' , "ね", "、" },
+  { '.' , "る", "。" },
+  { '>' , "る", "。" },
+  { '/' , "め", "・" },
+  { '?' , "め", "・" },
+  { '_' , "ろ", "ろ" },
   // A backslash is handled in a special way because it is input by
   // two different keys (the one next to Backslash and the one next
   // to Right Shift).
   { '\\', "", "" },
 }, kana_map_us[] = {
-  { '`' , "\xe3\x82\x8d", "\xe3\x82\x8d" },  // "ろ", "ろ"
-  { '~' , "\xe3\x82\x8d", "\xe3\x82\x8d" },  // "ろ", "ろ"
-  { '1' , "\xe3\x81\xac", "\xe3\x81\xac" },  // "ぬ", "ぬ"
-  { '!' , "\xe3\x81\xac", "\xe3\x81\xac" },  // "ぬ", "ぬ"
-  { '2' , "\xe3\x81\xb5", "\xe3\x81\xb5" },  // "ふ", "ふ"
-  { '@' , "\xe3\x81\xb5", "\xe3\x81\xb5" },  // "ふ", "ふ"
-  { '3' , "\xe3\x81\x82", "\xe3\x81\x81" },  // "あ", "ぁ"
-  { '#' , "\xe3\x81\x82", "\xe3\x81\x81" },  // "あ", "ぁ"
-  { '4' , "\xe3\x81\x86", "\xe3\x81\x85" },  // "う", "ぅ"
-  { '$' , "\xe3\x81\x86", "\xe3\x81\x85" },  // "う", "ぅ"
-  { '5' , "\xe3\x81\x88", "\xe3\x81\x87" },  // "え", "ぇ"
-  { '%' , "\xe3\x81\x88", "\xe3\x81\x87" },  // "え", "ぇ"
-  { '6' , "\xe3\x81\x8a", "\xe3\x81\x89" },  // "お", "ぉ"
-  { '^' , "\xe3\x81\x8a", "\xe3\x81\x89" },  // "お", "ぉ"
-  { '7' , "\xe3\x82\x84", "\xe3\x82\x83" },  // "や", "ゃ"
-  { '&' , "\xe3\x82\x84", "\xe3\x82\x83" },  // "や", "ゃ"
-  { '8' , "\xe3\x82\x86", "\xe3\x82\x85" },  // "ゆ", "ゅ"
-  { '*' , "\xe3\x82\x86", "\xe3\x82\x85" },  // "ゆ", "ゅ"
-  { '9' , "\xe3\x82\x88", "\xe3\x82\x87" },  // "よ", "ょ"
-  { '(' , "\xe3\x82\x88", "\xe3\x82\x87" },  // "よ", "ょ"
-  { '0' , "\xe3\x82\x8f", "\xe3\x82\x92" },  // "わ", "を"
-  { ')' , "\xe3\x82\x8f", "\xe3\x82\x92" },  // "わ", "を"
-  { '-' , "\xe3\x81\xbb", "\xe3\x83\xbc" },  // "ほ", "ー"
-  { '_' , "\xe3\x81\xbb", "\xe3\x83\xbc" },  // "ほ", "ー"
-  { '=' , "\xe3\x81\xb8", "\xe3\x81\xb8" },  // "へ", "へ"
-  { '+' , "\xe3\x81\xb8", "\xe3\x81\xb8" },  // "へ", "へ"
-  { 'q' , "\xe3\x81\x9f", "\xe3\x81\x9f" },  // "た", "た"
-  { 'Q' , "\xe3\x81\x9f", "\xe3\x81\x9f" },  // "た", "た"
-  { 'w' , "\xe3\x81\xa6", "\xe3\x81\xa6" },  // "て", "て"
-  { 'W' , "\xe3\x81\xa6", "\xe3\x81\xa6" },  // "て", "て"
-  { 'e' , "\xe3\x81\x84", "\xe3\x81\x83" },  // "い", "ぃ"
-  { 'E' , "\xe3\x81\x84", "\xe3\x81\x83" },  // "い", "ぃ"
-  { 'r' , "\xe3\x81\x99", "\xe3\x81\x99" },  // "す", "す"
-  { 'R' , "\xe3\x81\x99", "\xe3\x81\x99" },  // "す", "す"
-  { 't' , "\xe3\x81\x8b", "\xe3\x81\x8b" },  // "か", "か"
-  { 'T' , "\xe3\x81\x8b", "\xe3\x81\x8b" },  // "か", "か"
-  { 'y' , "\xe3\x82\x93", "\xe3\x82\x93" },  // "ん", "ん"
-  { 'Y' , "\xe3\x82\x93", "\xe3\x82\x93" },  // "ん", "ん"
-  { 'u' , "\xe3\x81\xaa", "\xe3\x81\xaa" },  // "な", "な"
-  { 'U' , "\xe3\x81\xaa", "\xe3\x81\xaa" },  // "な", "な"
-  { 'i' , "\xe3\x81\xab", "\xe3\x81\xab" },  // "に", "に"
-  { 'I' , "\xe3\x81\xab", "\xe3\x81\xab" },  // "に", "に"
-  { 'o' , "\xe3\x82\x89", "\xe3\x82\x89" },  // "ら", "ら"
-  { 'O' , "\xe3\x82\x89", "\xe3\x82\x89" },  // "ら", "ら"
-  { 'p' , "\xe3\x81\x9b", "\xe3\x81\x9b" },  // "せ", "せ"
-  { 'P' , "\xe3\x81\x9b", "\xe3\x81\x9b" },  // "せ", "せ"
-  { '[' , "\xe3\x82\x9b", "\xe3\x82\x9b" },  // "゛", "゛"
-  { '{' , "\xe3\x82\x9b", "\xe3\x82\x9b" },  // "゛", "゛"
-  { ']' , "\xe3\x82\x9c", "\xe3\x80\x8c" },  // "゜", "「"
-  { '}' , "\xe3\x82\x9c", "\xe3\x80\x8c" },  // "゜", "「"
-  { '\\', "\xe3\x82\x80", "\xe3\x80\x8d" },  // "む", "」"
-  { '|' , "\xe3\x82\x80", "\xe3\x80\x8d" },  // "む", "」"
-  { 'a' , "\xe3\x81\xa1", "\xe3\x81\xa1" },  // "ち", "ち"
-  { 'A' , "\xe3\x81\xa1", "\xe3\x81\xa1" },  // "ち", "ち"
-  { 's' , "\xe3\x81\xa8", "\xe3\x81\xa8" },  // "と", "と"
-  { 'S' , "\xe3\x81\xa8", "\xe3\x81\xa8" },  // "と", "と"
-  { 'd' , "\xe3\x81\x97", "\xe3\x81\x97" },  // "し", "し"
-  { 'D' , "\xe3\x81\x97", "\xe3\x81\x97" },  // "し", "し"
-  { 'f' , "\xe3\x81\xaf", "\xe3\x81\xaf" },  // "は", "は"
-  { 'F' , "\xe3\x81\xaf", "\xe3\x81\xaf" },  // "は", "は"
-  { 'g' , "\xe3\x81\x8d", "\xe3\x81\x8d" },  // "き", "き"
-  { 'G' , "\xe3\x81\x8d", "\xe3\x81\x8d" },  // "き", "き"
-  { 'h' , "\xe3\x81\x8f", "\xe3\x81\x8f" },  // "く", "く"
-  { 'H' , "\xe3\x81\x8f", "\xe3\x81\x8f" },  // "く", "く"
-  { 'j' , "\xe3\x81\xbe", "\xe3\x81\xbe" },  // "ま", "ま"
-  { 'J' , "\xe3\x81\xbe", "\xe3\x81\xbe" },  // "ま", "ま"
-  { 'k' , "\xe3\x81\xae", "\xe3\x81\xae" },  // "の", "の"
-  { 'K' , "\xe3\x81\xae", "\xe3\x81\xae" },  // "の", "の"
-  { 'l' , "\xe3\x82\x8a", "\xe3\x82\x8a" },  // "り", "り"
-  { 'L' , "\xe3\x82\x8a", "\xe3\x82\x8a" },  // "り", "り"
-  { ';' , "\xe3\x82\x8c", "\xe3\x82\x8c" },  // "れ", "れ"
-  { ':' , "\xe3\x82\x8c", "\xe3\x82\x8c" },  // "れ", "れ"
-  { '\'', "\xe3\x81\x91", "\xe3\x81\x91" },  // "け", "け"
-  { '\"', "\xe3\x81\x91", "\xe3\x81\x91" },  // "け", "け"
-  { 'z' , "\xe3\x81\xa4", "\xe3\x81\xa3" },  // "つ", "っ"
-  { 'Z' , "\xe3\x81\xa4", "\xe3\x81\xa3" },  // "つ", "っ"
-  { 'x' , "\xe3\x81\x95", "\xe3\x81\x95" },  // "さ", "さ"
-  { 'X' , "\xe3\x81\x95", "\xe3\x81\x95" },  // "さ", "さ"
-  { 'c' , "\xe3\x81\x9d", "\xe3\x81\x9d" },  // "そ", "そ"
-  { 'C' , "\xe3\x81\x9d", "\xe3\x81\x9d" },  // "そ", "そ"
-  { 'v' , "\xe3\x81\xb2", "\xe3\x81\xb2" },  // "ひ", "ひ"
-  { 'V' , "\xe3\x81\xb2", "\xe3\x81\xb2" },  // "ひ", "ひ"
-  { 'b' , "\xe3\x81\x93", "\xe3\x81\x93" },  // "こ", "こ"
-  { 'B' , "\xe3\x81\x93", "\xe3\x81\x93" },  // "こ", "こ"
-  { 'n' , "\xe3\x81\xbf", "\xe3\x81\xbf" },  // "み", "み"
-  { 'N' , "\xe3\x81\xbf", "\xe3\x81\xbf" },  // "み", "み"
-  { 'm' , "\xe3\x82\x82", "\xe3\x82\x82" },  // "も", "も"
-  { 'M' , "\xe3\x82\x82", "\xe3\x82\x82" },  // "も", "も"
-  { ',' , "\xe3\x81\xad", "\xe3\x80\x81" },  // "ね", "、"
-  { '<' , "\xe3\x81\xad", "\xe3\x80\x81" },  // "ね", "、"
-  { '.' , "\xe3\x82\x8b", "\xe3\x80\x82" },  // "る", "。"
-  { '>' , "\xe3\x82\x8b", "\xe3\x80\x82" },  // "る", "。"
-  { '/' , "\xe3\x82\x81", "\xe3\x83\xbb" },  // "め", "・"
-  { '?' , "\xe3\x82\x81", "\xe3\x83\xbb" },  // "め", "・"
+  { '`' , "ろ", "ろ" },
+  { '~' , "ろ", "ろ" },
+  { '1' , "ぬ", "ぬ" },
+  { '!' , "ぬ", "ぬ" },
+  { '2' , "ふ", "ふ" },
+  { '@' , "ふ", "ふ" },
+  { '3' , "あ", "ぁ" },
+  { '#' , "あ", "ぁ" },
+  { '4' , "う", "ぅ" },
+  { '$' , "う", "ぅ" },
+  { '5' , "え", "ぇ" },
+  { '%' , "え", "ぇ" },
+  { '6' , "お", "ぉ" },
+  { '^' , "お", "ぉ" },
+  { '7' , "や", "ゃ" },
+  { '&' , "や", "ゃ" },
+  { '8' , "ゆ", "ゅ" },
+  { '*' , "ゆ", "ゅ" },
+  { '9' , "よ", "ょ" },
+  { '(' , "よ", "ょ" },
+  { '0' , "わ", "を" },
+  { ')' , "わ", "を" },
+  { '-' , "ほ", "ー" },
+  { '_' , "ほ", "ー" },
+  { '=' , "へ", "へ" },
+  { '+' , "へ", "へ" },
+  { 'q' , "た", "た" },
+  { 'Q' , "た", "た" },
+  { 'w' , "て", "て" },
+  { 'W' , "て", "て" },
+  { 'e' , "い", "ぃ" },
+  { 'E' , "い", "ぃ" },
+  { 'r' , "す", "す" },
+  { 'R' , "す", "す" },
+  { 't' , "か", "か" },
+  { 'T' , "か", "か" },
+  { 'y' , "ん", "ん" },
+  { 'Y' , "ん", "ん" },
+  { 'u' , "な", "な" },
+  { 'U' , "な", "な" },
+  { 'i' , "に", "に" },
+  { 'I' , "に", "に" },
+  { 'o' , "ら", "ら" },
+  { 'O' , "ら", "ら" },
+  { 'p' , "せ", "せ" },
+  { 'P' , "せ", "せ" },
+  { '[' , "゛", "゛" },
+  { '{' , "゛", "゛" },
+  { ']' , "゜", "「" },
+  { '}' , "゜", "「" },
+  { '\\', "む", "」" },
+  { '|' , "む", "」" },
+  { 'a' , "ち", "ち" },
+  { 'A' , "ち", "ち" },
+  { 's' , "と", "と" },
+  { 'S' , "と", "と" },
+  { 'd' , "し", "し" },
+  { 'D' , "し", "し" },
+  { 'f' , "は", "は" },
+  { 'F' , "は", "は" },
+  { 'g' , "き", "き" },
+  { 'G' , "き", "き" },
+  { 'h' , "く", "く" },
+  { 'H' , "く", "く" },
+  { 'j' , "ま", "ま" },
+  { 'J' , "ま", "ま" },
+  { 'k' , "の", "の" },
+  { 'K' , "の", "の" },
+  { 'l' , "り", "り" },
+  { 'L' , "り", "り" },
+  { ';' , "れ", "れ" },
+  { ':' , "れ", "れ" },
+  { '\'', "け", "け" },
+  { '\"', "け", "け" },
+  { 'z' , "つ", "っ" },
+  { 'Z' , "つ", "っ" },
+  { 'x' , "さ", "さ" },
+  { 'X' , "さ", "さ" },
+  { 'c' , "そ", "そ" },
+  { 'C' , "そ", "そ" },
+  { 'v' , "ひ", "ひ" },
+  { 'V' , "ひ", "ひ" },
+  { 'b' , "こ", "こ" },
+  { 'B' , "こ", "こ" },
+  { 'n' , "み", "み" },
+  { 'N' , "み", "み" },
+  { 'm' , "も", "も" },
+  { 'M' , "も", "も" },
+  { ',' , "ね", "、" },
+  { '<' , "ね", "、" },
+  { '.' , "る", "。" },
+  { '>' , "る", "。" },
+  { '/' , "め", "・" },
+  { '?' , "め", "・" },
 };
 
 }  // namespace
@@ -416,7 +417,18 @@ bool KeyTranslator::Translate(guint keyval,
     }
 
     if (i->first & modifiers) {
-      out_event->add_modifier_keys(i->second);
+      // Add a modifier key if doesn't exist.
+      commands::KeyEvent::ModifierKey modifier = i->second;
+      bool found = false;
+      for (int i = 0; i < out_event->modifier_keys_size(); ++i) {
+        if (modifier == out_event->modifier_keys(i)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        out_event->add_modifier_keys(modifier);
+      }
     }
   }
 
@@ -425,26 +437,31 @@ bool KeyTranslator::Translate(guint keyval,
 
 void KeyTranslator::Init() {
   for (int i = 0; i < arraysize(special_key_map); ++i) {
-    CHECK(special_key_map_.insert(make_pair(special_key_map[i].from,
-                                            special_key_map[i].to)).second);
+    CHECK(special_key_map_.insert(
+        std::make_pair(special_key_map[i].from,
+                       special_key_map[i].to)).second);
   }
-  for (int i = 0; i < arraysize(modifier_key_map); ++i) {
-    CHECK(modifier_key_map_.insert(make_pair(modifier_key_map[i].from,
-                                             modifier_key_map[i].to)).second);
+  for (int i = 0; i < arraysize(modifier_key_map_data); ++i) {
+    CHECK(modifier_key_map_.insert(
+        std::make_pair(modifier_key_map_data[i].from,
+                       modifier_key_map_data[i].to)).second);
   }
-  for (int i = 0; i < arraysize(modifier_mask_map); ++i) {
-    CHECK(modifier_mask_map_.insert(make_pair(modifier_mask_map[i].from,
-                                              modifier_mask_map[i].to)).second);
+  for (int i = 0; i < arraysize(modifier_mask_map_data); ++i) {
+    CHECK(modifier_mask_map_.insert(
+        std::make_pair(modifier_mask_map_data[i].from,
+                       modifier_mask_map_data[i].to)).second);
   }
   for (int i = 0; i < arraysize(kana_map_jp); ++i) {
     CHECK(kana_map_jp_.insert(
-        make_pair(kana_map_jp[i].code, make_pair(
-            kana_map_jp[i].no_shift, kana_map_jp[i].shift))).second);
+        std::make_pair(kana_map_jp[i].code,
+                       std::make_pair(kana_map_jp[i].no_shift,
+                                      kana_map_jp[i].shift))).second);
   }
   for (int i = 0; i < arraysize(kana_map_us); ++i) {
     CHECK(kana_map_us_.insert(
-        make_pair(kana_map_us[i].code, make_pair(
-            kana_map_us[i].no_shift, kana_map_us[i].shift))).second);
+        std::make_pair(kana_map_us[i].code,
+                       std::make_pair(kana_map_us[i].no_shift,
+                                      kana_map_us[i].shift))).second);
   }
 }
 
@@ -484,12 +501,12 @@ bool KeyTranslator::IsKanaAvailable(guint keyval,
     // When a Japanese keyboard is in use, the yen-sign key and the backslash
     // key generate the same |keyval|. In this case, we have to check |keycode|
     // to return an appropriate string. See the following IBus issue for
-    // details: http://code.google.com/p/ibus/issues/detail?id=52
+    // details: https://github.com/ibus/ibus/issues/73
     if (keyval == '\\' && layout_is_jp) {
       if (keycode == IBUS_bar) {
-        *out = "\xe3\x83\xbc";  // "ー"
+        *out = "ー";
       } else {
-        *out = "\xe3\x82\x8d";  // "ろ"
+        *out = "ろ";
       }
     } else {
       *out = (modifiers & IBUS_SHIFT_MASK) ?

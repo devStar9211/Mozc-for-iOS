@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,7 +33,7 @@
 #include <map>
 
 #include "base/port.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "unix/ibus/ibus_header.h"
 
 namespace mozc {
@@ -57,9 +57,9 @@ class KeyTranslator {
                  commands::KeyEvent *out_event) const;
 
  private:
-  typedef map<guint, commands::KeyEvent::SpecialKey> SpecialKeyMap;
-  typedef map<guint, commands::KeyEvent::ModifierKey> ModifierKeyMap;
-  typedef map<guint, pair<string, string> > KanaMap;
+  typedef std::map<guint, commands::KeyEvent::SpecialKey> SpecialKeyMap;
+  typedef std::map<guint, commands::KeyEvent::ModifierKey> ModifierKeyMap;
+  typedef std::map<guint, std::pair<string, string> > KanaMap;
 
   // Returns true iff key is modifier key such as SHIFT, ALT, or CAPSLOCK.
   bool IsModifierKey(guint keyval,

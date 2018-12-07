@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,6 +34,7 @@ import com.google.common.base.Optional;
 import android.graphics.BlurMaskFilter;
 import android.graphics.BlurMaskFilter.Blur;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Paint.Style;
@@ -54,12 +55,13 @@ public class RoundRectKeyDrawable extends BaseBackgroundDrawable {
   private final int topColor;
   private final int bottomColor;
 
-  private final Paint basePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-  private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  private final Optional<Paint> shadowPaint;
   private final Optional<Paint> highlightPaint;
 
   private final RectF baseBound = new RectF();
   private final RectF shadowBound = new RectF();
+
+  private Optional<Paint> basePaint = Optional.absent();
 
   public RoundRectKeyDrawable(
       int leftPadding, int topPadding, int rightPadding, int bottomPadding,
@@ -69,11 +71,16 @@ public class RoundRectKeyDrawable extends BaseBackgroundDrawable {
     this.topColor = topColor;
     this.bottomColor = bottomColor;
 
-    shadowPaint.setColor(shadowColor);
-    shadowPaint.setStyle(Style.FILL);
-    shadowPaint.setMaskFilter(new BlurMaskFilter(BLUR_SIZE, Blur.NORMAL));
-    if ((highlightColor & 0xFF000000) != 0) {
-      highlightPaint = Optional.of(new Paint(Paint.ANTI_ALIAS_FLAG));
+    if (Color.alpha(shadowColor) != 0) {
+      shadowPaint = Optional.of(new Paint(Paint.ANTI_ALIAS_FLAG));
+      shadowPaint.get().setColor(shadowColor);
+      shadowPaint.get().setStyle(Style.FILL);
+      shadowPaint.get().setMaskFilter(new BlurMaskFilter(BLUR_SIZE, Blur.NORMAL));
+    } else {
+      shadowPaint = Optional.absent();
+    }
+    if (Color.alpha(highlightColor) != 0) {
+      highlightPaint = Optional.of(new Paint());
       highlightPaint.get().setColor(highlightColor);
     } else {
       highlightPaint = Optional.absent();
@@ -87,8 +94,12 @@ public class RoundRectKeyDrawable extends BaseBackgroundDrawable {
     }
 
     // Each qwerty key looks round corner'ed rectangle.
-    canvas.drawRoundRect(shadowBound, roundSize, roundSize, shadowPaint);
-    canvas.drawRoundRect(baseBound, roundSize, roundSize, basePaint);
+    if (shadowPaint.isPresent()) {
+      canvas.drawRoundRect(shadowBound, roundSize, roundSize, shadowPaint.get());
+    }
+    if (basePaint.isPresent()) {
+      canvas.drawRoundRect(baseBound, roundSize, roundSize, basePaint.get());
+    }
 
     // Draw 1-px height highlight at the top of key if necessary.
     if (highlightPaint.isPresent()) {
@@ -108,7 +119,12 @@ public class RoundRectKeyDrawable extends BaseBackgroundDrawable {
                     Math.max(canvasRect.top + 1, rect.top + BLUR_SIZE),
                     Math.min(canvasRect.right + 1, rect.right - BLUR_SIZE),
                     Math.min(canvasRect.bottom + 2, rect.bottom - BLUR_SIZE));
-    basePaint.setShader(new LinearGradient(
-        0, canvasRect.top, 0, canvasRect.bottom, topColor, bottomColor, TileMode.CLAMP));
+    if (Color.alpha(topColor | bottomColor) != 0) {
+      basePaint = Optional.<Paint>of(new Paint(Paint.ANTI_ALIAS_FLAG));
+      basePaint.get().setShader(new LinearGradient(
+          0, canvasRect.top, 0, canvasRect.bottom, topColor, bottomColor, TileMode.CLAMP));
+    } else {
+      basePaint = Optional.<Paint>absent();
+    }
   }
 }

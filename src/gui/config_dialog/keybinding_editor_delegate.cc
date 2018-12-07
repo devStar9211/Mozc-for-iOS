@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,9 @@
 #include "gui/config_dialog/keybinding_editor_delegate.h"
 
 #include <QtGui/QtGui>
-#include <QtGui/QPushButton>
+#include <QtWidgets/QPushButton>
+
+#include <memory>
 
 #include "base/logging.h"
 #include "gui/config_dialog/keybinding_editor.h"
@@ -40,10 +42,9 @@ namespace gui {
 
 class KeyBindingEditorTriggerButton : public QPushButton {
  public:
-  KeyBindingEditorTriggerButton(QWidget *parent,
-                                QWidget *modal_parent) :
+  KeyBindingEditorTriggerButton(QWidget *parent) :
       QPushButton(parent),
-      editor_(new KeyBindingEditor(modal_parent, this)) {
+      editor_(new KeyBindingEditor(parent, this)) {
     editor_->setModal(true);   // create a modal dialog
     setFocusProxy(editor_.get());
     connect(this, SIGNAL(clicked()),
@@ -55,12 +56,11 @@ class KeyBindingEditorTriggerButton : public QPushButton {
   }
 
  private:
-  scoped_ptr<KeyBindingEditor> editor_;
+  std::unique_ptr<KeyBindingEditor> editor_;
 };
 
 KeyBindingEditorDelegate::KeyBindingEditorDelegate(QObject *parent)
-    : QItemDelegate(parent),
-      modal_parent_(static_cast<QWidget *>(parent)) {}
+    : QItemDelegate(parent) {}
 
 KeyBindingEditorDelegate::~KeyBindingEditorDelegate() {}
 
@@ -69,7 +69,7 @@ QWidget *KeyBindingEditorDelegate::createEditor(
     const QStyleOptionViewItem &option,
     const QModelIndex &index) const {
   KeyBindingEditorTriggerButton *button
-      = new KeyBindingEditorTriggerButton(parent, modal_parent_);
+      = new KeyBindingEditorTriggerButton(parent);
   CHECK(button);
   connect(button->mutable_editor(), SIGNAL(accepted()),
           this, SLOT(CommitAndCloseEditor()));

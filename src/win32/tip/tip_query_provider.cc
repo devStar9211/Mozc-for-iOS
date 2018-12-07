@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,7 +34,7 @@
 
 #include "base/util.h"
 #include "client/client_interface.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "win32/tip/tip_ref_count.h"
 
 using ::mozc::client::ClientFactory;
@@ -59,17 +59,17 @@ class TipQueryProviderImpl : public TipQueryProvider {
 
  private:
   // The TipQueryProvider interface methods.
-  virtual bool Query(const wstring &query,
+  virtual bool Query(const std::wstring &query,
                      QueryType type,
-                     vector<wstring> *result) {
+                     std::vector<std::wstring> *result) {
     if (type == kReconversion) {
       return ReconvertQuery(query, result);
     }
     return SimpleQuery(query, result);
   }
 
-  bool SimpleQuery(const wstring &query,
-                   vector<wstring> *result) {
+  bool SimpleQuery(const std::wstring &query,
+                   std::vector<std::wstring> *result) {
     {
       KeyEvent key_event;
       string utf8_query;
@@ -89,7 +89,7 @@ class TipQueryProviderImpl : public TipQueryProvider {
       const auto &candidates = output.all_candidate_words();
       for (size_t i = 0; i < candidates.candidates_size(); ++i) {
         const auto &utf8 = candidates.candidates(i).value();
-        wstring wide;
+        std::wstring wide;
         Util::UTF8ToWide(utf8, &wide);
         result->push_back(wide);
       }
@@ -103,8 +103,8 @@ class TipQueryProviderImpl : public TipQueryProvider {
     return true;
   }
 
-  bool ReconvertQuery(const wstring &query,
-                      vector<wstring> *result) {
+  bool ReconvertQuery(const std::wstring &query,
+                      std::vector<std::wstring> *result) {
     {
       string utf8_query;
       Util::WideToUTF8(query, &utf8_query);
@@ -119,7 +119,7 @@ class TipQueryProviderImpl : public TipQueryProvider {
       const auto &candidates = output.all_candidate_words();
       for (size_t i = 0; i < candidates.candidates_size(); ++i) {
         const auto &utf8 = candidates.candidates(i).value();
-        wstring wide;
+        std::wstring wide;
         Util::UTF8ToWide(utf8, &wide);
         result->push_back(wide);
       }

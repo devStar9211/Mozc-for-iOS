@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -28,13 +28,14 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifdef OS_WIN
+
 #include "gui/character_pad/windows_selection_handler.h"
 
 #include <windows.h>
 #include <QtCore/QString>
 #include <vector>
+
 #include "base/logging.h"
-#include "base/util.h"
 
 namespace mozc {
 namespace gui {
@@ -43,7 +44,7 @@ WindowsSelectionHandler::WindowsSelectionHandler() {}
 WindowsSelectionHandler::~WindowsSelectionHandler() {}
 
 void WindowsSelectionHandler::Select(const QString &str) {
-  vector<INPUT> inputs;
+  std::vector<INPUT> inputs;
   for (int i = 0; i < str.size(); ++i) {
     INPUT input = { 0 };
     KEYBDINPUT kb = { 0 };
@@ -74,6 +75,8 @@ void WindowsSelectionHandler::Select(const QString &str) {
     return;
   }
 }
+
 }  // namespace gui
 }  // namespace mozc
+
 #endif   // OS_WIN

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -44,10 +44,43 @@ import android.test.suitebuilder.annotation.SmallTest;
  */
 public class DrawableCacheTest extends InstrumentationTestCaseWithMock {
 
+  private class TestDrawable extends ColorDrawable {
+    public TestDrawable() {
+      super(Color.BLACK);
+    }
+
+    @Override
+    public ConstantState getConstantState() {
+      return new ConstantState() {
+        @Override
+        public int getChangingConfigurations() {
+          return 0;
+        }
+
+        @Override
+        public Drawable newDrawable() {
+          // Return the same instance.
+          return TestDrawable.this;
+        }
+      };
+    }
+  }
+
+  @Override
+  protected void setUp() throws Exception {
+    super.setUp();
+    Skin.getFallbackInstance().resetDrawableFactory();
+    for (SkinType skinType : SkinType.values()) {
+      skinType.getSkin(
+          getInstrumentation().getTargetContext().getResources()).resetDrawableFactory();
+    }
+ }
+
   @SmallTest
   public void testDrawableCache() {
     Resources resources = createMock(MockResources.class);
-    DrawableCache drawableCache = new DrawableCache(new MozcDrawableFactory(resources));
+    DrawableCache drawableCache = new DrawableCache(resources);
+    drawableCache.setSkin(Skin.getFallbackInstance());
 
     // For invalid resource id (0), getDrawable returns {@code Optional.<Drawable>absent()} without
     // looking up resources.
@@ -58,7 +91,7 @@ public class DrawableCacheTest extends InstrumentationTestCaseWithMock {
     verifyAll();
 
     // For first getDrawable, it loads from resources instance.
-    Drawable drawable = new ColorDrawable(Color.BLACK);
+    Drawable drawable = new TestDrawable();
     resetAll();
     expect(resources.getResourceTypeName(1)).andReturn("drawable");
     expect(resources.getDrawable(1)).andReturn(drawable);
@@ -91,8 +124,9 @@ public class DrawableCacheTest extends InstrumentationTestCaseWithMock {
   @SmallTest
   public void testSetSkinType() {
     Resources resources = createMock(MockResources.class);
-    DrawableCache drawableCache = new DrawableCache(new MozcDrawableFactory(resources));
-    Drawable drawable = new ColorDrawable(Color.BLACK);
+    DrawableCache drawableCache = new DrawableCache(resources);
+    drawableCache.setSkin(SkinType.ORANGE_LIGHTGRAY.getSkin(resources));
+    Drawable drawable = new TestDrawable();
     expect(resources.getResourceTypeName(1)).andReturn("drawable");
     expect(resources.getDrawable(1)).andReturn(drawable);
     replayAll();
@@ -106,7 +140,7 @@ public class DrawableCacheTest extends InstrumentationTestCaseWithMock {
     resetAll();
     replayAll();
 
-    drawableCache.setSkinType(SkinType.ORANGE_LIGHTGRAY);
+    drawableCache.setSkin(SkinType.ORANGE_LIGHTGRAY.getSkin(resources));
     assertSame(drawable, drawableCache.getDrawable(1).get());
 
     verifyAll();
@@ -118,7 +152,7 @@ public class DrawableCacheTest extends InstrumentationTestCaseWithMock {
     expect(resources.getDrawable(1)).andReturn(drawable);
     replayAll();
 
-    drawableCache.setSkinType(SkinType.TEST);
+    drawableCache.setSkin(SkinType.TEST.getSkin(resources));
     assertSame(drawable, drawableCache.getDrawable(1).get());
 
     verifyAll();

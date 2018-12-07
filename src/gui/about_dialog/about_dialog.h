@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,15 +32,12 @@
 #ifndef MOZC_GUI_ABOUT_DIALOG_ABOUT_DIALOG_H_
 #define MOZC_GUI_ABOUT_DIALOG_ABOUT_DIALOG_H_
 
-#include <QtGui/QDialog>
-#include "base/port.h"
-#include "base/scoped_ptr.h"
-#include "gui/about_dialog/ui_about_dialog.h"
+#include <QtWidgets/QDialog>
 
-#if defined(OS_WIN) && defined(GOOGLE_JAPANESE_INPUT_BUILD) \
-    && defined(DEBUG)
-#define USE_UPDATE_CHECKER
-#endif  // OS_WIN && GOOGLE_JAPANESE_INPUT_BUILD && DEBUG
+#include <memory>
+
+#include "base/port.h"
+#include "gui/about_dialog/ui_about_dialog.h"
 
 class QImage;
 
@@ -57,24 +54,19 @@ class AboutDialog : public QDialog,
                     private Ui::AboutDialog {
   Q_OBJECT;
  public:
-  explicit AboutDialog(QWidget *parent = NULL);
+  explicit AboutDialog(QWidget *parent = nullptr);
   void SetLinkCallback(LinkCallbackInterface *callback);
 
   void paintEvent(QPaintEvent *event);
 
  public slots:
   void linkActivated(const QString &link);
-  void updateButtonPushed();
-
- protected:
-#ifdef USE_UPDATE_CHECKER
-  bool winEvent(MSG *message, long *result);
-#endif  // USE_UPDATE_CHECKER
 
  private:
   LinkCallbackInterface *callback_;
-  scoped_ptr<QImage> product_image_;
+  std::unique_ptr<QImage> product_image_;
 };
+
 }  // namespace mozc::gui
 }  // namespace mozc
 

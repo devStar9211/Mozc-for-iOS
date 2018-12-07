@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,6 +31,8 @@
 
 #include <QtCore/QStringList>
 #include <QtGui/QtGui>
+#include <QtWidgets/QToolTip>
+
 #include "gui/character_pad/selection_handler.h"
 #include "gui/character_pad/unicode_util.h"
 

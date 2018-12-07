@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -44,74 +44,7 @@
 # (recommended) or project.properties when you need to sign the package with
 # the release key.
 {
-  'variables': {
-    'app_package_name': '<(android_application_id)',
-    'relative_dir': 'android',
-    'abs_android_dir': '<(abs_depth)/<(relative_dir)',
-    # Actions with an existing input and non-existing output behave like
-    # phony rules.  Nothing matters for an input but its existence, so
-    # we use 'android.gyp' as a dummy input since it must exist.
-    'dummy_input_file': 'android.gyp',
-    # GYP's 'copies' rule cannot copy a whole directory recursively, so we use
-    # our own script to copy files.
-    'copy_file': ['python', '../build_tools/copy_file.py'],
-    # Android Development Tools
-    'adt_gen_dir': 'gen_for_adt',
-    'adt_test_gen_dir': 'tests/gen_for_adt',
-    # Android SDK
-    'sdk_gen_dir': 'gen',
-    'sdk_test_gen_dir': 'tests/gen',
-    'sdk_asset_dir': 'assets',
-    'support_v13_jar_paths': [
-      # Path of support-v13 has been changed for new SDK. Try both.
-      '<(android_home)/extras/android/compatibility/v13/android-support-v13.jar',
-      '<(android_home)/extras/android/support/v13/android-support-v13.jar',
-    ],
-    'test_connection_data': '<(SHARED_INTERMEDIATE_DIR)/data_manager/testing/connection_data.data',
-    'test_connection_text_data': '<(SHARED_INTERMEDIATE_DIR)/data_manager/testing/connection_single_column.txt',
-    # e.g. xxxx/out_android/gtest_report
-    'test_report_dir': '<(SHARED_INTERMEDIATE_DIR)/../../gtest_report',
-  },
-  'conditions': [
-    ['branding=="GoogleJapaneseInput"', {
-    }, {
-      'variables': {
-        # Currently dexmaker* and easymock* properties are not used.
-        # TODO(matsuzakit): Support Java-side unit test.
-        'dexmaker_jar_path': '<(DEPTH)/third_party/dexmaker/dexmaker-0.9.jar',
-        # TODO(matsuzakit): Make copy_and_patch.py support non-jar file tree.
-        'dexmaker_src_path': '<(DEPTH)/third_party/dexmaker/src/main/java',
-        'easymock_jar_path': '<(DEPTH)/third_party/easymock/easymock-3_1.jar',
-        # TODO(matsuzakit): Make copy_and_patch.py support non-jar file tree.
-        'easymock_src_path': '<(DEPTH)/third_party/easymock/src/main/java',
-        'guava_jar_path': '<(DEPTH)/third_party/guava/guava-jdk5-13.0.jar',
-        'guava_testlib_jar_path': '<(DEPTH)/third_party/guava/guava-testlib-jdk5-13.0.jar',
-        'jsr305_jar_path': '<(DEPTH)/third_party/findbug/jsr305-2.0.2.jar',
-        'dictionary_data': '<(SHARED_INTERMEDIATE_DIR)/data_manager/oss/system.dictionary',
-        'connection_data': '<(SHARED_INTERMEDIATE_DIR)/data_manager/oss/connection_data.data',
-        'connection_text_data': '<(SHARED_INTERMEDIATE_DIR)/data_manager/oss/connection_single_column.txt',
-        'native_test_small_targets': [
-          'oss_data_manager_test',
-        ],
-        'resources_project_path': 'resources_oss',
-      },
-    }],
-    ['android_arch=="arm"', {
-      'variables': {
-        'abi': 'armeabi',
-      },
-    }],
-    ['android_arch=="x86"', {
-      'variables': {
-        'abi': 'x86',
-      },
-    }],
-    ['android_arch=="mips"', {
-      'variables': {
-        'abi': 'mips',
-      },
-    }],
-  ],
+  'includes': ['android_env.gypi'],
   'targets': [
     {
       'target_name': 'build_java_test',
@@ -129,12 +62,12 @@
           'action_name': 'build_java_test',
           'inputs': ['<(dummy_input_file)'],
           'outputs': ['dummy_java_test'],
+          # TODO(komatsu): use ant.gypi when the build rule is moved to tests/.
           'ninja_use_console': 1,
           'action': [
             '../build_tools/run_after_chdir.py', 'tests',
             'ant',
             'debug',
-            '-Dgyp.protobuf_java_root=<(protobuf_java_root)',
             '-Dsdk.dir=<(android_home)',
           ],
         },
@@ -162,31 +95,12 @@
       ],
     },
     {
-      'target_name': 'install',
-      'type': 'none',
-      'dependencies': [
-        'apk',
-      ],
-      'actions': [
-        {
-          'action_name': 'install',
-          'inputs': ['<(dummy_input_file)'],
-          'outputs': ['dummy_install'],
-          'ninja_use_console': 1,
-          'action': [
-            'ant',
-            'install',
-            '-Dgyp.build_type=<(CONFIGURATION_NAME)',
-            '-Dgyp.protobuf_java_root=<(protobuf_java_root)',
-          ],
-        },
-      ],
-    },
-    {
       'target_name': 'apk',
       'type': 'none',
       'dependencies': [
+        'resources/resources.gyp:resources',
         'sdk_apk_dependencies',
+        'userfeedback/userfeedback.gyp:userfeedback',
       ],
       'actions': [
         {
@@ -197,11 +111,6 @@
             'project.properties',
             'ant.properties',
             'proguard-project.txt',
-            # Protocol Buffer
-            'protobuf/AndroidManifest.xml',
-            'protobuf/build.xml',
-            'protobuf/project.properties',
-            'protobuf/ant.properties',
           ],
           # The actual output is one of
           #   'bin/GoogleJapaneseInput-debug.apk'
@@ -209,14 +118,7 @@
           #   'bin/GoogleJapaneseInput-unsigned.apk'
           # depending on CONFIGURATION_NAME and/or key.store.
           'outputs': ['dummy_apk'],
-          'ninja_use_console': 1,
-          'action': [
-            'ant',
-            'apk',
-            '-Dgyp.build_type=<(CONFIGURATION_NAME)',
-            '-Dgyp.protobuf_java_root=<(protobuf_java_root)',
-            '-Dsdk.dir=<(android_home)',
-          ],
+          'includes': ['ant.gypi'],
         },
       ],
     },
@@ -247,11 +149,13 @@
       'target_name': 'common_apk_dependencies',
       'type': 'none',
       'dependencies': [
+        '../protobuf/protobuf.gyp:protobuf_jar',
         'android_manifest',
         'assets',
         'mozc',
-        'gen_mozc_drawable',
         'guava_library',
+        'userfeedback/userfeedback.gyp:userfeedback_project',
+        'resources/resources.gyp:resources_project',
         'support_libraries',
       ],
     },
@@ -301,9 +205,7 @@
       'target_name': 'assets',
       'type': 'none',
       'dependencies': [
-        'assets_connection_data',
         'assets_credits',
-        'assets_dictionary',
         'assets_touch_stat_data',
       ]
     },
@@ -315,61 +217,8 @@
         'files': [
           # Copies the copyright and credit info.
           '../data/installer/credits_en.html',
-          '../data/installer/credits_ja.html',
         ],
       }],
-    },
-    {
-      'target_name': 'assets_connection_data',
-      'type': 'none',
-      'conditions': [
-        ['use_separate_connection_data==1',
-          {
-            'actions': [
-              {
-                'action_name': 'assets_copy_connection_data',
-                'inputs': [
-                  '<(connection_data)',
-                ],
-                'outputs': [
-                  '<(sdk_asset_dir)/connection.data.imy',
-                ],
-                'action': [
-                  # Note that multiple output files cannot be handled
-                  # by copy_file script.
-                  '<@(copy_file)', '<@(_inputs)', '<(_outputs)',
-                ],
-              },
-            ],
-          },
-        ],
-      ],
-    },
-    {
-      'target_name': 'assets_dictionary',
-      'type': 'none',
-      'conditions': [
-        ['use_separate_dictionary==1',
-          {
-            'actions': [
-              {
-                'action_name': 'assets_copy_dictionary',
-                'inputs': [
-                  '<(dictionary_data)'
-                ],
-                'outputs': [
-                  '<(sdk_asset_dir)/system.dictionary.imy',
-                ],
-                'action': [
-                  # Note that multiple output files cannot be handled
-                  # by copy_file script.
-                  '<@(copy_file)', '<@(_inputs)', '<(_outputs)',
-                ],
-              },
-            ],
-          },
-        ],
-      ],
     },
     {
       # CAVEAT:
@@ -384,11 +233,13 @@
       'type': 'none',
       'variables': {
         'make_standalone_toolchain_commands': [
-          'bash',
-          '<(android_ndk_home)/build/tools/make-standalone-toolchain.sh',
+          'python',
+          '<(android_ndk_home)/build/tools/make_standalone_toolchain.py',
+          '--force',
           '--arch=<(android_arch)',
-          '--stl=<(android_stl)',
+          '--stl=libc++',
           '--install-dir=<(mozc_build_tools_dir)/ndk-standalone-toolchain/<(android_arch)',
+          '--api=<(ndk_target_api_level)',
         ],
         'make_standalone_toolchain_result': '<!(<(make_standalone_toolchain_commands))',
       },
@@ -502,7 +353,7 @@
           'outputs': ['dummy_touch_stat_data'],
           'action': [
             'python', 'gen_touch_event_stats.py',
-            '--output_dir', 'assets',
+            '--output_dir', '<(sdk_asset_dir)',
             '--stats_data', '../data/typing/touch_event_stats.csv',
             '--collected_keyboards', 'collected_keyboards.csv',
           ],
@@ -623,27 +474,6 @@
       ],
     },
     {
-      'target_name': 'gen_mozc_drawable',
-      'type': 'none',
-      'actions': [
-        {
-          'action_name': 'generate_pic_files',
-          'inputs': [
-            '<(dummy_input_file)',
-            'gen_mozc_drawable.py',
-          ],
-          'outputs': [
-            'dummy_gen_mozc_drawable_output',
-          ],
-          'action': [
-            'python', 'gen_mozc_drawable.py',
-            '--svg_dir=../data/images/android/svg',
-            '--output_dir=<(resources_project_path)/res/raw',
-          ],
-        },
-      ],
-    },
-    {
       # The final artifact of the native layer, libmozc.so.
       # Gyp generates executable artifact to <(PRODUCT_DIR),
       # but shared libraries are generated to local intermediate directory
@@ -656,11 +486,19 @@
       'sources': [
         'jni/mozcjni.cc',
       ],
+      'defines': [
+        'MOZC_USE_CUSTOM_DATA_MANAGER',
+      ],
       'product_dir': '<(abs_android_dir)/libs/<(abi)',
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base.gyp:jni_proxy',
+        '../data_manager/data_manager_base.gyp:data_manager',
+        '../data_manager/oss/oss_data_manager.gyp:oss_data_manager',
         '../dictionary/dictionary.gyp:dictionary',
-        '../engine/engine.gyp:engine_factory',
+        '../engine/engine.gyp:engine',
+        '../engine/engine.gyp:engine_builder',
+        '../engine/engine.gyp:minimal_engine',
         '../session/session.gyp:session',
         '../session/session.gyp:session_handler',
         '../session/session.gyp:session_usage_observer',
@@ -669,18 +507,7 @@
       'ldflags': [
          # -s: Strip unused symbols
          # --version-script: Remove almost all exportable symbols
-         '-Wl,-s,--version-script,<(abs_android_dir)/libmozc.map',
-      ],
-      'conditions': [
-        ['branding=="GoogleJapaneseInput"', {
-          'dependencies': [
-            '../data_manager/android/android_data_manager.gyp:android_data_manager',
-          ]
-        }, {
-          'dependencies': [
-            '../data_manager/oss/oss_data_manager.gyp:oss_data_manager',
-          ]
-        }],
+         '-Wl,-s,--version-script,<(abs_android_dir)/libmozc.lds',
       ],
     },
     {
@@ -700,23 +527,12 @@
       'type': 'none',
       'dependencies': [
         '../base/base_test.gyp:install_util_test_data',
+        '../data_manager/oss/oss_data_manager_test.gyp:install_oss_data_manager_test_data',
         '../data_manager/testing/mock_data_manager_test.gyp:install_test_connection_txt',
-        '../dictionary/system/system_dictionary.gyp:install_system_dictionary_test_data',
         '../config/config_test.gyp:install_stats_config_util_test_data',
         '../rewriter/calculator/calculator.gyp:install_calculator_test_data',
         '../data/test/session/scenario/scenario.gyp:install_session_handler_scenario_test_data',
         '../data/test/session/scenario/usage_stats/usage_stats.gyp:install_session_handler_usage_stats_scenario_test_data',
-      ],
-      'conditions': [
-        ['branding=="GoogleJapaneseInput"', {
-          'dependencies': [
-            '../data_manager/android/android_data_manager_test.gyp:install_android_data_manager_test_data',
-          ]
-        }, {
-          'dependencies': [
-            '../data_manager/oss/oss_data_manager_test.gyp:install_oss_data_manager_test_data',
-          ]
-        }],
       ],
     },
     {
@@ -730,11 +546,10 @@
           'action': [
             'python', 'run_android_test.py',
             '--android_home=<(android_home)',
-            '--mozc_connection_data_file=<(connection_data)',
             '--mozc_connection_text_data_file=<(connection_text_data)',
             '--mozc_data_dir=<(mozc_data_dir)',
-            '--mozc_dictionary_data_file=<(dictionary_data)',
-            '--mozc_test_connection_data_file=<(test_connection_data)',
+            '--mozc_dataset_file=<(mozc_dataset)',
+            '--mozc_test_dataset_file=<(test_mozc_dataset)',
             '--mozc_test_connection_text_data_file=<(test_connection_text_data)',
             '--native_abi=<(abi)',
             '--output_report_dir=<(test_report_dir)',

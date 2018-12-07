@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,8 +29,10 @@
 
 #include "session/session_usage_observer.h"
 
+#include <memory>
 #include <string>
 
+#include "base/clock.h"
 #include "base/clock_mock.h"
 #include "base/logging.h"
 #include "base/scheduler.h"
@@ -39,7 +41,7 @@
 #include "base/util.h"
 #include "config/stats_config_util.h"
 #include "config/stats_config_util_mock.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
 #include "usage_stats/usage_stats.h"
@@ -60,7 +62,7 @@ class SessionUsageObserverTest : public testing::Test {
     SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
     UsageStats::ClearAllStatsForTest();
 
-    Util::SetClockHandler(NULL);
+    Clock::SetClockForUnitTest(nullptr);
 
     scheduler_stub_.reset(new SchedulerStub);
     Scheduler::SetSchedulerHandler(scheduler_stub_.get());
@@ -70,9 +72,9 @@ class SessionUsageObserverTest : public testing::Test {
   }
 
   virtual void TearDown() {
-    Util::SetClockHandler(NULL);
-    Scheduler::SetSchedulerHandler(NULL);
-    config::StatsConfigUtil::SetHandler(NULL);
+    Clock::SetClockForUnitTest(nullptr);
+    Scheduler::SetSchedulerHandler(nullptr);
+    config::StatsConfigUtil::SetHandler(nullptr);
 
     UsageStats::ClearAllStatsForTest();
   }
@@ -113,14 +115,14 @@ class SessionUsageObserverTest : public testing::Test {
                         event_stats->mutable_time_length_stats());
   }
 
-  scoped_ptr<SchedulerStub> scheduler_stub_;
-  scoped_ptr<config::StatsConfigUtilMock> stats_config_util_mock_;
+  std::unique_ptr<SchedulerStub> scheduler_stub_;
+  std::unique_ptr<config::StatsConfigUtilMock> stats_config_util_mock_;
 };
 
 TEST_F(SessionUsageObserverTest, DoNotSaveWhenDeleted) {
   stats_config_util_mock_->SetEnabled(false);
 
-  scoped_ptr<SessionUsageObserver> observer(new SessionUsageObserver);
+  std::unique_ptr<SessionUsageObserver> observer(new SessionUsageObserver);
 
   // Add command
   commands::Command command;
@@ -137,7 +139,7 @@ TEST_F(SessionUsageObserverTest, DoNotSaveWhenDeleted) {
 }
 
 TEST_F(SessionUsageObserverTest, ClientSideStatsInfolist) {
-  scoped_ptr<SessionUsageObserver> observer(new SessionUsageObserver);
+  std::unique_ptr<SessionUsageObserver> observer(new SessionUsageObserver);
 
   // create session
   {
@@ -151,7 +153,7 @@ TEST_F(SessionUsageObserverTest, ClientSideStatsInfolist) {
   const uint64 kSeconds = 0;
   const uint32 kMicroSeconds = 0;
   ClockMock clock(kSeconds, kMicroSeconds);
-  Util::SetClockHandler(&clock);
+  Clock::SetClockForUnitTest(&clock);
 
   // prepare command
   commands::Command orig_show_command, orig_hide_command;
@@ -230,8 +232,43 @@ TEST_F(SessionUsageObserverTest, ClientSideStatsSoftwareKeyboardLayout) {
   EXPECT_INTEGER_STATS("SoftwareKeyboardLayoutPortrait", 3);
 }
 
+TEST_F(SessionUsageObserverTest, SubmittedCandidateRow) {
+  SessionUsageObserver observer;
+
+  // create session
+  commands::Command command;
+  command.mutable_input()->set_type(commands::Input::CREATE_SESSION);
+  command.mutable_input()->set_id(1);
+  command.mutable_output()->set_id(1);
+  observer.EvalCommandHandler(command);
+
+  EXPECT_STATS_NOT_EXIST("SubmittedCandidateRow0");
+  EXPECT_STATS_NOT_EXIST("SubmittedCandidateRow1");
+  EXPECT_STATS_NOT_EXIST("SubmittedCandidateRow2");
+  EXPECT_STATS_NOT_EXIST("SubmittedCandidateRow3");
+  EXPECT_STATS_NOT_EXIST("SubmittedCandidateRow4");
+  EXPECT_STATS_NOT_EXIST("SubmittedCandidateRow5");
+  EXPECT_STATS_NOT_EXIST("SubmittedCandidateRow6");
+  EXPECT_STATS_NOT_EXIST("SubmittedCandidateRow7");
+  EXPECT_STATS_NOT_EXIST("SubmittedCandidateRow8");
+  EXPECT_STATS_NOT_EXIST("SubmittedCandidateRow9");
+  EXPECT_STATS_NOT_EXIST("SubmittedCandidateRowGE10");
+
+  command.mutable_input()->set_type(commands::Input::SEND_COMMAND);
+  commands::SessionCommand *session_command =
+      command.mutable_input()->mutable_command();
+  session_command->set_type(commands::SessionCommand::USAGE_STATS_EVENT);
+  session_command->set_usage_stats_event(
+      commands::SessionCommand::SUBMITTED_CANDIDATE_ROW_0);
+  observer.EvalCommandHandler(command);
+  EXPECT_COUNT_STATS("SubmittedCandidateRow0", 1);
+
+  observer.EvalCommandHandler(command);
+  EXPECT_COUNT_STATS("SubmittedCandidateRow0", 2);
+}
+
 TEST_F(SessionUsageObserverTest, LogTouchEvent) {
-  scoped_ptr<SessionUsageObserver> observer(new SessionUsageObserver);
+  std::unique_ptr<SessionUsageObserver> observer(new SessionUsageObserver);
 
   // create session
   {
@@ -447,7 +484,7 @@ TEST_F(SessionUsageObserverTest, LogTouchEvent) {
 }
 
 TEST_F(SessionUsageObserverTest, LogTouchEventPasswordField) {
-  scoped_ptr<SessionUsageObserver> observer(new SessionUsageObserver);
+  std::unique_ptr<SessionUsageObserver> observer(new SessionUsageObserver);
 
   // create session
   {

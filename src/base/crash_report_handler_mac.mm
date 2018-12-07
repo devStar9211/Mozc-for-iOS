@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,44 +31,48 @@
 
 #import "base/crash_report_handler.h"
 
-#import <Foundation/Foundation.h>
-#if defined(GOOGLE_JAPANESE_INPUT_BUILD)
-#import <GoogleBreakpad/GoogleBreakpad.h>
-#endif  // GOOGLE_JAPANESE_INPUT_BUILD
+#import "base/const.h"
+
+#import <Breakpad/Breakpad.h>
+#import <CoreFoundation/CoreFoundation.h>
 
 namespace mozc {
 
-#if defined(GOOGLE_JAPANESE_INPUT_BUILD)
-// The reference count for GoogleBreakpad
+// The reference count for Breakpad
 int g_reference_count = 0;
 
-GoogleBreakpadRef g_breakpad = NULL;
-#endif  // GOOGLE_JAPANESE_INPUT_BUILD
+BreakpadRef g_breakpad = nullptr;
 
 bool CrashReportHandler::Initialize(bool check_address) {
-#if defined(GOOGLE_JAPANESE_INPUT_BUILD)
   ++g_reference_count;
-  NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-  NSDictionary *plist = [[NSBundle mainBundle] infoDictionary];
-  if (1 == g_reference_count && NULL != plist && NULL == g_breakpad) {
-    g_breakpad = GoogleBreakpadCreate(plist);
-    [pool release];
-    return true;
+  @autoreleasepool {
+    NSMutableDictionary *plist =
+        [[[NSBundle mainBundle] infoDictionary] mutableCopy];
+    if (g_reference_count == 1 && plist != nullptr && g_breakpad == nullptr) {
+      // Create a crash reports directory under tmpdir, and set it to the plist
+      NSString *tmpDir = NSTemporaryDirectory();
+      // crashDir will be $TMPDIR/GoogleJapaneseInput/CrashReports
+      NSString *crashDir = [NSString
+          pathWithComponents:@[tmpDir, @kProductPrefix, @"CrashReports"]];
+      [[NSFileManager defaultManager] createDirectoryAtPath:crashDir
+                                withIntermediateDirectories:YES
+                                                 attributes:nil
+                                                      error:NULL];
+      [plist setValue:crashDir forKey:@BREAKPAD_DUMP_DIRECTORY];
+      g_breakpad = BreakpadCreate(plist);
+      return true;
+    }
   }
-  [pool release];
-#endif  // GOOGLE_JAPANESE_INPUT_BUILD
   return false;
 }
 
 bool CrashReportHandler::Uninitialize() {
-#if defined(GOOGLE_JAPANESE_INPUT_BUILD)
   --g_reference_count;
-  if (0 == g_reference_count && NULL != g_breakpad) {
-    GoogleBreakpadRelease(g_breakpad);
-    g_breakpad = NULL;
+  if (g_reference_count == 0 && g_breakpad != nullptr) {
+    BreakpadRelease(g_breakpad);
+    g_breakpad = nullptr;
     return true;
   }
-#endif  // GOOGLE_JAPANESE_INPUT_BUILD
   return false;
 }
 

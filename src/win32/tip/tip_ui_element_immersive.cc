@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,8 +31,7 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlcom.h>
 #include <atlapp.h>
 #include <atlmisc.h>
@@ -41,14 +40,14 @@
 #include <msctf.h>
 
 #include <memory>
+#include <unordered_map>
 
-#include "base/hash_tables.h"
 #include "base/util.h"
+#include "protocol/commands.pb.h"
 #include "renderer/table_layout.h"
 #include "renderer/win32/text_renderer.h"
 #include "renderer/win32/win32_renderer_util.h"
 #include "renderer/window_util.h"
-#include "session/commands.pb.h"
 #include "win32/tip/tip_composition_util.h"
 #include "win32/tip/tip_dll_module.h"
 #include "win32/tip/tip_edit_session.h"
@@ -608,9 +607,7 @@ HWND GetOwnerWindow(ITfContext *context) {
   return window_handle;
 }
 
-class WindowMap
-    : public hash_map<HWND, TipImmersiveUiElementImpl *> {
-};
+using WindowMap = std::unordered_map<HWND, TipImmersiveUiElementImpl *>;
 
 class ThreadLocalInfo {
  public:

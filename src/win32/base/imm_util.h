@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -52,19 +52,6 @@ class ImeUtil {
   // have not tested. If this is true, you cannot freely call SetDefault()
   // in some special situations like CustomAction.
   static bool SetDefault();
-
-  // Enables or disables CUAS (Cicero Unaware Application Support).
-  // Returns true if the operation completed successfully.
-  static bool SetCuasEnabled(bool enable);
-
-  // Returns true if cfmon.exe is running.
-  // ctfmon.exe is running if TSF (Text Service Framework) is enabled.
-  static bool IsCtfmonRunning();
-
-  // Activates the IMM32 version of Google Japanese Input for the current
-  // process.
-  // Returns true if the operation completed successfully.
-  static bool ActivateForCurrentProcess();
 
   // Looks like the TSF needs to rebuild a certain cache after changing the
   // input details. This task usually takes a few hundreds msec. However,

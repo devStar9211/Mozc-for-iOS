@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,10 +30,12 @@
 #ifndef MOZC_GUI_CONFIG_DIALOG_ROMAN_TABLE_EDITOR_H_
 #define MOZC_GUI_CONFIG_DIALOG_ROMAN_TABLE_EDITOR_H_
 
-#include <QtGui/QWidget>
+#include <QtWidgets/QWidget>
+
+#include <memory>
 #include <string>
+
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "gui/config_dialog/generic_table_editor.h"
 
 class QAbstractButton;
@@ -42,7 +44,8 @@ namespace mozc {
 namespace gui {
 
 class RomanTableEditorDialog : public GenericTableEditorDialog {
- Q_OBJECT;
+  Q_OBJECT;
+
  public:
   explicit RomanTableEditorDialog(QWidget *parent);
   virtual ~RomanTableEditorDialog();
@@ -60,7 +63,7 @@ class RomanTableEditorDialog : public GenericTableEditorDialog {
   virtual string GetDefaultFilename() const {
     return "romantable.txt";
   }
-  virtual bool LoadFromStream(istream *is);
+  virtual bool LoadFromStream(std::istream *is);
   virtual bool Update();
 
  private:
@@ -68,8 +71,10 @@ class RomanTableEditorDialog : public GenericTableEditorDialog {
   static string GetDefaultRomanTable();
 
  private:
-  scoped_ptr<QAction *[]> actions_;
+  std::unique_ptr<QAction *[]> actions_;
 };
+
 }  // namespace gui
 }  // namespace mozc
+
 #endif  // MOZC_GUI_CONFIG_DIALOG_ROMAN_TABLE_EDITOR_H_

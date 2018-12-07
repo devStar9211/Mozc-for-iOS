@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -42,7 +42,7 @@ class WindowUtil {
  public:
   // Returns the window class name of |window_handle|.
   // Returns an empty string when fails to retrieve the class name.
-  static wstring GetWindowClassName(HWND window_handle);
+  static std::wstring GetWindowClassName(HWND window_handle);
 
   // Returns true if the target window specified by |window_handle| can be
   // successfully configured to receive an incoming message from lower

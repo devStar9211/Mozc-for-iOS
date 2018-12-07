@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,7 +36,7 @@
 #include "base/protobuf/descriptor.h"
 #include "base/protobuf/message.h"
 #include "base/util.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "usage_stats/usage_stats.h"
 
 using mozc::commands::Command;
@@ -68,7 +68,7 @@ bool GetEnumValueName(const Message &message, const string &enum_name,
 // Splits a text by delimitor, capitalizes each piece and joins them.
 // ex. "AbCd_efgH" => "AbcdEfgh" (delimitor = "_")
 void CamelCaseString(string *str, const char *delm) {
-  vector<string> pieces;
+  std::vector<string> pieces;
   Util::SplitStringUsing(*str, delm, &pieces);
   for (size_t i = 0; i < pieces.size(); ++i) {
     Util::CapitalizeString(&pieces[i]);

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -28,13 +28,13 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef MOZC_GUI_CONFIG_DIALOG_COMBOBOX_DELEGATE_H_
-#define MOZC_GUI_CONFIG_DIALOG_COMBOBOX_FORM_DELEGATE_H_
+#define MOZC_GUI_CONFIG_DIALOG_COMBOBOX_DELEGATE_H_
 
 #include <QtCore/QModelIndex>
 #include <QtCore/QObject>
 #include <QtCore/QStringList>
-#include <QtGui/QItemDelegate>
-#include <QtGui/QComboBox>
+#include <QtWidgets/QComboBox>
+#include <QtWidgets/QItemDelegate>
 
 class QMouseEvent;
 
@@ -69,6 +69,8 @@ class ComboBoxDelegate : public QItemDelegate {
  private:
   QStringList item_list_;
 };
-}  // gui
-}  // mozc
-#endif  // MOZC_GUI_CONFIG_DIALOG_CHARACTER_FORM_DELEGATE_H_
+
+}  // namespace gui
+}  // namespace mozc
+
+#endif  // MOZC_GUI_CONFIG_DIALOG_COMBOBOX_DELEGATE_H_

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -53,6 +53,10 @@
 #include "client/client_interface.h"
 #include "ipc/ipc.h"
 #include "ipc/named_event.h"
+
+#ifdef OS_WIN
+#include "base/win_sandbox.h"
+#endif  // OS_WIN
 
 namespace mozc {
 namespace client {

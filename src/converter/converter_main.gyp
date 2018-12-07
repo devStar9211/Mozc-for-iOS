@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -41,12 +41,12 @@
        ],
       'dependencies': [
         '../composer/composer.gyp:composer',
-        '../config/config.gyp:config_protocol',
         '../engine/engine.gyp:oss_engine_factory',
         '../engine/engine.gyp:engine',
         '../engine/engine.gyp:engine_factory',
         '../engine/engine.gyp:mock_data_engine_factory',
-        '../session/session_base.gyp:session_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
         'converter.gyp:converter',
         'converter_base.gyp:pos_id_printer',
         'converter_base.gyp:segments',

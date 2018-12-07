@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,17 +35,33 @@
 #endif  // MOZC_USE_PEPPER_FILE_IO
 #include <string>
 
+#include "base/mmap_sync_interface.h"
 #include "base/port.h"
 
 namespace mozc {
-class Mmap {
+
+class Mmap : public MmapSyncInterface {
  public:
   Mmap();
-  ~Mmap() {
-    Close();
-  }
+  virtual ~Mmap() { Close(); }
+
   bool Open(const char *filename, const char *mode = "r");
   void Close();
+
+  // Following mlock/munlock related functions work based on target environment.
+  // In Android, Native Client, and Windows, we don't implement mlock, so these
+  // functions returns false and -1. For other target platforms, these functions
+  // call actual mlock/munlock functions and return it's result.
+  // On Android, page-out is probably acceptable because
+  // - Smaller RAM on the device.
+  // - The storage is (usually) solid state thus page-in/out is expected to
+  //   be faster.
+  // On Linux, in the kernel version >= 2.6.9, user process can mlock. In older
+  // kernel, it fails if the process is running in user priviledge.
+  // TODO(team): Check if mlock is really necessary for Mac.
+  static bool IsMLockSupported();
+  static int MaybeMLock(const void *addr, size_t len);
+  static int MaybeMUnlock(const void *addr, size_t len);
 
 #ifndef MOZC_USE_PEPPER_FILE_IO
   char &operator[](size_t n) { return *(text_ + n); }
@@ -67,7 +83,7 @@ class Mmap {
 
 #ifdef MOZC_USE_PEPPER_FILE_IO
   // Save the data in memory to the file.
-  bool SyncToFile();
+  virtual bool SyncToFile();
 #endif  // MOZC_USE_PEPPER_FILE_IO
 
  private:
@@ -82,6 +98,7 @@ class Mmap {
 
   DISALLOW_COPY_AND_ASSIGN(Mmap);
 };
+
 }  // namespace mozc
 
 #endif  // MOZC_BASE_MMAP_H_

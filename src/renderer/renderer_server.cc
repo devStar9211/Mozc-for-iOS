@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,16 +37,17 @@
 
 #include "base/compiler_specific.h"
 #include "base/const.h"
+#include "base/flags.h"
 #include "base/logging.h"
 #include "base/port.h"
 #include "base/system_util.h"
 #include "client/client_interface.h"
-#include "config/config.pb.h"  // for Config
 #include "config/config_handler.h"
 #include "ipc/ipc.h"
 #include "ipc/named_event.h"
 #include "ipc/process_watch_dog.h"
-#include "renderer/renderer_command.pb.h"
+#include "protocol/config.pb.h"
+#include "protocol/renderer_command.pb.h"
 #include "renderer/renderer_interface.h"
 
 // By default, mozc_renderer quits when user-input continues to be
@@ -174,14 +175,16 @@ RendererServer::RendererServer()
           watch_dog_(new ParentApplicationWatchDog(this))),
       send_command_(new RendererServerSendCommand) {
   if (FLAGS_restricted) {
-    FLAGS_timeout = min(FLAGS_timeout, 60);   // set 60sec with restricted mode
+    FLAGS_timeout =
+        std::min(FLAGS_timeout, 60);  // set 60sec with restricted mode
   }
 
-  timeout_ = 1000 * max(3, min(24 * 60 * 60, FLAGS_timeout));
+  timeout_ = 1000 * std::max(3, std::min(24 * 60 * 60, FLAGS_timeout));
   VLOG(2) << "timeout is set to be : " << timeout_;
 
 #ifndef NO_LOGGING
-  const config::Config &config = config::ConfigHandler::GetConfig();
+  config::Config config;
+  config::ConfigHandler::GetConfig(&config);
   Logging::SetConfigVerboseLevel(config.verbose_level());
 #endif  // NO_LOGGING
 }

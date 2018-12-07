@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,6 +29,10 @@
 
 #include "engine/engine_factory.h"
 
+#include <memory>
+#include <string>
+
+#include "base/logging.h"
 #include "engine/engine_interface.h"
 #include "prediction/predictor_interface.h"
 #include "testing/base/public/gunit.h"
@@ -36,7 +40,7 @@
 namespace mozc {
 
 TEST(EngineFactoryTest, MobilePredictorOnAndroid) {
-  scoped_ptr<EngineInterface> engine(EngineFactory::Create());
+  std::unique_ptr<EngineInterface> engine(EngineFactory::Create());
   PredictorInterface *predictor = engine->GetPredictor();
 #ifdef OS_ANDROID
   EXPECT_EQ("MobilePredictor", predictor->GetPredictorName());

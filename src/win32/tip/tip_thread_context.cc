@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -87,7 +87,11 @@ int32 TipThreadContext::GetFocusRevision() const {
 }
 
 void TipThreadContext::IncrementFocusRevision() {
-  ++state_->focus_revision;
+  if (state_->focus_revision < kint32max) {
+    state_->focus_revision++;
+  } else {
+    state_->focus_revision = 0;
+  }
 }
 
 }  // namespace tsf

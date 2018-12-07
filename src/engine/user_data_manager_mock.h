@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -44,20 +44,21 @@ namespace mozc {
 class UserDataManagerMock : public UserDataManagerInterface {
  public:
   UserDataManagerMock();
-  virtual ~UserDataManagerMock();
+  ~UserDataManagerMock() override;
 
-  virtual bool Sync();
-  virtual bool Reload();
-  virtual bool ClearUserHistory();
-  virtual bool ClearUserPrediction();
-  virtual bool ClearUnusedUserPrediction();
-  virtual bool ClearUserPredictionEntry(const string &key, const string &value);
-  virtual bool WaitForSyncerForTest();
+  bool Sync() override;
+  bool Reload() override;
+  bool ClearUserHistory() override;
+  bool ClearUserPrediction() override;
+  bool ClearUnusedUserPrediction() override;
+  bool ClearUserPredictionEntry(const string &key,
+                                const string &value) override;
+  bool Wait() override;
 
   int GetFunctionCallCount(const string &name);
 
  private:
-  map<string, int> function_counters_;
+  std::map<string, int> function_counters_;
   DISALLOW_COPY_AND_ASSIGN(UserDataManagerMock);
 };
 

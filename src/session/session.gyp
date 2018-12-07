@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -42,23 +42,19 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../composer/composer.gyp:key_parser',
         '../config/config.gyp:config_handler',
-        '../config/config.gyp:config_protocol',
         '../converter/converter_base.gyp:converter_util',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
+        '../request/request.gyp:conversion_request',
         '../transliteration/transliteration.gyp:transliteration',
         '../usage_stats/usage_stats_base.gyp:usage_stats',
-        'session_base.gyp:key_parser',
         'session_base.gyp:keymap',
         'session_base.gyp:keymap_factory',
-        'session_base.gyp:session_protocol',
         'session_base.gyp:session_usage_stats_util',
         'session_internal',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'session_internal',
@@ -74,14 +70,21 @@
         '../base/base.gyp:base',
         '../composer/composer.gyp:composer',
         '../config/config.gyp:config_handler',
-        '../config/config.gyp:config_protocol',
-        'session_base.gyp:session_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
+    },
+    {
+      # Android is not supported.
+      'target_name': 'session_watch_dog',
+      'type': 'static_library',
+      'sources': [
+        'session_watch_dog.cc',
+      ],
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../client/client.gyp:client',
+      ],
     },
     {
       'target_name': 'session_handler',
@@ -89,32 +92,25 @@
       'sources': [
         'session_handler.cc',
         'session_observer_handler.cc',
-        'session_watch_dog.cc',
       ],
       'dependencies': [
-        '../client/client.gyp:client',
-        '../engine/engine.gyp:engine_factory',
         '../composer/composer.gyp:composer',
+        '../config/config.gyp:character_form_manager',
         '../config/config.gyp:config_handler',
-        '../config/config.gyp:config_protocol',
-        '../dictionary/dictionary_base.gyp:dictionary_protocol',
         '../dictionary/dictionary_base.gyp:user_dictionary',
+        '../engine/engine.gyp:engine_factory',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
+        '../protocol/protocol.gyp:engine_builder_proto',
+        '../protocol/protocol.gyp:user_dictionary_storage_proto',
         '../usage_stats/usage_stats_base.gyp:usage_stats',
         'session_base.gyp:generic_storage_manager',
-        'session_base.gyp:session_protocol',
+        ':session_watch_dog',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'conditions': [
         ['(target_platform=="NaCl" and _toolset=="target") or target_platform=="Android"', {
-          'sources!': [
-            'session_watch_dog.cc',
-          ],
           'dependencies!': [
-            '../client/client.gyp:client',
+            ':session_watch_dog',
           ],
         }],
       ],
@@ -129,15 +125,10 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../config/config.gyp:stats_config_util',
+        '../protocol/protocol.gyp:state_proto',
         '../usage_stats/usage_stats_base.gyp:usage_stats',
         '../usage_stats/usage_stats_base.gyp:usage_stats_protocol',
-        'session_base.gyp:session_protocol',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'session_server',
@@ -151,15 +142,10 @@
         # dependency list you will have to update Android's.
         '../base/base.gyp:base',
         '../usage_stats/usage_stats.gyp:usage_stats_uploader',
-        'session_base.gyp:session_protocol',
+        '../protocol/protocol.gyp:commands_proto',
         'session_handler',
         'session_usage_observer',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'random_keyevents_generator',
@@ -169,20 +155,15 @@
         'random_keyevents_generator.cc',
       ],
       'dependencies': [
-        '../config/config.gyp:config_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
         'gen_session_stress_test_data#host',
         'session',
-        'session_base.gyp:session_protocol',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'session_server_main',
-      'type': 'none',
+      'type': 'executable',
       'sources': [
         'session_server_main.cc',
       ],
@@ -194,11 +175,6 @@
       'target_name': 'gen_session_stress_test_data',
       'type': 'none',
       'toolsets': ['host'],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'actions': [
         {
           'action_name': 'gen_session_stress_test_data',

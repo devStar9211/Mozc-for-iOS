@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -58,9 +58,7 @@ TEST(LocaleBasedMessageTranslatorTest, KnownJapaneseLocaleName) {
     EXPECT_EQ("foobar", translator.MaybeTranslate("foobar"));
 
     // For known key.
-    // "プロパティ"
-    EXPECT_EQ("\xE3\x83\x97\xE3\x83\xAD\xE3\x83\x91\xE3\x83\x86\xE3\x82\xA3",
-              translator.MaybeTranslate("Properties"));
+    EXPECT_EQ("プロパティ", translator.MaybeTranslate("Properties"));
   }
 
   {
@@ -69,9 +67,7 @@ TEST(LocaleBasedMessageTranslatorTest, KnownJapaneseLocaleName) {
     EXPECT_EQ("foobar", translator.MaybeTranslate("foobar"));
 
     // For known key.
-    // "プロパティ"
-    EXPECT_EQ("\xE3\x83\x97\xE3\x83\xAD\xE3\x83\x91\xE3\x83\x86\xE3\x82\xA3",
-              translator.MaybeTranslate("Properties"));
+    EXPECT_EQ("プロパティ", translator.MaybeTranslate("Properties"));
   }
 
   {
@@ -80,9 +76,7 @@ TEST(LocaleBasedMessageTranslatorTest, KnownJapaneseLocaleName) {
     EXPECT_EQ("foobar", translator.MaybeTranslate("foobar"));
 
     // For known key.
-    // "プロパティ"
-    EXPECT_EQ("\xE3\x83\x97\xE3\x83\xAD\xE3\x83\x91\xE3\x83\x86\xE3\x82\xA3",
-              translator.MaybeTranslate("Properties"));
+    EXPECT_EQ("プロパティ", translator.MaybeTranslate("Properties"));
   }
 }
 

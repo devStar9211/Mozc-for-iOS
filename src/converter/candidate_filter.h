@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,23 +33,26 @@
 #include <set>
 #include <string>
 #include <vector>
+
 #include "base/port.h"
 #include "converter/segments.h"
+#include "dictionary/pos_matcher.h"
+#include "dictionary/suppression_dictionary.h"
 
 namespace mozc {
 
 struct Node;
-class POSMatcher;
 class SuggestionFilter;
-class SuppressionDictionary;
 
 namespace converter {
 
 class CandidateFilter {
  public:
-  CandidateFilter(const SuppressionDictionary *suppression_dictionary,
-                  const POSMatcher *pos_matcher,
-                  const SuggestionFilter *suggestion_filter);
+  CandidateFilter(
+      const dictionary::SuppressionDictionary *suppression_dictionary,
+      const dictionary::POSMatcher *pos_matcher,
+      const SuggestionFilter *suggestion_filter,
+      bool apply_suggestion_filter_for_exact_match);
   ~CandidateFilter();
 
   enum ResultType {
@@ -61,7 +64,7 @@ class CandidateFilter {
   // Checks if the candidate should be filtered out.
   ResultType FilterCandidate(const string &original_key,
                              const Segment::Candidate *candidate,
-                             const vector<const Node *> &nodes,
+                             const std::vector<const Node *> &nodes,
                              Segments::RequestType request_type);
 
   // Resets the internal state.
@@ -70,15 +73,16 @@ class CandidateFilter {
  private:
   ResultType FilterCandidateInternal(const string &original_key,
                                      const Segment::Candidate *candidate,
-                                     const vector<const Node *> &nodes,
+                                     const std::vector<const Node *> &nodes,
                                      Segments::RequestType request_type);
 
-  const SuppressionDictionary *suppression_dictionary_;
-  const POSMatcher *pos_matcher_;
+  const dictionary::SuppressionDictionary *suppression_dictionary_;
+  const dictionary::POSMatcher *pos_matcher_;
   const SuggestionFilter *suggestion_filter_;
 
-  set<string> seen_;
+  std::set<string> seen_;
   const Segment::Candidate *top_candidate_;
+  bool apply_suggestion_filter_for_exact_match_;
 
   DISALLOW_COPY_AND_ASSIGN(CandidateFilter);
 };

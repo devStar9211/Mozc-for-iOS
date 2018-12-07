@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -61,6 +61,18 @@ CommitAutoPartialSuggestion
 # The number of the commited Unicode/carrier emoji.
 CommitUnicodeEmoji
 CommitCarrierEmoji
+
+# Zero query related
+CommitDictionaryPredictorZeroQueryTypeNone
+CommitDictionaryPredictorZeroQueryTypeNumberSuffix
+CommitDictionaryPredictorZeroQueryTypeEmoticon
+CommitDictionaryPredictorZeroQueryTypeEmoji
+CommitDictionaryPredictorZeroQueryTypeBigram
+CommitDictionaryPredictorZeroQueryTypeSuffix
+
+# User history predictor related
+CommitUserHistoryPredictor
+CommitUserHistoryPredictorZeroQuery
 
 # The count of all events
 SessionAllEvent
@@ -288,7 +300,7 @@ Performed_Conversion_InputModeHalfAlphanumeric
 Performed_Conversion_ReportBug
 Performed_Conversion_DeleteSelectedCandidate
 
-# The count of some SessionCommands defined in session/commands.proto
+# The count of some SessionCommands defined in protocol/commands.proto
 SendCommand_Revert
 SendCommand_Submit
 SendCommand_SelectCandidate
@@ -304,9 +316,9 @@ SendCommand_SwitchInputFieldType
 SendCommand_UsageStatsEvent
 SendCommand_UndoOrRewind
 SendCommand_ExpandSuggestion
-SendCommand_SendCaretLocation
+SendCommand_ObsoleteSendCaretLocation
 SendCommand_ObsoleteSendLanguageBarCommand
-SendCommand_GetAsyncResult
+SendCommand_ObsoleteGetAsyncResult
 SendCommand_CommitRawText
 SendCommand_ConvertPrevPage
 SendCommand_ConvertNextPage
@@ -406,6 +418,8 @@ CLEAR
 VIRTUAL_LEFT
 VIRTUAL_RIGHT
 VIRTUAL_ENTER
+VIRTUAL_UP
+VIRTUAL_DOWN
 
 # Stats for config
 # Keymap style
@@ -479,22 +493,12 @@ PrelauncherEnabled
 # Use Mode Indicator
 ConfigUseModeIndicator
 
-# Need to show the help page after install (TSF is disabled)
-PostInstallShowPageRequired
-# Need to logoff after install (CUAS is disabled)
-PostInstallLogoffRequired
-# Need to do nothing after install
-PostInstallNothingRequired
 # Set Mozc as default on install
 PostInstallSetDefault
 # Do not set Mozc as default on install
 PostInstallNotSetDefault
 # Push OK button
 PostInstallOkButton
-# Push Logoff Now button
-PostInstallLogoffNowButton
-# Push Logoff Later button
-PostInstallLogoffLaterButton
 # Push reject (x) button
 PostInstallRejectButton
 
@@ -526,18 +530,31 @@ CharacterPaletteCommit
 SoftwareKeyboardLayoutLandscape
 # Selected software keyboard layout for portrait.
 SoftwareKeyboardLayoutPortrait
+# The count of submitted candidate in n-th row (0-origin)
+SubmittedCandidateRow0
+SubmittedCandidateRow1
+SubmittedCandidateRow2
+SubmittedCandidateRow3
+SubmittedCandidateRow4
+SubmittedCandidateRow5
+SubmittedCandidateRow6
+SubmittedCandidateRow7
+SubmittedCandidateRow8
+SubmittedCandidateRow9
+SubmittedCandidateRowGE10
+# The count of the fold/expand keyboard event.
+KeyboardFoldEvent
+KeyboardExpandEvent
+MushroomSelectionDialogOpen
+SoftwareKeyboardHeightDipLandscape
+SoftwareKeyboardHeightDipPortrait
+SoftwareKeyboardLayoutAdjustmentEnabledLandscape
+SoftwareKeyboardLayoutAdjustmentEnabledPortrait
 
 # for windows
 
 # 64 bit
 WindowsX64
-# Msctf version
-MsctfVerMajor
-MsctfVerMinor
-MsctfVerBuild
-MsctfVerRevision
-# CUAS status
-CuasEnabled
 # Windows 8
 PerUserInputSettingsEnabled
 

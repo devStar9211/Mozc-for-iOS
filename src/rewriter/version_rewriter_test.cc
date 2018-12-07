@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -34,24 +34,25 @@
 
 #include "base/system_util.h"
 #include "base/util.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
+#include "request/conversion_request.h"
 #include "testing/base/public/gunit.h"
 
 DECLARE_string(test_tmpdir);
 
 namespace mozc {
+namespace {
 
-class VersionRewriterTest : public testing::Test {
+const char *kDummyDataVersion = "dataversion";
+
+}  // namespace
+
+class VersionRewriterTest : public ::testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config::ConfigHandler::SetConfig(config);
   }
 
   static void AddSegment(const string &key, const string &value,
@@ -84,29 +85,26 @@ class VersionRewriterTest : public testing::Test {
 };
 
 TEST_F(VersionRewriterTest, CapabilityTest) {
-  // default_request is just declared but not touched at all, so it
-  // holds all default values.
-  commands::Request default_request;
-  const ConversionRequest request(NULL, &default_request);
-  VersionRewriter rewriter;
-  EXPECT_EQ(RewriterInterface::CONVERSION,
-            rewriter.capability(request));
+  // Default request.
+  const ConversionRequest request;
+  VersionRewriter rewriter(kDummyDataVersion);
+  EXPECT_EQ(RewriterInterface::CONVERSION, rewriter.capability(request));
 }
 
 TEST_F(VersionRewriterTest, MobileEnvironmentTest) {
-  commands::Request input;
-  VersionRewriter rewriter;
+  ConversionRequest convreq;
+  commands::Request request;
+  convreq.set_request(&request);
+  VersionRewriter rewriter(kDummyDataVersion);
 
   {
-    input.set_mixed_conversion(true);
-    const ConversionRequest request(NULL, &input);
-    EXPECT_EQ(RewriterInterface::ALL, rewriter.capability(request));
+    request.set_mixed_conversion(true);
+    EXPECT_EQ(RewriterInterface::ALL, rewriter.capability(convreq));
   }
 
   {
-    input.set_mixed_conversion(false);
-    const ConversionRequest request(NULL, &input);
-    EXPECT_EQ(RewriterInterface::CONVERSION, rewriter.capability(request));
+    request.set_mixed_conversion(false);
+    EXPECT_EQ(RewriterInterface::CONVERSION, rewriter.capability(convreq));
   }
 }
 
@@ -118,18 +116,13 @@ TEST_F(VersionRewriterTest, RewriteTest_Version) {
 #else
   static const char kVersionPrefixExpected[] = "Mozc-";
   static const char kVersionPrefixUnexpected[] = "GoogleJapaneseInput-";
-#endif
+#endif  // GOOGLE_JAPANESE_INPUT_BUILD
 
-  VersionRewriter version_rewriter;
+  VersionRewriter version_rewriter(kDummyDataVersion);
 
   const ConversionRequest request;
   Segments segments;
-  VersionRewriterTest::AddSegment(
-      // "ばーじょん"
-      "\xe3\x81\xb0\xe3\x83\xbc\xe3\x81\x98\xe3\x82\x87\xe3\x82\x93",
-      // "バージョン"
-      "\xe3\x83\x90\xe3\x83\xbc\xe3\x82\xb8\xe3\x83\xa7\xe3\x83\xb3",
-      &segments);
+  VersionRewriterTest::AddSegment("ばーじょん", "バージョン", &segments);
 
   EXPECT_TRUE(version_rewriter.Rewrite(request, &segments));
   EXPECT_TRUE(VersionRewriterTest::FindCandidateWithPrefix(
@@ -137,6 +130,5 @@ TEST_F(VersionRewriterTest, RewriteTest_Version) {
   EXPECT_FALSE(VersionRewriterTest::FindCandidateWithPrefix(
       kVersionPrefixUnexpected, segments));
 }
-
 
 }  // namespace mozc

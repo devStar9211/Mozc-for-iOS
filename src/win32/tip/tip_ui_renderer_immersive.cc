@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,15 +31,14 @@
 
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlapp.h>
 #include <atlmisc.h>
 
 #include <memory>
 
 #include "base/util.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "renderer/table_layout.h"
 #include "renderer/win32/text_renderer.h"
 
@@ -124,7 +123,7 @@ int GetFocusedArrayIndex(const Candidates &candidates) {
 void CalcLayout(const Candidates &candidates,
                 const TextRenderer &text_renderer,
                 TableLayout *table_layout,
-                vector<wstring> *candidate_strings) {
+                std::vector<std::wstring> *candidate_strings) {
   table_layout->Initialize(candidates.candidate_size(), NUMBER_OF_COLUMNS);
 
   table_layout->SetWindowBorder(kWindowBorder);
@@ -144,23 +143,21 @@ void CalcLayout(const Candidates &candidates,
   table_layout->EnsureCellSize(COLUMN_GAP1, gap1_size);
 
   for (size_t i = 0; i < candidates.candidate_size(); ++i) {
-    wstring candidate_string;
+    std::wstring candidate_string;
     const Candidate &candidate = candidates.candidate(i);
     if (candidate.has_value()) {
-      mozc::Util::UTF8ToWide(candidate.value().c_str(), &candidate_string);
+      mozc::Util::UTF8ToWide(candidate.value(), &candidate_string);
     }
     if (candidate.has_annotation()) {
       const commands::Annotation &annotation = candidate.annotation();
       if (annotation.has_prefix()) {
-        wstring annotation_prefix;
-        mozc::Util::UTF8ToWide(annotation.prefix().c_str(),
-                                &annotation_prefix);
+        std::wstring annotation_prefix;
+        mozc::Util::UTF8ToWide(annotation.prefix(), &annotation_prefix);
         candidate_string = annotation_prefix + candidate_string;
       }
       if (annotation.has_suffix()) {
-        wstring annotation_suffix;
-        mozc::Util::UTF8ToWide(annotation.suffix().c_str(),
-                                &annotation_suffix);
+        std::wstring annotation_suffix;
+        mozc::Util::UTF8ToWide(annotation.suffix(), &annotation_suffix);
         candidate_string += annotation_suffix;
       }
     }
@@ -183,7 +180,7 @@ void CalcLayout(const Candidates &candidates,
 CBitmapHandle RenderImpl(const Candidates &candidates,
                          const TableLayout &table_layout,
                          const TextRenderer &text_renderer,
-                         const vector<wstring> &candidate_strings) {
+                         const std::vector<std::wstring> &candidate_strings) {
   const int width = table_layout.GetTotalSize().width;
   const int height = table_layout.GetTotalSize().height;
 
@@ -221,9 +218,9 @@ CBitmapHandle RenderImpl(const Candidates &candidates,
     const TextRenderer::FONT_TYPE font_type =
         TextRenderer::FONTSET_CANDIDATE;
 
-    vector<TextRenderingInfo> display_list;
+    std::vector<TextRenderingInfo> display_list;
     for (size_t i = 0; i < candidate_strings.size(); ++i) {
-      const wstring &candidate_string = candidate_strings[i];
+      const std::wstring &candidate_string = candidate_strings[i];
       const Rect &text_rect =
           table_layout.GetCellRect(i, column_type);
       display_list.push_back(TextRenderingInfo(candidate_string, text_rect));
@@ -277,7 +274,7 @@ HBITMAP TipUiRendererImmersive::Render(
     const renderer::win32::TextRenderer *text_renderer,
     renderer::TableLayout *table_layout,
     SIZE *size, int *left_align_offset) {
-  vector<wstring> candidate_strings;
+  std::vector<std::wstring> candidate_strings;
   CalcLayout(candidates, *text_renderer, table_layout, &candidate_strings);
 
   const Size &total_size = table_layout->GetTotalSize();

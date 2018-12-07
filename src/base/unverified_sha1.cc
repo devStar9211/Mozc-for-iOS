@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <climits>  // for CHAR_BIT
+#include <type_traits>
 
 #include "base/logging.h"
 
@@ -197,6 +198,22 @@ class PaddedMessageIterator {
   size_t message_index_;
 };
 
+// Converts a character to uint32 bit pattern by prepending 0's while keeping
+// the original bit pattern in lowest 8 bits.
+uint32 CharToUint32(char c) {
+  // In case char is signed, we need to first convert c to uint8; see the
+  // following example:
+  //
+  // signed char c = -1;
+  // uint32_t a = static_cast<uint32_t>(c);
+  // uint32_t b = static_cast<uint32_t>(static_cast<uint8_t>(c));
+  //
+  // Result:
+  //   a == 4294967295  (converted through -1 of 32-bit integer)
+  //   b == 255
+  return static_cast<uint32>(static_cast<uint8>(c));
+}
+
 string MakeDigestImpl(StringPiece source) {
   // 5.3 Setting the Initial Hash Value / 5.3.1 SHA-1
 
@@ -217,10 +234,10 @@ string MakeDigestImpl(StringPiece source) {
     uint32 W[80];  // Message schedule.
     for (size_t i = 0; i < 16; ++i) {
       const size_t base_index = i * 4;
-      W[i] = (static_cast<uint32>(message[base_index + 0]) << 24) |
-             (static_cast<uint32>(message[base_index + 1]) << 16) |
-             (static_cast<uint32>(message[base_index + 2]) << 8) |
-             (static_cast<uint32>(message[base_index + 3]) << 0);
+      W[i] = (CharToUint32(message[base_index + 0]) << 24) |
+             (CharToUint32(message[base_index + 1]) << 16) |
+             (CharToUint32(message[base_index + 2]) << 8) |
+             (CharToUint32(message[base_index + 3]) << 0);
     }
     for (size_t t = 16; t < 80; ++t) {
       W[t] = ROTL<1>(W[t - 3] ^ W[t - 8] ^ W[t - 14] ^ W[t - 16]);

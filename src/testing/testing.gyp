@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -41,9 +41,6 @@
           'sources': [
             'base/public/nacl_mock_module.cc',
           ],
-          'link_settings': {
-            'libraries': ['-lppapi', '-lppapi_cpp'],
-          },
           'dependencies': [
             '../base/base.gyp:base',
             '../net/net.gyp:http_client',
@@ -59,21 +56,12 @@
       'type': 'static_library',
       'variables': {
         'gtest_defines': [
-          'GTEST_HAS_TR1_TUPLE=1',
+          'GTEST_LANG_CXX11=1',
+          'GTEST_HAS_TR1_TUPLE=0',  # disable tr1 tuple in favor of C++11 tuple.
         ],
+        'gtest_dir': '<(third_party_dir)/gtest/googletest',
+        'gmock_dir': '<(third_party_dir)/gtest/googlemock',
         'conditions': [
-          ['_toolset=="target" and compiler_target=="msvs" and compiler_target_version_int==1700', {
-            'gtest_defines': [
-              '_VARIADIC_MAX=10',  # for gtest/gmock on VC++ 2012
-            ],
-          }],
-          # TODO(yukawa): Get rid of the following workaround when C++11 is
-          # enabled on all the platforms.
-          ['target_platform!="Windows"', {
-            'gtest_defines': [
-              'GTEST_LANG_CXX11=0',  # non-Windows build is not ready
-            ],
-          }],
           ['_toolset=="target" and target_platform=="Android"', {
             'gtest_defines': [
               'GTEST_HAS_RTTI=0',  # Android NDKr7 requires this.
@@ -88,24 +76,24 @@
         ],
       },
       'sources': [
-        '<(DEPTH)/third_party/gmock/src/gmock-cardinalities.cc',
-        '<(DEPTH)/third_party/gmock/src/gmock-internal-utils.cc',
-        '<(DEPTH)/third_party/gmock/src/gmock-matchers.cc',
-        '<(DEPTH)/third_party/gmock/src/gmock-spec-builders.cc',
-        '<(DEPTH)/third_party/gmock/src/gmock.cc',
-        '<(DEPTH)/third_party/gtest/src/gtest-death-test.cc',
-        '<(DEPTH)/third_party/gtest/src/gtest-filepath.cc',
-        '<(DEPTH)/third_party/gtest/src/gtest-port.cc',
-        '<(DEPTH)/third_party/gtest/src/gtest-printers.cc',
-        '<(DEPTH)/third_party/gtest/src/gtest-test-part.cc',
-        '<(DEPTH)/third_party/gtest/src/gtest-typed-test.cc',
-        '<(DEPTH)/third_party/gtest/src/gtest.cc',
+        '<(gmock_dir)/src/gmock-cardinalities.cc',
+        '<(gmock_dir)/src/gmock-internal-utils.cc',
+        '<(gmock_dir)/src/gmock-matchers.cc',
+        '<(gmock_dir)/src/gmock-spec-builders.cc',
+        '<(gmock_dir)/src/gmock.cc',
+        '<(gtest_dir)/src/gtest-death-test.cc',
+        '<(gtest_dir)/src/gtest-filepath.cc',
+        '<(gtest_dir)/src/gtest-port.cc',
+        '<(gtest_dir)/src/gtest-printers.cc',
+        '<(gtest_dir)/src/gtest-test-part.cc',
+        '<(gtest_dir)/src/gtest-typed-test.cc',
+        '<(gtest_dir)/src/gtest.cc',
       ],
       'include_dirs': [
-        '<(DEPTH)/third_party/gmock',
-        '<(DEPTH)/third_party/gmock/include',
-        '<(DEPTH)/third_party/gtest',
-        '<(DEPTH)/third_party/gtest/include',
+        '<(gmock_dir)',
+        '<(gmock_dir)/include',
+        '<(gtest_dir)',
+        '<(gtest_dir)/include',
       ],
       'defines': [
         '<@(gtest_defines)',
@@ -115,8 +103,8 @@
           '<@(gtest_defines)',
         ],
         'include_dirs': [
-          '<(third_party_dir)/gmock/include',
-          '<(third_party_dir)/gtest/include',
+          '<(gmock_dir)/include',
+          '<(gtest_dir)/include',
         ],
       },
       'conditions': [
@@ -128,13 +116,6 @@
           ],
         }],
       ],
-      'xcode_settings': {
-        # Remove the force included file.  This is not necessary for third
-        # party libraries, and it causes a build error.
-        'OTHER_CFLAGS!' : [
-          '-include base/namespace.h',
-        ],
-      },
     },
     {
       'target_name': 'gen_mozc_data_dir_header',
@@ -199,12 +180,6 @@
                   'action': ['$(TargetPath)'],
                 },
               }],
-              ['OS=="mac"', {
-                'run_as': {
-                  'working_directory': '${BUILT_PRODUCTS_DIR}',
-                  'action': ['${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}'],
-                },
-              }],
             ],
           }],
         ],
@@ -228,6 +203,18 @@
         '../base/base.gyp:base_core',
         '../protobuf/protobuf.gyp:protobuf',
         'testing',
+      ],
+    },
+    {
+      'target_name': 'mozctest',
+      'type': 'static_library',
+      'sources': [
+        'base/public/mozctest.cc',
+      ],
+      'dependencies': [
+        '../base/base.gyp:base_core',
+        '../base/base.gyp:string_piece',
+        'googletest_lib',
       ],
     },
   ],

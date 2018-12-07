@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,7 @@
 #include "client/client.h"
 
 #include <map>
+#include <memory>
 #include <string>
 
 #include "base/logging.h"
@@ -38,7 +39,7 @@
 #include "base/util.h"
 #include "base/version.h"
 #include "ipc/ipc_mock.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "testing/base/public/gunit.h"
 
 namespace mozc {
@@ -50,7 +51,7 @@ const char kFollowingText[] = "following_text";
 const bool kSuppressSuggestion = true;
 
 const string UpdateVersion(int diff) {
-  vector<string> tokens;
+  std::vector<string> tokens;
   Util::SplitStringUsing(Version::GetMozcVersion(), ".", &tokens);
   EXPECT_EQ(tokens.size(), 4);
   char buf[64];
@@ -163,7 +164,7 @@ class TestServerLauncher : public ServerLauncherInterface {
   uint32 server_protocol_version_;
   string response_;
   string product_version_after_start_server_;
-  map<int, int> error_map_;
+  std::map<int, int> error_map_;
 };
 
 class ClientTest : public testing::Test {
@@ -220,8 +221,8 @@ class ClientTest : public testing::Test {
     return client_->EnsureConnection();
   }
 
-  scoped_ptr<IPCClientFactoryMock> client_factory_;
-  scoped_ptr<Client> client_;
+  std::unique_ptr<IPCClientFactoryMock> client_factory_;
+  std::unique_ptr<Client> client_;
   TestServerLauncher *server_launcher_;
   int version_diff_;
 
@@ -726,7 +727,7 @@ class SessionPlaybackTestServerLauncher : public ServerLauncherInterface {
   uint32 server_protocol_version_;
   string response_;
   string product_version_after_start_server_;
-  map<int, int> error_map_;
+  std::map<int, int> error_map_;
 };
 
 class SessionPlaybackTest : public testing::Test {
@@ -771,9 +772,9 @@ class SessionPlaybackTest : public testing::Test {
     ipc_client_factory_->SetMockResponse(response);
   }
 
-  scoped_ptr<IPCClientFactoryMock> ipc_client_factory_;
-  scoped_ptr<IPCClientMock> ipc_client_;
-  scoped_ptr<Client> client_;
+  std::unique_ptr<IPCClientFactoryMock> ipc_client_factory_;
+  std::unique_ptr<IPCClientMock> ipc_client_;
+  std::unique_ptr<Client> client_;
   SessionPlaybackTestServerLauncher *server_launcher_;
 
  private:
@@ -797,7 +798,7 @@ TEST_F(SessionPlaybackTest, PushAndResetHistoryWithNoModeTest) {
   EXPECT_TRUE(client_->SendKey(key_event, &output));
   EXPECT_EQ(mock_output.consumed(), output.consumed());
 
-  vector<commands::Input> history;
+  std::vector<commands::Input> history;
   client_->GetHistoryInputs(&history);
   EXPECT_EQ(1, history.size());
 
@@ -843,7 +844,7 @@ TEST_F(SessionPlaybackTest, PushAndResetHistoryWithModeTest) {
   EXPECT_TRUE(output.has_mode());
   EXPECT_EQ(commands::HIRAGANA, output.mode());
 
-  vector<commands::Input> history;
+  std::vector<commands::Input> history;
   client_->GetHistoryInputs(&history);
   EXPECT_EQ(2, history.size());
 
@@ -897,7 +898,7 @@ TEST_F(SessionPlaybackTest, PushAndResetHistoryWithDirectTest) {
   EXPECT_TRUE(output.has_mode());
   EXPECT_EQ(commands::DIRECT, output.mode());
 
-  vector<commands::Input> history;
+  std::vector<commands::Input> history;
   client_->GetHistoryInputs(&history);
   EXPECT_EQ(2, history.size());
 
@@ -935,7 +936,7 @@ TEST_F(SessionPlaybackTest, PlaybackHistoryTest) {
   EXPECT_TRUE(client_->SendKey(key_event, &output));
   EXPECT_EQ(mock_output.consumed(), output.consumed());
 
-  vector<commands::Input> history;
+  std::vector<commands::Input> history;
   client_->GetHistoryInputs(&history);
   EXPECT_EQ(2, history.size());
 
@@ -990,7 +991,7 @@ TEST_F(SessionPlaybackTest, SetModeInitializerTest) {
   EXPECT_TRUE(output.has_mode());
   EXPECT_EQ(commands::FULL_KATAKANA, output.mode());
 
-  vector<commands::Input> history;
+  std::vector<commands::Input> history;
   client_->GetHistoryInputs(&history);
   EXPECT_EQ(3, history.size());
 
@@ -1035,7 +1036,7 @@ TEST_F(SessionPlaybackTest, ConsumedTest) {
   EXPECT_TRUE(client_->SendKey(key_event, &output));
   EXPECT_EQ(mock_output.consumed(), output.consumed());
 
-  vector<commands::Input> history;
+  std::vector<commands::Input> history;
   client_->GetHistoryInputs(&history);
   EXPECT_EQ(2, history.size());
 

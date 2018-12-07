@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,18 +31,17 @@
 
 #include <algorithm>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "base/config_file_stream.h"
-#include "base/init.h"
 #include "base/logging.h"
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "base/singleton.h"
 #include "base/util.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
+#include "protocol/config.pb.h"
 #include "storage/lru_storage.h"
 
 namespace mozc {
@@ -55,10 +54,6 @@ namespace {
 const uint32 kLRUSize    = 128;  // enough?
 const uint32 kSeedValue  = 0x7fe1fed1;  // random seed value for storage
 const char   kFileName[] = "user://cform.db";
-
-REGISTER_MODULE_RELOADER(
-    character_form,
-    { CharacterFormManager::GetCharacterFormManager()->Reload(); } )
 
 class CharacterFormManagerImpl {
  public:
@@ -116,9 +111,9 @@ class CharacterFormManagerImpl {
   LRUStorage *storage_;
 
   // store the setting of a character
-  map<uint16, Config::CharacterForm> conversion_table_;
+  std::map<uint16, Config::CharacterForm> conversion_table_;
 
-  map<uint16, vector<uint16> > group_table_;
+  std::map<uint16, std::vector<uint16>> group_table_;
 
   // When this flag is true,
   // character form conversion requires that output has consistent forms.
@@ -138,15 +133,15 @@ class PreeditCharacterFormManagerImpl : public CharacterFormManagerImpl {
   virtual void SetDefaultRule() {
     Clear();
     // AddRule("ア", Config::FULL_WIDTH);
-    AddRule("\xE3\x82\xA2", Config::FULL_WIDTH);
+    AddRule("ア", Config::FULL_WIDTH);
     AddRule("A", Config::FULL_WIDTH);
     AddRule("0", Config::FULL_WIDTH);
     AddRule("(){}[]", Config::FULL_WIDTH);
     AddRule(".,", Config::FULL_WIDTH);
     // AddRule("。、", Config::FULL_WIDTH);  // don't like half-width
     // AddRule("・「」", Config::FULL_WIDTH);  // don't like half-width
-    AddRule("\xE3\x80\x82\xE3\x80\x81", Config::FULL_WIDTH);
-    AddRule("\xE3\x83\xBB\xE3\x80\x8C\xE3\x80\x8D", Config::FULL_WIDTH);
+    AddRule("。、", Config::FULL_WIDTH);
+    AddRule("・「」", Config::FULL_WIDTH);
     AddRule("\"'", Config::FULL_WIDTH);
     AddRule(":;", Config::FULL_WIDTH);
     AddRule("#%&@$^_|`\\", Config::FULL_WIDTH);
@@ -169,15 +164,15 @@ class ConversionCharacterFormManagerImpl : public CharacterFormManagerImpl {
     Clear();
     // AddRule("ア", Config::FULL_WIDTH);
     // don't like half-width
-    AddRule("\xE3\x82\xA2", Config::FULL_WIDTH);
+    AddRule("ア", Config::FULL_WIDTH);
     AddRule("A", Config::LAST_FORM);
     AddRule("0", Config::LAST_FORM);
     AddRule("(){}[]", Config::LAST_FORM);
     AddRule(".,", Config::LAST_FORM);
     // AddRule("。、", Config::FULL_WIDTH);  // don't like half-width
     // AddRule("・「」", Config::FULL_WIDTH);  // don't like half-width
-    AddRule("\xE3\x80\x82\xE3\x80\x81", Config::FULL_WIDTH);
-    AddRule("\xE3\x83\xBB\xE3\x80\x8C\xE3\x80\x8D", Config::FULL_WIDTH);
+    AddRule("。、", Config::FULL_WIDTH);
+    AddRule("・「」", Config::FULL_WIDTH);
     AddRule("\"'", Config::LAST_FORM);
     AddRule(":;", Config::LAST_FORM);
     AddRule("#%&@$^_|`\\", Config::LAST_FORM);
@@ -261,7 +256,7 @@ Config::CharacterForm CharacterFormManagerImpl::GetCharacterForm(
     return Config::NO_CONVERSION;
   }
 
-  map<uint16, Config::CharacterForm>::const_iterator it =
+  std::map<uint16, Config::CharacterForm>::const_iterator it =
       conversion_table_.find(ucs2);
   if (it == conversion_table_.end()) {
     return Config::NO_CONVERSION;
@@ -301,7 +296,7 @@ void CharacterFormManagerImpl::SetCharacterForm(
     return;
   }
 
-  map<uint16, Config::CharacterForm>::const_iterator it =
+  std::map<uint16, Config::CharacterForm>::const_iterator it =
       conversion_table_.find(ucs2);
   if (it == conversion_table_.end()) {
     return;
@@ -346,12 +341,13 @@ void CharacterFormManagerImpl::SaveCharacterFormToStorage(
   // Do cast since CharacterForm may not be 32 bit
   const uint32 iform = static_cast<uint32>(form);
 
-  map<uint16, vector<uint16> >::iterator iter = group_table_.find(ucs2);
+  std::map<uint16, std::vector<uint16>>::iterator iter =
+      group_table_.find(ucs2);
   if (iter == group_table_.end()) {
     storage_->Insert(key, reinterpret_cast<const char *>(&iform));
   } else {
     // Update values in the same group.
-    const vector<uint16> &group = iter->second;
+    const std::vector<uint16> &group = iter->second;
     for (size_t i = 0; i < group.size(); ++i) {
       const uint16 group_ucs2 = group[i];
       const string group_key(reinterpret_cast<const char *>(&group_ucs2),
@@ -501,7 +497,7 @@ void CharacterFormManagerImpl::AddRule(
   const char *begin = key.c_str();
   const char *end = key.c_str() + key.size();
 
-  vector<uint16> group;
+  std::vector<uint16> group;
   while (begin < end) {
     const size_t mblen = Util::OneCharLen(begin);
     const string tmp(begin, mblen);
@@ -535,8 +531,8 @@ void CharacterFormManagerImpl::AddRule(
   // use vector because set is slower.
   // group table is used in SaveCharacterFormToStorage and this will be called
   // everytime user submits conversion.
-  sort(group.begin(), group.end());
-  vector<uint16>::iterator last = unique(group.begin(), group.end());
+  std::sort(group.begin(), group.end());
+  std::vector<uint16>::iterator last = std::unique(group.begin(), group.end());
   group.erase(last, group.end());
 
   for (size_t i = 0; i < group.size(); ++i) {
@@ -566,9 +562,9 @@ class CharacterFormManager::Data {
   }
 
  private:
-  scoped_ptr<PreeditCharacterFormManagerImpl> preedit_;
-  scoped_ptr<ConversionCharacterFormManagerImpl> conversion_;
-  scoped_ptr<LRUStorage> storage_;
+  std::unique_ptr<PreeditCharacterFormManagerImpl> preedit_;
+  std::unique_ptr<ConversionCharacterFormManagerImpl> conversion_;
+  std::unique_ptr<LRUStorage> storage_;
 };
 
 CharacterFormManager::Data::Data() {
@@ -591,16 +587,16 @@ CharacterFormManager *CharacterFormManager::GetCharacterFormManager() {
 }
 
 CharacterFormManager::CharacterFormManager() : data_(new Data) {
-  Reload();
+  Config config;
+  ConfigHandler::GetConfig(&config);
+  ReloadConfig(config);
 }
 
 CharacterFormManager::~CharacterFormManager() {
 }
 
-void CharacterFormManager::Reload() {
+void CharacterFormManager::ReloadConfig(const Config &config) {
   Clear();
-  const Config &config = ConfigHandler::GetConfig();
-
   if (config.character_form_rules_size() > 0) {
     for (size_t i = 0; i < config.character_form_rules_size(); ++i) {
       const string &group = config.character_form_rules(i).group();

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,11 +36,12 @@
 #include <ppapi/cpp/var.h>
 #include <ppapi/utility/completion_callback_factory.h>
 
+#include <algorithm>
 #include <memory>
+#include <string>
 
 #include "base/logging.h"
 #include "base/mutex.h"
-#include "base/number_util.h"
 #include "base/pepper_scoped_obj.h"
 #include "base/util.h"
 
@@ -196,7 +197,7 @@ void PepperURLLoader::OnOpen(int32 result) {
 
   if (option_.include_header || type_ == HTTP_HEAD) {
     string headers;
-    string status_code = NumberUtil::SimpleItoa(response.GetStatusCode());
+    string status_code = std::to_string(response.GetStatusCode());
     string status_line = "OK";
 
     const pp::Var status_line_var = response.GetStatusLine();
@@ -246,7 +247,7 @@ bool PepperURLLoader::AppendDataBytes(const char *buffer, int32 num_bytes) {
   if (num_bytes <= 0) {
     return true;
   }
-  num_bytes = min(kReadBufferSize, num_bytes);
+  num_bytes = std::min(kReadBufferSize, num_bytes);
   if (data_buffer_.size() + num_bytes > option_.max_data_size) {
     VLOG(2) << "PepperURLLoader::AppendDataBytes over flow :"
             << " option_.max_data_size: " << (option_.max_data_size)

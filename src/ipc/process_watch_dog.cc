@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -56,7 +56,7 @@ ProcessWatchDog::ProcessWatchDog()
     LOG(ERROR) << "::CreateEvent() failed.";
     return;
   }
-  Thread::Start();  // start
+  Thread::Start("WatchDog");  // start
 }
 
 ProcessWatchDog::~ProcessWatchDog() {
@@ -220,7 +220,7 @@ ProcessWatchDog::ProcessWatchDog()
       thread_id_(UnknownProcessID),
       is_finished_(false),
       mutex_(new Mutex) {
-  Thread::Start();
+  Thread::Start("WatchDog");
 }
 
 ProcessWatchDog::~ProcessWatchDog() {

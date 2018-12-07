@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,6 +36,9 @@
 #include <pthread.h>
 #endif  // OS_WIN
 
+#include <atomic>
+#include <memory>
+
 #include "base/logging.h"
 
 namespace mozc {
@@ -56,107 +59,120 @@ unsigned __stdcall WrapperForWindows(void *ptr) {
 struct ThreadInternalState {
  public:
   ThreadInternalState()
-    : handle_(NULL),
-      joinable_(true) {}
+    : handle(nullptr),
+      joinable(true) {}
 
-  HANDLE handle_;
-  bool joinable_;
+  HANDLE handle;
+  bool joinable;
 };
 
-void Thread::Start() {
+void Thread::Start(const string &thread_name) {
+  // TODO(mozc-dev): Set thread name.
   if (IsRunning()) {
     return;
   }
 
   Detach();
-  state_->handle_ = reinterpret_cast<HANDLE>(_beginthreadex(
-      NULL, 0, WrapperForWindows, this, 0, NULL));
+  state_->handle = reinterpret_cast<HANDLE>(_beginthreadex(
+      nullptr, 0, WrapperForWindows, this, 0, nullptr));
 }
 
 bool Thread::IsRunning() const {
   DWORD result = 0;
-  if (state_->handle_ == NULL ||
-      !::GetExitCodeThread(state_->handle_, &result)) {
+  if (state_->handle == nullptr ||
+      !::GetExitCodeThread(state_->handle, &result)) {
     return false;
   }
   return (STILL_ACTIVE == result);
 }
 
 void Thread::Detach() {
-  if (state_->handle_ != NULL) {
-    ::CloseHandle(state_->handle_);
-    state_->handle_ = NULL;
+  if (state_->handle != nullptr) {
+    ::CloseHandle(state_->handle);
+    state_->handle = nullptr;
   }
 }
 
 void Thread::Join() {
-  if (!state_->joinable_) {
+  if (!state_->joinable) {
     return;
   }
-  if (state_->handle_ == NULL) {
+  if (state_->handle == nullptr) {
     return;
   }
-  ::WaitForSingleObject(state_->handle_, INFINITE);
-  ::CloseHandle(state_->handle_);
-  state_->handle_ = NULL;
+  ::WaitForSingleObject(state_->handle, INFINITE);
+  ::CloseHandle(state_->handle);
+  state_->handle = nullptr;
 }
 
 void Thread::Terminate() {
-  if (state_->handle_ != NULL) {
-    ::TerminateThread(state_->handle_, 0);
-    state_->handle_ = NULL;
+  if (state_->handle != nullptr) {
+    ::TerminateThread(state_->handle, 0);
+    state_->handle = nullptr;
   }
 }
 
-#else
+#else  // OS_WIN
 // Thread implementation for pthread-based platforms. Currently all the
 // platforms except for Windows use pthread.
 
 struct ThreadInternalState {
  public:
-  ThreadInternalState() : is_running_(false), joinable_(true) {}
+  ThreadInternalState() : is_running(false), joinable(true) {}
 
-  // As pthread_t is an opaque object, we use (pthread_t *)NULL to
+  // As pthread_t is an opaque object, we use (pthread_t *)nullptr to
   // indicate that no thread is attached to this object.
-  // When |handle_.get() != NULL|, |*handle_| should indicate a
+  // When |handle != nullptr|, |*handle| should indicate a
   // valid thread id.
-  scoped_ptr<pthread_t> handle_;
-  bool is_running_;
-  bool joinable_;
+  std::unique_ptr<pthread_t> handle;
+  std::atomic<bool> is_running;
+  bool joinable;
 };
 
-void Thread::Start() {
+void Thread::Start(const string &thread_name) {
   if (IsRunning()) {
     return;
   }
 
   Detach();
-  state_->is_running_ = true;
-  state_->handle_.reset(new pthread_t);
-  if (0 != pthread_create(state_->handle_.get(), 0, &Thread::WrapperForPOSIX,
+  state_->is_running = true;
+  state_->handle.reset(new pthread_t);
+  if (0 != pthread_create(state_->handle.get(), nullptr,
+                          &Thread::WrapperForPOSIX,
                           static_cast<void *>(this))) {
-      state_->is_running_ = false;
-      state_->handle_.reset(NULL);
+    state_->is_running = false;
+    state_->handle.reset();
+  } else {
+#if defined(OS_NACL)
+    // NaCl doesn't support setname.
+#elif defined(OS_MACOSX)
+    pthread_setname_np(thread_name.c_str());
+#else  // !(OS_NACL | OS_MACOSX)
+    pthread_setname_np(*state_->handle, thread_name.c_str());
+#endif  // !(OS_NACL | OS_MACOSX)
   }
 }
 
 bool Thread::IsRunning() const {
-  return state_->is_running_;
+  return state_->is_running;
 }
 
 void Thread::Detach() {
-  state_->handle_.reset(NULL);
+  if (state_->handle != nullptr) {
+    pthread_detach(*state_->handle);
+    state_->handle.reset();
+  }
 }
 
 void Thread::Join() {
-  if (!state_->joinable_) {
+  if (!state_->joinable) {
     return;
   }
-  if (state_->handle_.get() == NULL) {
+  if (state_->handle == nullptr) {
     return;
   }
-  pthread_join(*state_->handle_, NULL);
-  state_->handle_.reset(NULL);
+  pthread_join(*state_->handle, nullptr);
+  state_->handle.reset();
 }
 
 namespace {
@@ -175,21 +191,21 @@ void InitPThreadCancel() {
   sigemptyset(&actions.sa_mask);
   actions.sa_flags = 0;
   actions.sa_handler = ExitThread;
-  sigaction(SIGUSR1, &actions, NULL);
+  sigaction(SIGUSR1, &actions, nullptr);
 }
 
 void PThreadCancel(pthread_t thread_id) {
   const int pthread_kill_result = pthread_kill(thread_id, SIGUSR1);
   if (pthread_kill_result != 0) {
     // pthread_kill fails if
-    //  EINVAL: in case that the specified handle_ is invalid
+    //  EINVAL: in case that the specified handle is invalid
     //  ESRCH: in case that the thread is already terminated
     LOG(ERROR) << "Failed to kill a thread. error = " << pthread_kill_result
                 << "(" << strerror(pthread_kill_result) << ")";
   }
 }
 
-#elif defined(__native_client__)
+#elif defined(OS_NACL)
 
 void InitPThreadCancel() {
   // Nothing is required.
@@ -209,109 +225,49 @@ void PThreadCancel(pthread_t thread_id) {
   pthread_cancel(thread_id);
 }
 
-#endif  // OS_ANDROID or __native_client__ or others
-
-#ifndef __native_client__
+#endif  // OS_ANDROID or OS_NACL or others
 
 void PThreadCleanupRoutine(void *ptr) {
-  bool *is_running = static_cast<bool *>(ptr);
+  auto *is_running = static_cast<std::atomic<bool> *>(ptr);
   *is_running = false;
 }
-
-#endif  // !__native_client__
 
 }  // namespace
 
 void *Thread::WrapperForPOSIX(void *ptr) {
   Thread *p = static_cast<Thread *>(ptr);
   InitPThreadCancel();
-#ifdef __native_client__
   {
-    p->Run();
-    // TODO(horo): In NaCl we can't use pthread_cleanup_push() and
-    // pthread_cleanup_pop(). So we set "is_running_ = false" here.
-    // This hack makes the meaning of IsRunning() different in NaCl.
-    p->state_->is_running_ = false;
-  }
-#else
-  {
-    // Covert: the pthread_cleanup_push/pthread_cleanup_pop pair should be put
+    // Caveat: the pthread_cleanup_push/pthread_cleanup_pop pair should be put
     //     in the same function. Never move them into any other function.
     pthread_cleanup_push(PThreadCleanupRoutine,
-                         static_cast<void *>(&p->state_->is_running_));
+                         static_cast<void *>(&p->state_->is_running));
     p->Run();
     pthread_cleanup_pop(1);
   }
-#endif  // __native_client__
-  return NULL;
+  return nullptr;
 }
 
 void Thread::Terminate() {
-  if (state_->handle_ != NULL) {
-    PThreadCancel(*state_->handle_);
+  if (state_->handle != nullptr) {
+    PThreadCancel(*state_->handle);
     // pthread_cancel (or pthread_kill in PThreadCancel on Android) is
     // asynchronous. Join the thread to behave like TerminateThread on Windows.
     Join();
-    state_->handle_.reset(NULL);
+    state_->handle.reset();
   }
 }
 
 #endif  // OS_WIN
 
-Thread::Thread()
-    : state_(new ThreadInternalState) {}
+Thread::Thread() : state_(new ThreadInternalState) {}
 
 Thread::~Thread() {
   Detach();
 }
 
 void Thread::SetJoinable(bool joinable) {
-  state_->joinable_ = joinable;
-}
-
-namespace {
-
-#ifdef OS_WIN
-unsigned __stdcall DetachedThreadFuncWin(void *ptr) {
-  scoped_ptr<DetachedThread> p(static_cast<DetachedThread *>(ptr));
-  p->Run();
-  return 0;
-}
-#else
-void *DetachedThreadFuncPosix(void *ptr) {
-  scoped_ptr<DetachedThread> p(static_cast<DetachedThread *>(ptr));
-  p->Run();
-  return 0;
-}
-#endif  // OS_WIN
-
-}  // namespace
-
-DetachedThread::DetachedThread() {}
-
-DetachedThread::~DetachedThread() {}
-
-bool DetachedThread::Start() {
-#ifdef OS_WIN
-  HANDLE handle = reinterpret_cast<HANDLE>(_beginthreadex(
-      NULL, 0, DetachedThreadFuncWin, this, 0, NULL));
-  if (0 == handle) {
-    delete this;
-    return false;
-  }
-  ::CloseHandle(handle);
-  return true;
-#else
-  pthread_attr_t tattr;
-  pthread_attr_init(&tattr);
-  pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
-  pthread_t thread_id;
-  if (0 != pthread_create(&thread_id, &tattr, DetachedThreadFuncPosix, this)) {
-    delete this;
-    return false;
-  }
-  return true;
-#endif  // OS_WIN
+  state_->joinable = joinable;
 }
 
 }  // namespace mozc

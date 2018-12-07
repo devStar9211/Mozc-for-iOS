@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,12 +31,14 @@
 #define MOZC_ENGINE_ENGINE_INTERFACE_H_
 
 #include "base/port.h"
+#include "base/string_piece.h"
+#include "data_manager/data_manager_interface.h"
+#include "dictionary/suppression_dictionary.h"
 
 namespace mozc {
 
 class ConverterInterface;
 class PredictorInterface;
-class SuppressionDictionary;
 class UserDataManagerInterface;
 
 // Builds and manages a set of modules that are necessary for conversion,
@@ -45,7 +47,7 @@ class UserDataManagerInterface;
 // well as Kana-Kanji converter/predictor, etc.
 class EngineInterface {
  public:
-  virtual ~EngineInterface() {}
+  virtual ~EngineInterface() = default;
 
   // Returns a reference to a converter. The returned instance is managed by the
   // engine class and should not be deleted by callers.
@@ -57,13 +59,19 @@ class EngineInterface {
 
   // Returns a reference to the suppression dictionary. The returned instance is
   // managed by the engine class and should not be deleted by callers.
-  virtual SuppressionDictionary *GetSuppressionDictionary() = 0;
+  virtual dictionary::SuppressionDictionary *GetSuppressionDictionary() = 0;
 
   // Reloads internal data, e.g., user dictionary, etc.
   virtual bool Reload() = 0;
 
   // Gets a user data manager.
   virtual UserDataManagerInterface *GetUserDataManager() = 0;
+
+  // Gets the version of underlying data set.
+  virtual StringPiece GetDataVersion() const = 0;
+
+  // Gets the data manager.
+  virtual const DataManagerInterface *GetDataManager() const = 0;
 
  protected:
   EngineInterface() {}

@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -43,13 +43,12 @@
       ],
       'dependencies': [
         '../composer/composer.gyp:composer',
-        '../config/config.gyp:config_protocol',
-        '../converter/converter_base.gyp:connector_base',
+        '../config/config.gyp:config_handler',
+        '../converter/converter_base.gyp:connector',
         '../converter/converter_base.gyp:converter_mock',
         '../converter/converter_base.gyp:immutable_converter',
-        '../converter/converter_base.gyp:segmenter_base',
+        '../converter/converter_base.gyp:segmenter',
         '../converter/converter_base.gyp:segments',
-        '../data_manager/data_manager.gyp:user_pos_manager',
         '../data_manager/testing/mock_data_manager.gyp:mock_data_manager',
         '../dictionary/dictionary.gyp:dictionary',
         '../dictionary/dictionary.gyp:dictionary_mock',
@@ -57,15 +56,20 @@
         '../dictionary/dictionary_base.gyp:pos_matcher',
         '../dictionary/system/system_dictionary.gyp:system_dictionary',
         '../dictionary/system/system_dictionary.gyp:value_dictionary',
-        '../config/config.gyp:config_handler',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
         '../session/session_base.gyp:request_test_util',
-        '../session/session_base.gyp:session_protocol',
         '../testing/testing.gyp:gtest_main',
+        '../usage_stats/usage_stats_test.gyp:usage_stats_testing_util',
         'prediction.gyp:prediction',
       ],
       'variables': {
         'test_size': 'small',
       },
+      'cflags': [
+        '-Wno-unknown-warning-option',
+        '-Wno-inconsistent-missing-override',
+      ],
     },
     # Test cases meta target: this target is referred from gyp/tests.gyp
     {

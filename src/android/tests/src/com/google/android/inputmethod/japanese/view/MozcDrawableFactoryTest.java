@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,12 +33,12 @@ import static org.easymock.EasyMock.expect;
 
 import org.mozc.android.inputmethod.japanese.resources.R;
 import org.mozc.android.inputmethod.japanese.testing.InstrumentationTestCaseWithMock;
+import org.mozc.android.inputmethod.japanese.vectorgraphic.BufferedDrawable;
 
 import android.content.res.Resources;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.PictureDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.test.mock.MockResources;
 import android.test.suitebuilder.annotation.SmallTest;
@@ -49,7 +49,8 @@ public class MozcDrawableFactoryTest extends InstrumentationTestCaseWithMock {
   @SmallTest
   public void testGetDrawableRaw() {
     Resources resources = getInstrumentation().getTargetContext().getResources();
-    MozcDrawableFactory factory = new MozcDrawableFactory(resources);
+    MozcDrawableFactory factory =
+        new MozcDrawableFactory(resources, new Skin());
 
     // Unfortunately it is difficult to check if the returned drawable renders as what we want,
     // because PictureDrawable renders in native code so we cannot intercept the Canvas,
@@ -59,19 +60,19 @@ public class MozcDrawableFactoryTest extends InstrumentationTestCaseWithMock {
     // Symbol icon contains path and circle.
     assertTrue(
         factory.getDrawable(R.raw.twelvekeys__function__symbol__icon).get()
-            instanceof PictureDrawable);
+            instanceof BufferedDrawable);
     // For polyline.
     assertTrue(
         factory.getDrawable(R.raw.twelvekeys__kana__support__12_left).get()
-            instanceof PictureDrawable);
+            instanceof BufferedDrawable);
     // For polygon.
     assertTrue(
         factory.getDrawable(R.raw.twelvekeys__function__space__icon).get()
-            instanceof PictureDrawable);
+            instanceof BufferedDrawable);
     // For rectangle.
     assertTrue(
         factory.getDrawable(R.raw.symbol__function__close).get()
-            instanceof PictureDrawable);
+            instanceof BufferedDrawable);
 
     // For StateListDrawable.
     assertTrue(
@@ -88,7 +89,7 @@ public class MozcDrawableFactoryTest extends InstrumentationTestCaseWithMock {
     expect(resources.getDrawable(1)).andReturn(drawable);
     replayAll();
 
-    MozcDrawableFactory factory = new MozcDrawableFactory(resources);
+    MozcDrawableFactory factory = new MozcDrawableFactory(resources, new Skin());
     assertSame(drawable, factory.getDrawable(1).get());
 
     verifyAll();
@@ -98,7 +99,7 @@ public class MozcDrawableFactoryTest extends InstrumentationTestCaseWithMock {
   public void testEmojiDrawable() {
     // Try to parse all emoji Drawable.
     Resources resources = getInstrumentation().getTargetContext().getResources();
-    MozcDrawableFactory factory = new MozcDrawableFactory(resources);
+    MozcDrawableFactory factory = new MozcDrawableFactory(resources, new Skin());
 
     for (String prefix : new String[] { "docomo_emoji_", "softbank_emoji_", "kddi_emoji_" }) {
       for (int codePoint = 0xFE000; codePoint <= 0xFEEA0; ++codePoint) {

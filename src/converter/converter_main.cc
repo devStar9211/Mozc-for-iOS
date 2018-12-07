@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,10 +29,15 @@
 
 #include <iostream>
 #include <map>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/file_stream.h"
+#include "base/file_util.h"
+#include "base/flags.h"
+#include "base/init_mozc.h"
 #include "base/logging.h"
 #include "base/number_util.h"
 #include "base/port.h"
@@ -41,34 +46,39 @@
 #include "base/util.h"
 #include "composer/composer.h"
 #include "composer/table.h"
-#include "config/config.pb.h"
-#include "converter/conversion_request.h"
 #include "converter/converter_interface.h"
 #include "converter/lattice.h"
 #include "converter/pos_id_printer.h"
 #include "converter/segments.h"
-#include "engine/engine_factory.h"
-#include "engine/engine_interface.h"
-#include "engine/mock_data_engine_factory.h"
-#include "session/commands.pb.h"
+#include "data_manager/data_manager.h"
+#include "engine/engine.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
+#include "request/conversion_request.h"
+#include "session/request_test_util.h"
 
 DEFINE_int32(max_conversion_candidates_size, 200, "maximum candidates size");
 DEFINE_string(user_profile_dir, "", "path to user profile directory");
-DEFINE_string(engine, "default", "engine: (default, chromeos)");
+DEFINE_string(engine, "default",
+              "Shortcut to select engine_data from name: (default|oss|mock)");
+DEFINE_string(engine_type, "desktop", "Engine type: (desktop|mobile)");
 DEFINE_bool(output_debug_string, true, "output debug string for each input");
 DEFINE_bool(show_meta_candidates, false, "if true, show meta candidates");
-DEFINE_string(
-    id_def,
-    "",
-    "id.def file for POS IDs. If provided, show human readable "
-    "POS instead of ID number");
 
-using mozc::composer::Composer;
-using mozc::composer::Table;
-using mozc::config::Config;
+// Advanced options for data files.  These are automatically set when --engine
+// is used but they can be overridden by specifying these flags.
+DEFINE_string(engine_data, "", "Path to engine data file");
+DEFINE_string(magic, "", "Expected magic number of data file");
+DEFINE_string(id_def, "",
+              "id.def file for POS IDs. If provided, show human readable "
+              "POS instead of ID number");
 
 namespace mozc {
 namespace {
+
+using composer::Composer;
+using composer::Table;
+using config::Config;
 
 // Wrapper class for pos id printing
 class PosIdPrintUtil {
@@ -85,13 +95,13 @@ class PosIdPrintUtil {
   string IdToStringInternal(int id) const {
     const string &pos_string = pos_id_printer_->IdToString(id);
     if (pos_string.empty()) {
-      return NumberUtil::SimpleItoa(id);
+      return std::to_string(id);
     }
     return Util::StringPrintf("%s (%d)", pos_string.c_str(), id);
   }
 
-  scoped_ptr<InputFileStream> pos_id_;
-  scoped_ptr<internal::PosIdPrinter> pos_id_printer_;
+  std::unique_ptr<InputFileStream> pos_id_;
+  std::unique_ptr<internal::PosIdPrinter> pos_id_printer_;
 
   friend class Singleton<PosIdPrintUtil>;
   DISALLOW_COPY_AND_ASSIGN(PosIdPrintUtil);
@@ -112,7 +122,7 @@ string SegmentTypeToString(Segment::SegmentType type) {
 }
 
 string CandidateAttributesToString(uint32 attrs) {
-  vector<string> v;
+  std::vector<string> v;
 #define ADD_STR(fieldname)                       \
   do {                                           \
     if (attrs & Segment::Candidate::fieldname)   \
@@ -168,26 +178,28 @@ string InnerSegmentBoundaryToString(const Segment::Candidate &cand) {
   if (cand.inner_segment_boundary.empty()) {
     return "";
   }
-  vector<StringPiece> pieces;
-  const char *boundary_begin = cand.value.data();
-  const char *boundary_end = boundary_begin;
-  for (size_t i = 0; i < cand.inner_segment_boundary.size(); ++i) {
-    for (int j = 0; j < cand.inner_segment_boundary[i].second; ++j) {
-      boundary_end += Util::OneCharLen(boundary_end);
-    }
-    pieces.push_back(StringPiece(boundary_begin,
-                                 boundary_end - boundary_begin));
-    boundary_begin = boundary_end;
+  std::vector<string> pieces;
+  for (Segment::Candidate::InnerSegmentIterator iter(&cand);
+       !iter.Done(); iter.Next()) {
+    string s = "<";
+    s.append(iter.GetKey().data(), iter.GetKey().size());
+    s.append(", ");
+    s.append(iter.GetValue().data(), iter.GetValue().size());
+    s.append(", ");
+    s.append(iter.GetContentKey().data(), iter.GetContentKey().size());
+    s.append(", ");
+    s.append(iter.GetContentValue().data(), iter.GetContentValue().size());
+    s.append(1, '>');
+    pieces.push_back(s);
   }
-  CHECK_EQ(cand.value.data() + cand.value.size(), boundary_begin);
   string s;
-  Util::JoinStringPieces(pieces, " | ", &s);
+  Util::JoinStrings(pieces, " | ", &s);
   return s;
 }
 
 void PrintCandidate(const Segment &parent, int num,
-                    const Segment::Candidate &cand, ostream *os) {
-  vector<string> lines;
+                    const Segment::Candidate &cand, std::ostream *os) {
+  std::vector<string> lines;
   if (parent.key() != cand.key) {
     lines.push_back("key: " + cand.key);
   }
@@ -205,20 +217,20 @@ void PrintCandidate(const Segment &parent, int num,
     lines.push_back("segbdd: " + segbdd_str);
   }
 
-  (*os) << "  " << num << " " << cand.value << endl;
+  (*os) << "  " << num << " " << cand.value << std::endl;
   for (size_t i = 0; i < lines.size(); ++i) {
     if (!lines[i].empty()) {
-      (*os) << "       " << lines[i] << endl;
+      (*os) << "       " << lines[i] << std::endl;
     }
   }
 }
 
-void PrintSegment(size_t num, size_t segments_size,
-                  const Segment &segment, ostream *os) {
+void PrintSegment(size_t num, size_t segments_size, const Segment &segment,
+                  std::ostream *os) {
   (*os) << "---------- Segment " << num << "/" << segments_size << " ["
-        << SegmentTypeToString(segment.segment_type())
-        << "] ----------" << endl
-        << segment.key() << endl;
+        << SegmentTypeToString(segment.segment_type()) << "] ----------"
+        << std::endl
+        << segment.key() << std::endl;
   if (FLAGS_show_meta_candidates) {
     for (int i = 0; i < segment.meta_candidates_size(); ++i) {
       PrintCandidate(segment, -i - 1, segment.meta_candidate(i), os);
@@ -229,7 +241,7 @@ void PrintSegment(size_t num, size_t segments_size,
   }
 }
 
-void PrintSegments(const Segments &segments, ostream *os) {
+void PrintSegments(const Segments &segments, std::ostream *os) {
   for (size_t i = 0; i < segments.segments_size(); ++i) {
     PrintSegment(i, segments.segments_size(), segments.segment(i), os);
   }
@@ -239,7 +251,7 @@ bool ExecCommand(const ConverterInterface &converter,
                  Segments *segments,
                  const string &line,
                  const commands::Request &request) {
-  vector<string> fields;
+  std::vector<string> fields;
   Util::SplitStringUsing(line, "\t ", &fields);
 
 #define CHECK_FIELDS_LENGTH(length) \
@@ -259,15 +271,16 @@ bool ExecCommand(const ConverterInterface &converter,
   if (func == "startconversion" || func == "start" || func == "s") {
     CHECK_FIELDS_LENGTH(2);
     Table table;
-    Composer composer(&table, &request);
-    composer.InsertCharacterPreedit(fields[1]);
-    ConversionRequest conversion_request(&composer, &request);
+    Composer composer(&table, &request, &config);
+    composer.SetPreeditTextForTestOnly(fields[1]);
+    ConversionRequest conversion_request(&composer, &request, &config);
     return converter.StartConversionForRequest(conversion_request, segments);
   } else if (func == "convertwithnodeinfo" || func == "cn") {
     CHECK_FIELDS_LENGTH(5);
-    Lattice::SetDebugDisplayNode(atoi32(fields[2].c_str()),  // begin pos
-                                 atoi32(fields[3].c_str()),  // end pos
-                                 fields[4]);
+    Lattice::SetDebugDisplayNode(
+        NumberUtil::SimpleAtoi(fields[2]),  // begin pos
+        NumberUtil::SimpleAtoi(fields[3]),  // end pos
+        fields[4]);
     const bool result = converter.StartConversion(segments, fields[1]);
     Lattice::ResetDebugDisplayNode();
     return result;
@@ -276,30 +289,30 @@ bool ExecCommand(const ConverterInterface &converter,
     return converter.StartReverseConversion(segments, fields[1]);
   } else if (func == "startprediction" || func == "predict" || func == "p") {
     Table table;
-    Composer composer(&table, &request);
+    Composer composer(&table, &request, &config);
     if (fields.size() >= 2) {
-      composer.InsertCharacterPreedit(fields[1]);
-      ConversionRequest conversion_request(&composer, &request);
+      composer.SetPreeditTextForTestOnly(fields[1]);
+      ConversionRequest conversion_request(&composer, &request, &config);
       return converter.StartPredictionForRequest(conversion_request, segments);
     } else {
-      ConversionRequest conversion_request(&composer, &request);
+      ConversionRequest conversion_request(&composer, &request, &config);
       return converter.StartPredictionForRequest(conversion_request, segments);
     }
   } else if (func == "startsuggestion" || func == "suggest") {
     Table table;
-    Composer composer(&table, &request);
+    Composer composer(&table, &request, &config);
     if (fields.size() >= 2) {
-      composer.InsertCharacterPreedit(fields[1]);
-      ConversionRequest conversion_request(&composer, &request);
+      composer.SetPreeditTextForTestOnly(fields[1]);
+      ConversionRequest conversion_request(&composer, &request, &config);
       return converter.StartSuggestionForRequest(conversion_request, segments);
     } else {
-      ConversionRequest conversion_request(&composer, &request);
+      ConversionRequest conversion_request(&composer, &request, &config);
       return converter.StartSuggestionForRequest(conversion_request, segments);
     }
   } else if (func == "finishconversion" || func == "finish") {
     Table table;
-    Composer composer(&table, &request);
-    ConversionRequest conversion_request(&composer, &request);
+    Composer composer(&table, &request, &config);
+    ConversionRequest conversion_request(&composer, &request, &config);
     return converter.FinishConversion(conversion_request, segments);
   } else if (func == "resetconversion" || func == "reset") {
     return converter.ResetConversion(segments);
@@ -308,8 +321,8 @@ bool ExecCommand(const ConverterInterface &converter,
   } else if (func == "commitsegmentvalue" || func == "commit" || func == "c") {
     CHECK_FIELDS_LENGTH(3);
     return converter.CommitSegmentValue(segments,
-                                        atoi32(fields[1].c_str()),
-                                        atoi32(fields[2].c_str()));
+                                        NumberUtil::SimpleAtoi(fields[1]),
+                                        NumberUtil::SimpleAtoi(fields[2]));
   } else if (func == "commitallandfinish") {
     for (int i = 0; i < segments->conversion_segments_size(); ++i) {
       if (segments->conversion_segment(i).segment_type() !=
@@ -318,39 +331,40 @@ bool ExecCommand(const ConverterInterface &converter,
       }
     }
     Table table;
-    Composer composer(&table, &request);
-    ConversionRequest conversion_request(&composer, &request);
+    Composer composer(&table, &request, &config);
+    ConversionRequest conversion_request(&composer, &request, &config);
     return converter.FinishConversion(conversion_request, segments);
   } else if (func == "focussegmentvalue" || func == "focus") {
     CHECK_FIELDS_LENGTH(3);
     return converter.FocusSegmentValue(segments,
-                                       atoi32(fields[1].c_str()),
-                                       atoi32(fields[2].c_str()));
+                                       NumberUtil::SimpleAtoi(fields[1]),
+                                       NumberUtil::SimpleAtoi(fields[2]));
   } else if (func == "commitfirstsegment") {
     CHECK_FIELDS_LENGTH(2);
-    vector<size_t> singleton_vector;
-    singleton_vector.push_back(static_cast<size_t>(atoi32(fields[1].c_str())));
+    std::vector<size_t> singleton_vector;
+    singleton_vector.push_back(NumberUtil::SimpleAtoi(fields[1]));
     return converter.CommitSegments(segments, singleton_vector);
   } else if (func == "freesegmentvalue" || func == "free") {
     CHECK_FIELDS_LENGTH(2);
     return converter.FreeSegmentValue(segments,
-                                      atoi32(fields[1].c_str()));
+                                      NumberUtil::SimpleAtoi(fields[1]));
   } else if (func == "resizesegment" || func == "resize") {
     const ConversionRequest request;
     if (fields.size() == 3) {
       return converter.ResizeSegment(segments,
                                      request,
-                                     atoi32(fields[1].c_str()),
-                                     atoi32(fields[2].c_str()));
+                                     NumberUtil::SimpleAtoi(fields[1]),
+                                     NumberUtil::SimpleAtoi(fields[2]));
     } else if (fields.size() > 3) {
-      vector<uint8> new_arrays;
+      std::vector<uint8> new_arrays;
       for (size_t i = 3; i < fields.size(); ++i) {
-        new_arrays.push_back(static_cast<uint8>(atoi32(fields[i].c_str())));
+        new_arrays.push_back(
+            static_cast<uint8>(NumberUtil::SimpleAtoi(fields[i])));
       }
       return converter.ResizeSegment(segments,
                                      request,
-                                     atoi32(fields[1].c_str()),  // start
-                                     atoi32(fields[2].c_str()),
+                                     NumberUtil::SimpleAtoi(fields[1]),
+                                     NumberUtil::SimpleAtoi(fields[2]),
                                      &new_arrays[0],
                                      new_arrays.size());
     }
@@ -367,41 +381,105 @@ bool ExecCommand(const ConverterInterface &converter,
   return true;
 }
 
+std::pair<string, string> SelectDataFileFromName(
+    const string &mozc_runfiles_dir, const string &engine_name) {
+  struct {
+    const char *engine_name;
+    const char *path;
+    const char *magic;
+  } kNameAndPath[] = {
+    {"default", "data_manager/oss/mozc.data", "\xEFMOZC\r\n"},
+    {"oss", "data_manager/oss/mozc.data", "\xEFMOZC\r\n"},
+    {"mock", "data_manager/testing/mock_mozc.data", "MOCK"},
+  };
+  for (const auto &entry : kNameAndPath) {
+    if (engine_name == entry.engine_name) {
+      return std::pair<string, string>(
+          FileUtil::JoinPath(mozc_runfiles_dir, entry.path),
+          entry.magic);
+    }
+  }
+  return std::pair<string, string>("", "");
+}
+
+string SelectIdDefFromName(const string &mozc_runfiles_dir,
+                           const string &engine_name) {
+  struct {
+    const char *engine_name;
+    const char *path;
+  } kNameAndPath[] = {
+    {"default", "data/dictionary_oss/id.def"},
+    {"oss", "data/dictionary_oss/id.def"},
+    {"mock", "data/test/dictionary/id.def"},
+  };
+  for (const auto &entry : kNameAndPath) {
+    if (engine_name == entry.engine_name) {
+      return FileUtil::JoinPath(mozc_runfiles_dir, entry.path);
+    }
+  }
+  return "";
+}
+
 }  // namespace
 }  // namespace mozc
 
 int main(int argc, char **argv) {
-  InitGoogle(argv[0], &argc, &argv, false);
+  mozc::InitMozc(argv[0], &argc, &argv, false);
 
   if (!FLAGS_user_profile_dir.empty()) {
     mozc::SystemUtil::SetUserProfileDirectory(FLAGS_user_profile_dir);
   }
 
-  scoped_ptr<mozc::EngineInterface> engine;
-  mozc::commands::Request request;
-  if (FLAGS_engine == "default") {
-    LOG(INFO) << "Using default preference and engine";
-    engine.reset(mozc::EngineFactory::Create());
+  string mozc_runfiles_dir = ".";
+  if (FLAGS_engine_data.empty()) {
+    const auto path_and_magic = mozc::SelectDataFileFromName(mozc_runfiles_dir,
+                                                             FLAGS_engine);
+    FLAGS_engine_data = path_and_magic.first;
+    FLAGS_magic = path_and_magic.second;
   }
-  if (FLAGS_engine == "test") {
-    LOG(INFO) << "Using test preference and engine";
-    engine.reset(mozc::MockDataEngineFactory::Create());
+  CHECK(!FLAGS_engine_data.empty())
+      << "--engine_data or --engine is invalid: "
+      << "--engine_data=" << FLAGS_engine_data << " "
+      << "--engine=" << FLAGS_engine;
+
+  if (FLAGS_id_def.empty()) {
+    FLAGS_id_def = mozc::SelectIdDefFromName(mozc_runfiles_dir, FLAGS_engine);
   }
 
-  CHECK(engine.get()) << "Invalid engine: " << FLAGS_engine;
+  std::cout << "Engine type: " << FLAGS_engine_type
+            << "\nData file: " << FLAGS_engine_data
+            << "\nid.def: " << FLAGS_id_def << std::endl;
+
+  std::unique_ptr<mozc::DataManager> data_manager(new mozc::DataManager);
+  const auto status = data_manager->InitFromFile(FLAGS_engine_data,
+                                                 FLAGS_magic);
+  CHECK_EQ(status, mozc::DataManager::Status::OK);
+
+  mozc::commands::Request request;
+  std::unique_ptr<mozc::EngineInterface> engine;
+  if (FLAGS_engine_type == "desktop") {
+    engine = mozc::Engine::CreateDesktopEngine(std::move(data_manager));
+  } else if (FLAGS_engine_type == "mobile") {
+    engine = mozc::Engine::CreateMobileEngine(std::move(data_manager));
+    mozc::commands::RequestForUnitTest::FillMobileRequest(&request);
+  } else {
+    LOG(FATAL) << "Invalid type: --engine_type=" << FLAGS_engine_type;
+    return 0;
+  }
+
   mozc::ConverterInterface *converter = engine->GetConverter();
   CHECK(converter);
 
   mozc::Segments segments;
   string line;
 
-  while (!getline(cin, line).fail()) {
+  while (!getline(std::cin, line).fail()) {
     if (mozc::ExecCommand(*converter, &segments, line, request)) {
       if (FLAGS_output_debug_string) {
-        mozc::PrintSegments(segments, &cout);
+        mozc::PrintSegments(segments, &std::cout);
       }
     } else {
-      cout << "ExecCommand() return false" << endl;
+      std::cout << "ExecCommand() return false" << std::endl;
     }
   }
   return 0;

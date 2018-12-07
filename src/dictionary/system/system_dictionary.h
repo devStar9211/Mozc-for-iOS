@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,36 +27,30 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Mozc system dictionary
-
 #ifndef MOZC_DICTIONARY_SYSTEM_SYSTEM_DICTIONARY_H_
 #define MOZC_DICTIONARY_SYSTEM_SYSTEM_DICTIONARY_H_
 
-#include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "base/string_piece.h"
 #include "dictionary/dictionary_interface.h"
+#include "dictionary/file/codec_interface.h"
 #include "dictionary/system/codec_interface.h"
+#include "dictionary/system/key_expansion_table.h"
 #include "dictionary/system/words_info.h"
 #include "storage/louds/bit_vector_based_array.h"
 #include "storage/louds/louds_trie.h"
-// for FRIEND_TEST
-#include "testing/base/public/gunit_prod.h"
 
 namespace mozc {
-
-class DictionaryFile;
-struct Token;
-
 namespace dictionary {
 
+class DictionaryFile;
+class DictionaryFileCodecInterface;
 class SystemDictionaryCodecInterface;
-class ReverseLookupIndex;
 
 class SystemDictionary : public DictionaryInterface {
  public:
@@ -74,7 +68,9 @@ class SystemDictionary : public DictionaryInterface {
   //   SystemDictionary::Builder builder(filename);
   //   builder.SetOptions(SystemDictionary::NONE);
   //   builder.SetCodec(NULL);
-  //   SystemDictionary *dictionry = builder.Build();
+  //   SystemDictionary *dictionary = builder.Build();
+  //   ...
+  //   delete dictionary;
   class Builder {
    public:
     // Creates Builder from filename
@@ -84,147 +80,94 @@ class SystemDictionary : public DictionaryInterface {
     ~Builder();
 
     // Sets options (default: NONE)
-    void SetOptions(Options options);
+    Builder &SetOptions(Options options);
 
     // Sets codec (default: NULL)
     // Uses default codec if this is NULL
-    void SetCodec(const SystemDictionaryCodecInterface *codec);
+    // Doesn't take the ownership of |codec|.
+    Builder &SetCodec(const SystemDictionaryCodecInterface *codec);
 
     // Builds and returns system dictionary.
     SystemDictionary *Build();
 
    private:
-    enum InputType {
-      FILENAME,
-      IMAGE,
-    };
-
-    InputType type_;
-
-    // For InputType::FILENAME
-    const string filename_;
-
-    // For InputTYpe::IMAGE
-    const char *ptr_;
-    const int len_;
-
-    Options options_;
-    const SystemDictionaryCodecInterface *codec_;
-
+    struct Specification;
+    std::unique_ptr<Specification> spec_;
     DISALLOW_COPY_AND_ASSIGN(Builder);
-  };
-
-  struct ReverseLookupResult {
-    ReverseLookupResult() : tokens_offset(-1), id_in_key_trie(-1) {}
-    // Offset from the tokens section beginning.
-    // (token_array_->Get(id_in_key_trie) ==
-    //  token_array_->Get(0) + tokens_offset)
-    int tokens_offset;
-    // Id in key trie
-    int id_in_key_trie;
   };
 
   virtual ~SystemDictionary();
 
-  // TODO(team): Use builder instead of following static methods.
-  static SystemDictionary *CreateSystemDictionaryFromFile(
-      const string &filename);
-
-  static SystemDictionary *CreateSystemDictionaryFromFileWithOptions(
-      const string &filename, Options options);
-
-  static SystemDictionary *CreateSystemDictionaryFromImage(
-      const char *ptr, int len);
-
-  static SystemDictionary *CreateSystemDictionaryFromImageWithOptions(
-      const char *ptr, int len, Options options);
+  const storage::louds::LoudsTrie &value_trie() const { return value_trie_; }
 
   // Implementation of DictionaryInterface.
+  virtual bool HasKey(StringPiece key) const;
   virtual bool HasValue(StringPiece value) const;
 
-  // Predictive lookup
-  virtual void LookupPredictive(
-      StringPiece key, bool use_kana_modifier_insensitive_lookup,
-      Callback *callback) const;
+  virtual void LookupPredictive(StringPiece key,
+                                const ConversionRequest &converter_request,
+                                Callback *callback) const;
 
-  // Prefix lookup
-  virtual void LookupPrefix(
-      StringPiece key, bool use_kana_modifier_insensitive_lookup,
-      Callback *callback) const;
+  virtual void LookupPrefix(StringPiece key,
+                            const ConversionRequest &converter_request,
+                            Callback *callback) const;
 
-  // Exact lookup
-  virtual void LookupExact(StringPiece key, Callback *callback) const;
+  virtual void LookupExact(StringPiece key,
+                           const ConversionRequest &converter_request,
+                           Callback *callback) const;
 
-  // Value to key prefix lookup
-  virtual void LookupReverse(StringPiece str, NodeAllocatorInterface *allocator,
+  virtual void LookupReverse(StringPiece str,
+                             const ConversionRequest &converter_request,
                              Callback *callback) const;
-  virtual void PopulateReverseLookupCache(
-      StringPiece str, NodeAllocatorInterface *allocator) const;
-  virtual void ClearReverseLookupCache(
-      NodeAllocatorInterface *allocator) const;
+
+  virtual void PopulateReverseLookupCache(StringPiece str) const;
+  virtual void ClearReverseLookupCache() const;
 
  private:
-  FRIEND_TEST(SystemDictionaryTest, TokenAfterSpellningToken);
+  class ReverseLookupCache;
+  class ReverseLookupIndex;
+  struct PredictiveLookupSearchState;
 
-  struct FilterInfo {
-    enum Condition {
-      NONE = 0,
-      VALUE_ID = 1,
-      NO_SPELLING_CORRECTION = 2,
-      ONLY_T13N = 4,
-    };
-    int conditions;
-    // Return results only for tokens with given |value_id|.
-    // If VALUE_ID is specified
-    int value_id;
-    FilterInfo() : conditions(NONE), value_id(-1) {}
-  };
-
-  explicit SystemDictionary(const SystemDictionaryCodecInterface *codec);
-
+  explicit SystemDictionary(const SystemDictionaryCodecInterface *codec,
+                            const DictionaryFileCodecInterface *file_codec);
   bool OpenDictionaryFile(bool enable_reverse_lookup_index);
-
-  // Calls |callback| with token info, which is filled using |tokens_key|,
-  // |actual_key| and |encoded_tokens_ptr|.
-  // |tokens_key| is a key used for look up.
-  // |actual_key| is a token's key.
-  // They may be different when we perform ambiguous search.
-  void RegisterTokens(
-      const FilterInfo &filter,
-      const string &tokens_key,
-      const string &actual_key,
-      const uint8 *encoded_tokens_ptr,
-      Callback *callback) const;
-
-  bool IsBadToken(const FilterInfo &filter, const TokenInfo &token_info) const;
 
   void RegisterReverseLookupTokensForT13N(StringPiece value,
                                           Callback *callback) const;
-
   void RegisterReverseLookupTokensForValue(StringPiece value,
-                                           NodeAllocatorInterface *allocator,
                                            Callback *callback) const;
-
-  void ScanTokens(const set<int> &id_set,
-                  multimap<int, ReverseLookupResult> *reverse_results) const;
-
-  void RegisterReverseLookupResults(
-      const set<int> &id_set,
-      const multimap<int, ReverseLookupResult> &reverse_results,
-      Callback *callback) const;
-
+  void ScanTokens(const std::set<int> &id_set, ReverseLookupCache *cache) const;
+  void RegisterReverseLookupResults(const std::set<int> &id_set,
+                                    const ReverseLookupCache &cache,
+                                    Callback *callback) const;
   void InitReverseLookupIndex();
 
-  scoped_ptr<storage::louds::LoudsTrie> key_trie_;
-  scoped_ptr<storage::louds::LoudsTrie> value_trie_;
-  scoped_ptr<storage::louds::BitVectorBasedArray> token_array_;
-  scoped_ptr<DictionaryFile> dictionary_file_;
+  Callback::ResultType LookupPrefixWithKeyExpansionImpl(
+      const char *key,
+      StringPiece encoded_key,
+      const KeyExpansionTable &table,
+      Callback *callback,
+      storage::louds::LoudsTrie::Node node,
+      StringPiece::size_type key_pos,
+      bool is_expanded,
+      char *actual_key_buffer,
+      string *actual_prefix) const;
 
-  scoped_ptr<ReverseLookupIndex> reverse_lookup_index_;
+  void CollectPredictiveNodesInBfsOrder(
+      StringPiece encoded_key,
+      const KeyExpansionTable &table,
+      size_t limit,
+      std::vector<PredictiveLookupSearchState> *result) const;
 
+  storage::louds::LoudsTrie key_trie_;
+  storage::louds::LoudsTrie value_trie_;
+  storage::louds::BitVectorBasedArray token_array_;
   const uint32 *frequent_pos_;
   const SystemDictionaryCodecInterface *codec_;
-  storage::louds::KeyExpansionTable hiragana_expansion_table_;
+  KeyExpansionTable hiragana_expansion_table_;
+  std::unique_ptr<DictionaryFile> dictionary_file_;
+  mutable std::unique_ptr<ReverseLookupCache> reverse_lookup_cache_;
+  std::unique_ptr<ReverseLookupIndex> reverse_lookup_index_;
 
   DISALLOW_COPY_AND_ASSIGN(SystemDictionary);
 };

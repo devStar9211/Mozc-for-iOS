@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,8 +33,8 @@
 #include <string>
 
 #include "base/system_util.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
+#include "request/conversion_request.h"
 #include "testing/base/public/gunit.h"
 
 DECLARE_string(test_tmpdir);
@@ -43,12 +43,8 @@ namespace mozc {
 namespace {
 
 // DiceRewriter inserts a candidate with this description.
-// "出た目の数"
-const char kDescription[] =
-    "\xE5\x87\xBA\xE3\x81\x9F\xE7\x9B\xAE\xE3\x81\xAE\xE6\x95\xB0";
-
-// "さいころ"
-const char kKey[] = "\xE3\x81\x95\xE3\x81\x84\xE3\x81\x93\xE3\x82\x8D";
+const char kDescription[] = "出た目の数";
+const char kKey[] = "さいころ";
 
 // Candidate window size.
 const int kPageSize = 9;
@@ -97,16 +93,12 @@ int CountDiceNumber(const Segment &segment) {
 }
 
 bool HasValidValue(const Segment::Candidate &candidate) {
-  if ("1" == candidate.value ||
-      "2" == candidate.value ||
-      "3" == candidate.value ||
-      "4" == candidate.value ||
-      "5" == candidate.value ||
-      "6" == candidate.value) {
-    return true;
-  }
-
-  return false;
+  return ("1" == candidate.value ||
+          "2" == candidate.value ||
+          "3" == candidate.value ||
+          "4" == candidate.value ||
+          "5" == candidate.value ||
+          "6" == candidate.value);
 }
 
 size_t GetDiceNumberIndex(const Segment &segment) {
@@ -119,11 +111,10 @@ size_t GetDiceNumberIndex(const Segment &segment) {
   }
   return dice_number_index;
 }
-}  // namespace
 
-class DiceRewriterTest : public testing::Test {
+class DiceRewriterTest : public ::testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
   }
 };
@@ -172,4 +163,6 @@ TEST_F(DiceRewriterTest, IgnoringTest) {
   MakeSegments(&segments, kKey, 2, 1);
   EXPECT_FALSE(dice_rewriter.Rewrite(request, &segments));
 }
+
+}  // namespace
 }  // namespace mozc

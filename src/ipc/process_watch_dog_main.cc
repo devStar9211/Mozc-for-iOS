@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,16 +27,16 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "ipc/process_watch_dog.h"
-
 #include <iostream>  // NOLINT
 #include <string>
 #include <vector>
 
 #include "base/flags.h"
+#include "base/init_mozc.h"
 #include "base/logging.h"
 #include "base/port.h"
 #include "base/util.h"
+#include "ipc/process_watch_dog.h"
 
 DEFINE_int32(timeout, -1, "set timeout");
 
@@ -50,12 +50,12 @@ class TestProcessWatchDog : public ProcessWatchDog {
 }  // namespace mozc
 
 int main(int argc, char **argv) {
-  InitGoogle(argv[0], &argc, &argv, false);
+  mozc::InitMozc(argv[0], &argc, &argv, false);
 
   mozc::TestProcessWatchDog dog;
 
   string line;
-  vector<string> fields;
+  std::vector<string> fields;
 
   while (getline(cin, line)) {
     fields.clear();

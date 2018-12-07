@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -49,8 +49,8 @@ string Version::GetMozcVersion() {
 }
 
 #ifdef OS_WIN
-wstring Version::GetMozcVersionW() {
-  wstring version;
+std::wstring Version::GetMozcVersionW() {
+  std::wstring version;
   Util::UTF8ToWide(version::kMozcVersion, &version);
   return version;
 }
@@ -72,6 +72,10 @@ int Version::GetMozcVersionRevision() {
   return version::kMozcVersionRevision;
 }
 
+const char *Version::GetMozcEngineVersion() {
+  return version::kMozcEngineVersion;
+}
+
 bool Version::CompareVersion(const string &lhs, const string &rhs) {
   if (lhs == rhs) {
     return false;
@@ -81,17 +85,12 @@ bool Version::CompareVersion(const string &lhs, const string &rhs) {
     LOG(WARNING) << "Unknown is given as version";
     return false;
   }
-  vector<string> vlhs;
+  std::vector<string> vlhs;
   Util::SplitStringUsing(lhs, ".", &vlhs);
-  vector<string> vrhs;
+  std::vector<string> vrhs;
   Util::SplitStringUsing(rhs, ".", &vrhs);
-  return lexicographical_compare(vlhs.begin(), vlhs.end(),
-                                 vrhs.begin(), vrhs.end(),
-                                 StringAsIntegerComparator);
-}
-
-Version::BuildType Version::GetMozcBuildType() {
-  return version::kMozcBuildType;
+  return std::lexicographical_compare(vlhs.begin(), vlhs.end(), vrhs.begin(),
+                                      vrhs.end(), StringAsIntegerComparator);
 }
 
 

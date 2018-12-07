@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -38,7 +38,7 @@
 #include "google/protobuf/stubs/common.h"
 #include "base/logging.h"
 #include "base/util.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "win32/ime/ime_ui_window.h"
 
 namespace mozc {
@@ -147,7 +147,7 @@ bool GetCandidateCount(HIMCC candidate_info_handle, DWORD *count) {
   ::ImmUnlockIMCC(candidate_info_handle);
   return result;
 }
-}  // anonymous namespace
+}  // namespace
 
 CandidateInfo::CandidateInfo()
     : candidate_info_size(0),
@@ -256,7 +256,7 @@ bool CandidateInfoUtil::Convert(const mozc::commands::Output &output,
     }
     info->offsets.push_back(offset);
 
-    wstring value;
+    std::wstring value;
     if (mozc::Util::UTF8ToWide(candidate_list.candidates(i).value(), &value) ==
         0) {
       value.clear();
@@ -365,7 +365,7 @@ HIMCC CandidateInfoUtil::Initialize(HIMCC current_handle) {
 
 HIMCC CandidateInfoUtil::Update(HIMCC current_handle,
                                 const mozc::commands::Output &output,
-                                vector<UIMessage> *messages) {
+                                std::vector<UIMessage> *messages) {
   CandidateInfo info;
   Convert(output, &info);
 

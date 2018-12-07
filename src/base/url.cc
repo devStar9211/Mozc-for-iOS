@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -61,8 +61,8 @@ class URLImpl {
     *url = uninstallation_survey_url_;
     if (!version.empty()) {
       *url += "&";
-      vector<pair<string, string> > params;
-      params.push_back(make_pair(kSurveyVersionEntry, version));
+      std::vector<std::pair<string, string> > params;
+      params.push_back(std::make_pair(kSurveyVersionEntry, version));
       Util::AppendCGIParams(params, url);
     }
     return true;
@@ -73,10 +73,12 @@ class URLImpl {
     uninstallation_survey_url_.clear();
     uninstallation_survey_url_ = kSurveyBaseURL;
     uninstallation_survey_url_ += "?";
-    vector<pair<string, string> > params;
-    params.push_back(make_pair(kSurveyContactTypeEntry, kSurveyContactType));
-    params.push_back(make_pair(kSurveyHtmlLanguageEntry, kSurveyHtmlLanguage));
-    params.push_back(make_pair(kSurveyFormatEntry, kSurveyFormat));
+    std::vector<std::pair<string, string> > params;
+    params.push_back(
+        std::make_pair(kSurveyContactTypeEntry, kSurveyContactType));
+    params.push_back(
+        std::make_pair(kSurveyHtmlLanguageEntry, kSurveyHtmlLanguage));
+    params.push_back(std::make_pair(kSurveyFormatEntry, kSurveyFormat));
     Util::AppendCGIParams(params, &uninstallation_survey_url_);
   }
 

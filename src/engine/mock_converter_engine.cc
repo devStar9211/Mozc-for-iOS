@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,8 @@
 #include "engine/engine_interface.h"
 #include "engine/user_data_manager_mock.h"
 
+using mozc::dictionary::SuppressionDictionary;
+
 namespace mozc {
 
 MockConverterEngine::MockConverterEngine()
@@ -49,12 +51,12 @@ ConverterInterface *MockConverterEngine::GetConverter() const {
 
 PredictorInterface *MockConverterEngine::GetPredictor() const {
   LOG(FATAL) << "Mock predictor is not implemented.";
-  return NULL;
+  return nullptr;
 }
 
 SuppressionDictionary *MockConverterEngine::GetSuppressionDictionary() {
   LOG(FATAL) << "Suffix dictionary is not supported.";
-  return NULL;
+  return nullptr;
 }
 
 bool MockConverterEngine::Reload() {

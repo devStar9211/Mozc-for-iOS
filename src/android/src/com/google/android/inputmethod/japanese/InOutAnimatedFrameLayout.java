@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -45,17 +45,8 @@ import android.widget.FrameLayout;
  */
 public abstract class InOutAnimatedFrameLayout extends FrameLayout {
   private class OutAnimationAdapter implements AnimationListener {
-    private final AnimationListener baseListener;
-    OutAnimationAdapter(AnimationListener baseListener) {
-      this.baseListener = baseListener;
-    }
-
     @Override
     public void onAnimationEnd(Animation animation) {
-      if (baseListener != null) {
-        baseListener.onAnimationEnd(animation);
-      }
-
       // We need to set this view's visibility to {@code GONE} *after* the out animation is
       // finished. This listener handles it.
       setVisibility(View.GONE);
@@ -63,29 +54,18 @@ public abstract class InOutAnimatedFrameLayout extends FrameLayout {
 
     @Override
     public void onAnimationRepeat(Animation animation) {
-      if (baseListener != null) {
-        baseListener.onAnimationRepeat(animation);
-      }
     }
 
     @Override
     public void onAnimationStart(Animation animation) {
-      if (baseListener != null) {
-        baseListener.onAnimationStart(animation);
-      }
     }
   }
 
   /**
    * An event listener for visibility change.
-   * This interface (and relating methods) is an alternative of
-   * View#onVisibilityChanged method,
-   * which is introduced since API Level 8 (==Android 2.2).
-   * TODO(yoichio): Get rid of this interface when we can end to support API Level 7
-   * (==2.1) and replace with View#onVisibilityChanged.
    */
   public interface VisibilityChangeListener {
-    public void onVisibilityChange(int oldvisibility, int newvisibility);
+    public void onVisibilityChange();
   }
 
   /** Animation used when this view is shown. */
@@ -93,12 +73,6 @@ public abstract class InOutAnimatedFrameLayout extends FrameLayout {
 
   /** Animation used when this view is hidden. */
   @VisibleForTesting Animation outAnimation;
-
-  /** AnimationListener for in-animation. */
-  private AnimationListener inAnimationListener;
-
-  /** AnimationListener for out-animation. */
-  private AnimationListener outAnimationListener;
 
   @VisibleForTesting VisibilityChangeListener onVisibilityChangeListener = null;
 
@@ -116,24 +90,22 @@ public abstract class InOutAnimatedFrameLayout extends FrameLayout {
   }
 
   public void setInAnimation(int resourceId) {
-    // Cancel the current "in animation".
-    inAnimation = loadAnimation(getContext(), resourceId);
-    setAnimationListenerInternal(inAnimation, inAnimationListener);
+    setInAnimation(loadAnimation(getContext(), resourceId));
   }
 
   public void setInAnimation(Animation inAnimation) {
     this.inAnimation = inAnimation;
-    setAnimationListenerInternal(inAnimation, inAnimationListener);
   }
 
   public void setOutAnimation(int resourceId) {
-    outAnimation = loadAnimation(getContext(), resourceId);
-    setAnimationListenerInternal(outAnimation, new OutAnimationAdapter(outAnimationListener));
+    setOutAnimation(loadAnimation(getContext(), resourceId));
   }
 
   public void setOutAnimation(Animation outAnimation) {
     this.outAnimation = outAnimation;
-    setAnimationListenerInternal(outAnimation, new OutAnimationAdapter(outAnimationListener));
+    if (outAnimation != null) {
+      outAnimation.setAnimationListener(new OutAnimationAdapter());
+    }
   }
 
   private static Animation loadAnimation(Context context, int resourceId) {
@@ -142,27 +114,6 @@ public abstract class InOutAnimatedFrameLayout extends FrameLayout {
       return null;
     }
     return AnimationUtils.loadAnimation(context, resourceId);
-  }
-
-  public void setInAnimationListener(AnimationListener inAnimationListener) {
-    this.inAnimationListener = inAnimationListener;
-    setAnimationListenerInternal(inAnimation, inAnimationListener);
-  }
-
-  public void setOutAnimationListener(AnimationListener outAnimationListener) {
-    this.outAnimationListener = outAnimationListener;
-    setAnimationListenerInternal(outAnimation, new OutAnimationAdapter(outAnimationListener));
-  }
-
-  /**
-   * Registers {@code listener} to {@code animation} as its callback, iff both are non-null.
-   * Otherwise just do nothing.
-   */
-  private static void setAnimationListenerInternal(
-      Animation animation, AnimationListener listener) {
-    if (animation != null && listener != null) {
-      animation.setAnimationListener(listener);
-    }
   }
 
   /**
@@ -203,11 +154,10 @@ public abstract class InOutAnimatedFrameLayout extends FrameLayout {
   }
 
   @Override
-  public void setVisibility(int visibility){
-    int oldvisibility = getVisibility();
-    super.setVisibility(visibility);
-    if (oldvisibility != visibility && onVisibilityChangeListener != null) {
-      onVisibilityChangeListener.onVisibilityChange(oldvisibility, visibility);
+  protected void onVisibilityChanged(View changedView, int visibility) {
+    super.onVisibilityChanged(changedView, visibility);
+    if (onVisibilityChangeListener != null) {
+      onVisibilityChangeListener.onVisibilityChange();
     }
   }
 

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -42,6 +42,7 @@ namespace storage {
 
 // Note: this class keeps some resources inside of the Key/Value, even if
 // such a entry is erased. Be careful to use for such classes.
+// TODO(yukawa): Make this class final once we stop supporting GCC 4.6.
 template<typename Key, typename Value>
 class LRUCache {
  public:
@@ -49,7 +50,7 @@ class LRUCache {
   explicit LRUCache(size_t max_elements);
 
   // Cleans up all allocated resources.
-  virtual ~LRUCache();
+  ~LRUCache();
 
   // Every Element is either on the free list or the lru list.  The
   // free list is singly-linked and only uses the next pointer, while
@@ -136,7 +137,7 @@ class LRUCache {
   // lookup is not necessary.
   bool Evict(Element* element);
 
-  typedef map<Key, Element*> Table;
+  typedef std::map<Key, Element*> Table;
 
   Table* table_;
   Element* free_list_;     // singly linked list of Element

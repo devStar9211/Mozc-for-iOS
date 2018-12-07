@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,23 +31,17 @@
 #define MOZC_CONVERTER_SEGMENTS_H_
 
 #include <deque>
+#include <memory>
 #include <string>
-#include <utility>
 #include <vector>
+
+#include "base/freelist.h"
 #include "base/number_util.h"
 #include "base/port.h"
-#include "base/scoped_ptr.h"
+#include "base/string_piece.h"
 #include "converter/lattice.h"
 
 namespace mozc {
-
-class Lattice;
-struct Node;
-template <class T> class ObjectPool;
-
-namespace composer {
-  class Composer;
-}  // namespace composer
 
 class Segment {
  public:
@@ -97,9 +91,9 @@ class Segment {
       // - No description should be shown when the candidate is loaded from
       //   history.
       // - Otherwise following unexpected behavior can be observed.
-      //   1. Type "やんしょん" and submit "マンション<入力補正>".
+      //   1. Type "やんしょん" and submit "マンション" (annotated with "補正").
       //   2. Type "まんしょん".
-      //   3. "マンション<入力補正>" is shown as a candidate
+      //   3. "マンション" (annotated with "補正") is shown as a candidate
       //      regardless of a user's correct typing.
       TYPING_CORRECTION = 1 << 12,
       // Auto partial suggestion candidate.
@@ -118,6 +112,26 @@ class Segment {
       DISABLE_INCOGNITO_MODE,     // disables "incognito mode".
       ENABLE_PRESENTATION_MODE,   // enables "presentation mode".
       DISABLE_PRESENTATION_MODE,  // disables "presentation mode".
+    };
+
+    // Bit field indicating candidate source info.
+    // This should be used for usage stats.
+    // TODO(mozc-team): Move Attribute fields for source info
+    // to SourceInfo.
+    enum SourceInfo {
+      SOURCE_INFO_NONE = 0,
+      // Attributes for zero query suggestion.
+      // These are used for usage stats.
+      // For DICTIONARY_PREDICTOR_ZERO_QUERY_XX, XX stands for the
+      // types defined at zero_query_list.h.
+      DICTIONARY_PREDICTOR_ZERO_QUERY_NONE = 1 << 0,
+      DICTIONARY_PREDICTOR_ZERO_QUERY_NUMBER_SUFFIX = 1 << 1,
+      DICTIONARY_PREDICTOR_ZERO_QUERY_EMOTICON = 1 << 2,
+      DICTIONARY_PREDICTOR_ZERO_QUERY_EMOJI = 1 << 3,
+      DICTIONARY_PREDICTOR_ZERO_QUERY_BIGRAM = 1 << 4,
+      DICTIONARY_PREDICTOR_ZERO_QUERY_SUFFIX = 1 << 5,
+
+      USER_HISTORY_PREDICTOR = 1 << 6,
     };
 
     string key;         // reading
@@ -160,6 +174,9 @@ class Segment {
     // defined in enum |Attribute|.
     uint32 attributes;
 
+    // Candidate's source info which will be used for usage stats.
+    uint32 source_info;
+
     // Candidate style. This is not a bit-field.
     // The style is defined in enum |Style|.
     NumberUtil::NumberString::Style style;
@@ -168,13 +185,60 @@ class Segment {
     // The style is defined in enum |Command|.
     Command command;
 
-    // Boundary information for realtime conversion.
-    // This will be set only for realtime conversion result candidates.
-    // This contains inner segment size for key and value.
-    // If the candidate key and value are
-    // "わたしの|なまえは|なかのです", " 私の|名前は|中野です",
-    // |inner_segment_boundary| have [(4,2), (4, 3), (5, 4)].
-    vector<pair<int, int> > inner_segment_boundary;
+    // Boundary information for realtime conversion.  This will be set only for
+    // realtime conversion result candidates.  Each element is the encoded
+    // lengths of key, value, content key and content value.
+    std::vector<uint32> inner_segment_boundary;
+
+    static bool EncodeLengths(size_t key_len, size_t value_len,
+                              size_t content_key_len,
+                              size_t content_value_len,
+                              uint32 *result);
+
+    // This function ignores error, so be careful when using this.
+    static uint32 EncodeLengths(size_t key_len, size_t value_len,
+                                size_t content_key_len,
+                                size_t content_value_len) {
+      uint32 result;
+      EncodeLengths(key_len, value_len, content_key_len, content_value_len,
+                    &result);
+      return result;
+    }
+
+    // Inserts a new element to |inner_segment_boundary|.  If one of four
+    // lengths is longer than 255, this method returns false.
+    bool PushBackInnerSegmentBoundary(size_t key_len, size_t value_len,
+                                      size_t content_key_len,
+                                      size_t content_value_len);
+
+    // Iterates inner segments.  Usage example:
+    // for (InnerSegmentIterator iter(&cand); !iter.Done(); iter.Next()) {
+    //   StringPiece s = iter.GetContentKey();
+    //   ...
+    // }
+    class InnerSegmentIterator {
+     public:
+      explicit InnerSegmentIterator(const Candidate *candidate)
+          : candidate_(candidate), key_offset_(candidate->key.data()),
+            value_offset_(candidate->value.data()),
+            index_(0) {}
+
+      bool Done() const {
+        return index_ == candidate_->inner_segment_boundary.size();
+      }
+
+      void Next();
+      StringPiece GetKey() const;
+      StringPiece GetValue() const;
+      StringPiece GetContentKey() const;
+      StringPiece GetContentValue() const;
+
+     private:
+      const Candidate *candidate_;
+      const char *key_offset_;
+      const char *value_offset_;
+      size_t index_;
+    };
 
     void Init() {
       key.clear();
@@ -194,6 +258,7 @@ class Segment {
       rid = 0;
       usage_id = 0;
       attributes = 0;
+      source_info = SOURCE_INFO_NONE;
       style = NumberUtil::NumberString::DEFAULT_STYLE;
       command = DEFAULT_COMMAND;
       inner_segment_boundary.clear();
@@ -201,18 +266,19 @@ class Segment {
 
     Candidate() : cost(0), wcost(0), structure_cost(0),
                   lid(0), rid(0), attributes(0),
+                  source_info(SOURCE_INFO_NONE),
                   style(NumberUtil::NumberString::DEFAULT_STYLE),
                   command(DEFAULT_COMMAND) {}
 
     // Returns functional key.
     // functional_key =
     // key.substr(content_key.size(), key.size() - content_key.size());
-    string functional_key() const;
+    StringPiece functional_key() const;
 
     // Returns functional value.
     // functional_value =
     // value.substr(content_value.size(), value.size() - content_value.size());
-    string functional_value() const;
+    StringPiece functional_value() const;
 
     void CopyFrom(const Candidate &src);
     bool IsValid() const;
@@ -220,7 +286,7 @@ class Segment {
   };
 
   Segment();
-  virtual ~Segment();
+  ~Segment();
 
   SegmentType segment_type() const;
   void set_segment_type(const SegmentType &segment_type);
@@ -262,8 +328,8 @@ class Segment {
   // TODO(toshiyuki): Integrate meta candidates to candidate and delete these
   size_t meta_candidates_size() const;
   void clear_meta_candidates();
-  const vector<Candidate> &meta_candidates() const;
-  vector<Candidate> *mutable_meta_candidates();
+  const std::vector<Candidate> &meta_candidates() const;
+  std::vector<Candidate> *mutable_meta_candidates();
   const Candidate &meta_candidate(size_t i) const;
   Candidate *mutable_meta_candidate(size_t i);
   Candidate *add_meta_candidate();
@@ -289,9 +355,9 @@ class Segment {
   // for partial suggestion or not.
   // You should detect that by using both Composer and Segments.
   string key_;
-  deque<Candidate *> candidates_;
-  vector<Candidate>  meta_candidates_;
-  scoped_ptr<ObjectPool<Candidate> > pool_;
+  std::deque<Candidate *> candidates_;
+  std::vector<Candidate>  meta_candidates_;
+  std::unique_ptr<ObjectPool<Candidate>> pool_;
   DISALLOW_COPY_AND_ASSIGN(Segment);
 };
 
@@ -432,10 +498,10 @@ class Segments {
   bool user_history_enabled_;
 
   RequestType request_type_;
-  scoped_ptr<ObjectPool<Segment> > pool_;
-  deque<Segment *> segments_;
-  vector<RevertEntry> revert_entries_;
-  scoped_ptr<Lattice> cached_lattice_;
+  std::unique_ptr<ObjectPool<Segment>> pool_;
+  std::deque<Segment *> segments_;
+  std::vector<RevertEntry> revert_entries_;
+  std::unique_ptr<Lattice> cached_lattice_;
 
   DISALLOW_COPY_AND_ASSIGN(Segments);
 };

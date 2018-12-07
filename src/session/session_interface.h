@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,6 +33,7 @@
 #define MOZC_SESSION_SESSION_INTERFACE_H_
 
 #include "base/port.h"
+#include "protocol/config.pb.h"
 
 namespace mozc {
 
@@ -60,7 +61,7 @@ class SessionInterface {
   // Perform the SEND_COMMAND command defined commands.proto.
   virtual bool SendCommand(commands::Command *command) = 0;
 
-  virtual void ReloadConfig() = 0;
+  virtual void SetConfig(config::Config *config) = 0;
 
   // Set Request. Currently, this is especial for session::Session.
   virtual void SetRequest(const commands::Request *request) {}

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,7 +33,7 @@
 #include <map>
 
 #include "base/freelist.h"
-#include "config/config.pb.h"
+#include "protocol/config.pb.h"
 
 namespace mozc {
 namespace keymap {
@@ -42,9 +42,17 @@ class KeyMapManager;
 
 class KeyMapFactory {
  public:
-  typedef map<config::Config::SessionKeymap, KeyMapManager *> KeyMapManagerMap;
+  typedef std::map<config::Config::SessionKeymap, KeyMapManager *>
+      KeyMapManagerMap;
 
-  static KeyMapManager *GetKeyMapManager(config::Config::SessionKeymap keymap);
+  // Returns KeyMapManager corresponding keymap and custom rule stored in
+  // config.  Note, keymap might be different from config.session_keymap.
+  static KeyMapManager *GetKeyMapManager(
+      const config::Config::SessionKeymap keymap);
+
+  // Reload the custom keymap.
+  static void ReloadConfig(const config::Config &config);
+
 
  private:
   friend class TestKeyMapFactoryProxy;

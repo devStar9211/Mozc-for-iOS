@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,21 +31,21 @@
 
 #include "composer/composer.h"
 
+#include "base/flags.h"
 #include "base/logging.h"
-#include "base/singleton.h"
 #include "base/util.h"
 #include "composer/internal/composition.h"
 #include "composer/internal/composition_input.h"
 #include "composer/internal/mode_switching_handler.h"
 #include "composer/internal/transliterators.h"
 #include "composer/internal/typing_corrector.h"
+#include "composer/key_event_util.h"
 #include "composer/table.h"
 #include "composer/type_corrected_query.h"
 #include "config/character_form_manager.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
-#include "session/commands.pb.h"
-#include "session/key_event_util.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 
 // Use flags instead of constant for performance evaluation.
 DEFINE_uint64(max_typing_correction_query_candidates, 40,
@@ -194,7 +194,9 @@ const size_t kMaxPreeditLength = 256;
 
 }  // namespace
 
-Composer::Composer(const Table *table, const commands::Request *request)
+Composer::Composer(const Table *table,
+                   const commands::Request *request,
+                   const config::Config *config)
     : position_(0),
       is_new_input_(true),
       input_mode_(transliteration::HIRAGANA),
@@ -207,8 +209,10 @@ Composer::Composer(const Table *table, const commands::Request *request)
                         FLAGS_max_typing_correction_query_candidates,
                         FLAGS_max_typing_correction_query_results),
       max_length_(kMaxPreeditLength),
-      request_(request) {
+      request_(request),
+      config_(config) {
   SetInputMode(transliteration::HIRAGANA);
+  typing_corrector_.SetConfig(config);
   Reset();
 }
 
@@ -242,6 +246,11 @@ void Composer::SetTable(const Table *table) {
 
 void Composer::SetRequest(const commands::Request *request) {
   request_ = request;
+}
+
+void Composer::SetConfig(const config::Config *config) {
+  config_ = config;
+  typing_corrector_.SetConfig(config);
 }
 
 void Composer::SetInputMode(transliteration::TransliterationType mode) {
@@ -317,11 +326,19 @@ void Composer::ApplyTemporaryInputMode(const string &input, bool caps_locked) {
   DCHECK(!input.empty());
 
   const config::Config::ShiftKeyModeSwitch switch_mode =
-      GET_CONFIG(shift_key_mode_switch);
+      config_->shift_key_mode_switch();
 
-  // Input is NOT an ASCII code.
+  // When input is not an ASCII code, reset the input mode to the one before
+  // temporary input mode.
   if (Util::OneCharLen(input.c_str()) != 1) {
-    SetInputMode(comeback_input_mode_);
+    // Call SetInputMode() only when the current input mode is temporary, which
+    // is detected by the if-condition below.  Without this check,
+    // SetInputMode() is called always for multi-byte charactesrs.  This causes
+    // a bug that multi-byte characters is inserted to a new chunk because
+    // |is_new_input_| is set to true in SetInputMode(); see b/31444698.
+    if (comeback_input_mode_ != input_mode_) {
+      SetInputMode(comeback_input_mode_);
+    }
     return;
   }
 
@@ -423,6 +440,12 @@ void Composer::InsertCharacterPreedit(const string &input) {
   DCHECK_EQ(begin, end);
 }
 
+// Note: This method is only for test.
+void Composer::SetPreeditTextForTestOnly(const string &input) {
+  SetTemporaryInputMode(transliteration::HALF_ASCII);
+  InsertCharacterPreedit(input);
+}
+
 void Composer::InsertCharacterPreeditForProbableKeyEvents(
     const string &input,
     const ProbableKeyEvents &probable_key_events) {
@@ -503,7 +526,7 @@ bool Composer::InsertCharacterKeyEvent(const commands::KeyEvent &key) {
     return false;
   }
 
-  bool is_typing_correction_enabled = GET_CONFIG(use_typing_correction) ||
+  bool is_typing_correction_enabled = config_->use_typing_correction() ||
                                       FLAGS_enable_typing_correction;
   if (key.has_key_string()) {
     if (key.input_style() == commands::KeyEvent::AS_IS ||
@@ -763,7 +786,7 @@ string *GetBaseQueryForPrediction(string *asis_query,
     return trimed_query;
   }
 }
-}  // anonymous namespace
+}  // namespace
 
 void Composer::GetQueryForPrediction(string *output) const {
   string asis_query;
@@ -797,7 +820,7 @@ void Composer::GetQueryForPrediction(string *output) const {
 }
 
 void Composer::GetQueriesForPrediction(
-    string *base, set<string> *expanded) const {
+    string *base, std::set<string> *expanded) const {
   DCHECK(base);
   DCHECK(expanded);
   DCHECK(composition_.get());
@@ -815,7 +838,7 @@ void Composer::GetQueriesForPrediction(
 }
 
 void Composer::GetTypeCorrectedQueriesForPrediction(
-    vector<TypeCorrectedQuery> *queries) const {
+    std::vector<TypeCorrectedQuery> *queries) const {
   typing_corrector_.GetQueriesForPrediction(queries);
 }
 
@@ -899,12 +922,12 @@ bool Composer::EnableInsert() const {
 }
 
 void Composer::AutoSwitchMode() {
-  if (!GET_CONFIG(use_auto_ime_turn_off)) {
+  if (!config_->use_auto_ime_turn_off()) {
     return;
   }
 
   // AutoSwitchMode is only available on Roma input
-  if (GET_CONFIG(preedit_method) != config::Config::ROMAN) {
+  if (config_->preedit_method() != config::Config::ROMAN) {
     return;
   }
 
@@ -1021,7 +1044,7 @@ enum Script {
 bool IsAlphabetOrNumber(const Script script) {
   return (script == ALPHABET) || (script == NUMBER);
 }
-}  // anonymous namespace
+}  // namespace
 
 // static
 bool Composer::TransformCharactersForNumbers(string *query) {
@@ -1033,7 +1056,7 @@ bool Composer::TransformCharactersForNumbers(string *query) {
   // Create a vector of scripts of query characters to avoid
   // processing query string many times.
   const size_t chars_len = Util::CharsLen(*query);
-  vector<Script> char_scripts;
+  std::vector<Script> char_scripts;
   char_scripts.reserve(chars_len);
 
   // flags to determine whether continue to the next step.
@@ -1123,8 +1146,9 @@ bool Composer::TransformCharactersForNumbers(string *query) {
 
         // JA_HYPHEN should be transformed to MINUS.
         if (check) {
-          CharacterFormManager::GetCharacterFormManager()->
-              ConvertPreeditString("\xE2\x88\x92", &append_char);  // "−"
+          CharacterFormManager::GetCharacterFormManager()->ConvertPreeditString(
+              "−",  // U+2212
+              &append_char);
           DCHECK(!append_char.empty());
         }
         break;
@@ -1139,7 +1163,7 @@ bool Composer::TransformCharactersForNumbers(string *query) {
         // JA_COMMA should be transformed to COMMA.
         if (lhs_check) {
           CharacterFormManager::GetCharacterFormManager()->
-              ConvertPreeditString("\xEF\xBC\x8C", &append_char);  // "，"
+              ConvertPreeditString("，", &append_char);
           DCHECK(!append_char.empty());
         }
         break;
@@ -1154,7 +1178,7 @@ bool Composer::TransformCharactersForNumbers(string *query) {
         // JA_PRERIOD should be transformed to PRERIOD.
         if (lhs_check) {
           CharacterFormManager::GetCharacterFormManager()->
-              ConvertPreeditString("\xEF\xBC\x8E", &append_char);  // "．"
+              ConvertPreeditString("．", &append_char);
           DCHECK(!append_char.empty());
         }
         break;
@@ -1205,6 +1229,7 @@ void Composer::CopyFrom(const Composer &src) {
 
   composition_.reset(src.composition_->Clone());
   request_ = src.request_;
+  config_ = src.config_;
 
   typing_corrector_.CopyFrom(src.typing_corrector_);
 }

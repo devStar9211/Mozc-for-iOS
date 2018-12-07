@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,6 +33,7 @@ import static org.easymock.EasyMock.anyObject;
 import static org.easymock.EasyMock.capture;
 import static org.easymock.EasyMock.expect;
 
+import org.mozc.android.inputmethod.japanese.keyboard.BackgroundDrawableFactory.DrawableType;
 import org.mozc.android.inputmethod.japanese.keyboard.Flick;
 import org.mozc.android.inputmethod.japanese.keyboard.Flick.Direction;
 import org.mozc.android.inputmethod.japanese.keyboard.Key;
@@ -41,8 +42,9 @@ import org.mozc.android.inputmethod.japanese.keyboard.KeyEntity;
 import org.mozc.android.inputmethod.japanese.keyboard.KeyState;
 import org.mozc.android.inputmethod.japanese.keyboard.KeyState.MetaState;
 import org.mozc.android.inputmethod.japanese.keyboard.Keyboard;
+import org.mozc.android.inputmethod.japanese.keyboard.Keyboard.KeyboardSpecification;
+import org.mozc.android.inputmethod.japanese.keyboard.PopUp;
 import org.mozc.android.inputmethod.japanese.keyboard.Row;
-import org.mozc.android.inputmethod.japanese.testing.ApiLevel;
 import org.mozc.android.inputmethod.japanese.testing.InstrumentationTestCaseWithMock;
 import com.google.common.base.Optional;
 
@@ -90,7 +92,8 @@ public class KeyboardAccessibilityNodeProviderTest extends InstrumentationTestCa
   private Keyboard createMockKeyboard() {
     List<Row> rowList = Collections.singletonList(
         new Row(Arrays.asList(
-            new Key(0, 0, 10, 10, 0, 0, true, false, false, Stick.EVEN, Arrays.asList(
+            new Key(0, 0, 10, 10, 0, 0, true, false, Stick.EVEN,
+                DrawableType.TWELVEKEYS_REGULAR_KEY_BACKGROUND, Arrays.asList(
                 new KeyState(
                     "meta:unmodified",
                     Collections.<MetaState>emptySet(),
@@ -98,8 +101,9 @@ public class KeyboardAccessibilityNodeProviderTest extends InstrumentationTestCa
                     Collections.<MetaState>emptySet(),
                     Collections.singletonList(
                         new Flick(Direction.CENTER,
-                            new KeyEntity(SOURCE_ID_UNMODIFIED, KEYCODE_UNMODIFIED,
-                                0, 0, null, false, null)))),
+                            new KeyEntity(SOURCE_ID_UNMODIFIED, KEYCODE_UNMODIFIED, 0, true, 0,
+                                Optional.<String>absent(), false, Optional.<PopUp>absent(),
+                                0, 0, 0, 0)))),
                 new KeyState(
                     "meta:shift",
                     EnumSet.of(MetaState.SHIFT),
@@ -107,9 +111,11 @@ public class KeyboardAccessibilityNodeProviderTest extends InstrumentationTestCa
                     Collections.<MetaState>emptySet(),
                     Collections.singletonList(
                         new Flick(Direction.CENTER,
-                            new KeyEntity(SOURCE_ID_SHIFTED, KEYCODE_SHIFTED,
-                                0, 0, null, false, null)))))),
-            new Key(10, 0, 10, 10, 0, 0, true, false, false, Stick.EVEN, Collections.singletonList(
+                            new KeyEntity(SOURCE_ID_SHIFTED, KEYCODE_SHIFTED, 0, true, 0,
+                                Optional.<String>absent(), false, Optional.<PopUp>absent(),
+                                0, 0, 0, 0)))))),
+            new Key(10, 0, 10, 10, 0, 0, true, false, Stick.EVEN,
+                DrawableType.TWELVEKEYS_REGULAR_KEY_BACKGROUND, Collections.singletonList(
                 new KeyState(
                     "backspace",
                     Collections.<MetaState>emptySet(),
@@ -117,10 +123,12 @@ public class KeyboardAccessibilityNodeProviderTest extends InstrumentationTestCa
                     Collections.<MetaState>emptySet(),
                     Collections.singletonList(
                         new Flick(Direction.CENTER,
-                            new KeyEntity(SOURCE_ID_BACKSPACE, KEYCODE_BACKSPACE,
-                                0, 0, null, false, null))))))),
+                            new KeyEntity(SOURCE_ID_BACKSPACE, KEYCODE_BACKSPACE, 0, true, 0,
+                                Optional.<String>absent(), false,
+                                Optional.<PopUp>absent(), 0, 0, 0, 0))))))),
             10, 0));
-    return new Keyboard(Optional.of("testkeyboard"), rowList, 0);
+    return new Keyboard(Optional.of("testkeyboard"), rowList, 0,
+                        KeyboardSpecification.TWELVE_KEY_TOGGLE_FLICK_KANA);
   }
 
   private View createMockView() {
@@ -137,7 +145,6 @@ public class KeyboardAccessibilityNodeProviderTest extends InstrumentationTestCa
     };
   }
 
-  @ApiLevel(14)
   @SmallTest
   public void testCreateAccessibilityNodeInfo_AbsentKeyboard() {
     KeyboardAccessibilityNodeProvider provider =
@@ -155,7 +162,6 @@ public class KeyboardAccessibilityNodeProviderTest extends InstrumentationTestCa
     assertNull(provider.createAccessibilityNodeInfo(KeyboardAccessibilityNodeProvider.UNDEFINED));
   }
 
-  @ApiLevel(14)
   @SmallTest
   public void testCreateAccessibilityNodeInfo_NoId() {
     KeyboardAccessibilityNodeProvider provider =
@@ -168,7 +174,6 @@ public class KeyboardAccessibilityNodeProviderTest extends InstrumentationTestCa
     // Note: There is no way to get the id of children. Testing is omitted.
   }
 
-  @ApiLevel(14)
   @SmallTest
   public void testCreateAccessibilityNodeInfo_WithId() {
     View view = createMockView();
@@ -193,7 +198,6 @@ public class KeyboardAccessibilityNodeProviderTest extends InstrumentationTestCa
     assertTrue((info.getActions() & AccessibilityNodeInfoCompat.ACTION_ACCESSIBILITY_FOCUS) != 0);
   }
 
-  @ApiLevel(14)
   @SmallTest
   public void testCreateAccessibilityNodeInfo_ObscureInput() {
     View view = createMockView();
@@ -220,7 +224,6 @@ public class KeyboardAccessibilityNodeProviderTest extends InstrumentationTestCa
     }
   }
 
-  @ApiLevel(14)
   @SmallTest
   public void testPerformAction() {
     KeyboardAccessibilityNodeProvider provider =
@@ -339,7 +342,6 @@ public class KeyboardAccessibilityNodeProviderTest extends InstrumentationTestCa
   // Note AccessibilityEvent doesn't contain information enough to verify
   // the behavior of performActionForKey method (sourceId is required but not accessible).
   // Indirect verification instead.
-  @ApiLevel(14)
   @SmallTest
   public void testPerformActionForKey() {
     KeyboardAccessibilityNodeProvider provider =

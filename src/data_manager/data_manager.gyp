@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -34,29 +34,22 @@
   },
   'targets': [
     {
-      'target_name': 'user_pos_manager',
-      'type': 'none',
-      'toolsets': [ 'target', 'host' ],
+      'target_name': 'pos_list_provider',
+      'type': 'static_library',
+      'toolsets': [ 'target' ],
       'sources': [
-        'user_pos_manager.h',
+        'pos_list_provider.cc',
       ],
-      'dependencies': [
-        'oss/oss_data_manager_base.gyp:oss_user_pos_manager',
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
+      'hard_dependency': 1,
+      'variables': {
+        'pos_list_dep%': 'oss/oss_data_manager_base.gyp:gen_oss_embedded_pos_list#host',
       },
-      'conditions': [
-        ['use_packed_dictionary==1', {
-          'dependencies': [
-            'packed/packed_data_manager_base.gyp:packed_data_manager'
-          ],
-          'dependencies!': [
-            'oss/oss_data_manager_base.gyp:oss_user_pos_manager'
-          ]
-        }],
+      'dependencies': [
+        '../base/base.gyp:serialized_string_array',
+        '<(pos_list_dep)',
+      ],
+      'export_dependent_settings': [
+        '<(pos_list_dep)',
       ],
     },
     {
@@ -69,11 +62,6 @@
       'dependencies': [
         '../base/base.gyp:base',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
   ],
 }

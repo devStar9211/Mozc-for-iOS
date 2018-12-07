@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -90,10 +90,10 @@ uint16 LookupCP932Data(const QString &str) {
   CP932MapData key;
   key.ucs4 = ucs4;
   const CP932MapData *result =
-      lower_bound(kCP932MapData,
-                  kCP932MapData + kCP932MapDataSize,
-                  key,
-                  UnicodeDataCompare<CP932MapData>());
+      std::lower_bound(kCP932MapData,
+                       kCP932MapData + kCP932MapDataSize,
+                       key,
+                       UnicodeDataCompare<CP932MapData>());
   if (result == kCP932MapData + kCP932MapDataSize ||
       result->ucs4 != key.ucs4) {
     return 0;
@@ -109,10 +109,10 @@ const UnihanData *LookupUnihanData(const QString &str) {
   UnihanData key;
   key.ucs4 = ucs4;
   const UnihanData *result =
-      lower_bound(kUnihanData,
-                  kUnihanData + kUnihanDataSize,
-                  key,
-                  UnicodeDataCompare<UnihanData>());
+      std::lower_bound(kUnihanData,
+                       kUnihanData + kUnihanDataSize,
+                       key,
+                       UnicodeDataCompare<UnihanData>());
   if (result == kUnihanData + kUnihanDataSize ||
       result->ucs4 != ucs4) {
     return NULL;
@@ -130,10 +130,10 @@ const QString LookupUnicodeData(const QString &str) {
   key.ucs4 = ucs4;
   key.description = NULL;
   const UnicodeData *result =
-      lower_bound(kUnicodeData,
-                  kUnicodeData + kUnicodeDataSize,
-                  key,
-                  UnicodeDataCompare<UnicodeData>());
+      std::lower_bound(kUnicodeData,
+                       kUnicodeData + kUnicodeDataSize,
+                       key,
+                       UnicodeDataCompare<UnicodeData>());
   if (result == kUnicodeData + kUnicodeDataSize ||
       result->ucs4 != ucs4) {
     return QString("");
@@ -200,6 +200,10 @@ QString toJapaneseReading(const char *str) {
     return QString::fromUtf8(str);
   }
 }
+
+QString toHtmlEscaped(const QString &text) {
+  return text.toHtmlEscaped();
+}
 }  // namespace
 
 // static
@@ -208,13 +212,13 @@ QString UnicodeUtil::GetToolTip(const QFont &font, const QString &text) {
       ("<center><span style=\"font-size: 24pt; font-family: %1\">").arg
       (font.family());
 
-  info += Qt::escape(text);
+  info += toHtmlEscaped(text);
   info += "</span></center>";
 
   const QString desc = LookupUnicodeData(text);
   if (!desc.isEmpty()) {
     info += "<center><span>";
-    info += Qt::escape(desc);
+    info += toHtmlEscaped(desc);
     info += "</span></center>";
   }
 
@@ -224,31 +228,31 @@ QString UnicodeUtil::GetToolTip(const QFont &font, const QString &text) {
   if (unihan != NULL) {
     if (unihan->japanese_kun != NULL) {
       info += "<tr><td>" + QObject::tr("Kun Reading") + ":</td><td>";
-      info += Qt::escape(toJapaneseReading(unihan->japanese_kun));
+      info += toHtmlEscaped(toJapaneseReading(unihan->japanese_kun));
       info += "</td></tr>";
     }
     if (unihan->japanese_on != NULL) {
       info += "<tr><td>" + QObject::tr("On Reading") + ":</td><td>";
-      info += Qt::escape(toJapaneseReading(unihan->japanese_on));
+      info += toHtmlEscaped(toJapaneseReading(unihan->japanese_on));
       info += "</td></tr>";
     }
     // Since radical/total_storkes defined in Unihan database are not
     // reliable, we currently don't want to display them.
     // if (unihan->radical != NULL) {
     //   info += "<tr><td>" + QObject::tr("Radical") + ":</td><td>";
-    //   info += Qt::escape(QString::fromUtf8(unihan->radical));
+    //   info += toHtmlEscaped(QString::fromUtf8(unihan->radical));
     //   info += "</td></tr>";
     // }
     // if (unihan->total_strokes > 0) {
     //   QString tmp;
     //   tmp.sprintf("%d", unihan->total_strokes);
     //   info += "<tr><td>" + QObject::tr("Total Strokes") + ":</td><td>";
-    //   info += Qt::escape(tmp);
+    //   info += toHtmlEscaped(tmp);
     //   info += "</td></tr>";
     // }
     if (unihan->IRG_jsource != NULL) {
       info += "<tr><td>" + QObject::tr("Source") + ":</td><td>";
-      info += Qt::escape(QString::fromUtf8(unihan->IRG_jsource));
+      info += toHtmlEscaped(QString::fromUtf8(unihan->IRG_jsource));
       info += "</td></tr>";
     }
   }

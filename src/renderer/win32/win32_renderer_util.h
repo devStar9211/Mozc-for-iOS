@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,11 +31,12 @@
 #define MOZC_RENDERER_WIN32_WIN32_RENDERER_UTIL_H_
 
 #include <Windows.h>
-#include <vector>
+
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "testing/base/public/gunit_prod.h"
 // for FRIEND_TEST()
 
@@ -62,11 +63,11 @@ struct CharacterRange {
 };
 
 struct LineLayout {
-  wstring text;
+  std::wstring text;
   int line_length;
   int line_width;
   int line_start_offset;
-  vector<CharacterRange> character_positions;
+  std::vector<CharacterRange> character_positions;
   LineLayout();
 };
 
@@ -83,8 +84,8 @@ struct CompositionWindowLayout {
   RECT caret_rect;
   POINT base_position;
   LOGFONT log_font;
-  wstring text;
-  vector<SegmentMarkerLayout> marker_layouts;
+  std::wstring text;
+  std::vector<SegmentMarkerLayout> marker_layouts;
   CompositionWindowLayout();
 };
 
@@ -215,7 +216,8 @@ class WindowPositionInterface {
   virtual HWND GetRootWindow(HWND window_handle) = 0;
 
   // This method wraps API call of GetClassName.
-  virtual bool GetWindowClassName(HWND window_handle, wstring *class_name) = 0;
+  virtual bool GetWindowClassName(HWND window_handle,
+                                  std::wstring *class_name) = 0;
 };
 
 // This class implements WindowPositionInterface and emulates APIs
@@ -229,7 +231,7 @@ class WindowPositionEmulator : public WindowPositionInterface {
   // WindowPositionInterface with this dummy handle.  You need not to release
   // the returned handle.
   virtual HWND RegisterWindow(
-      const wstring &class_name, const RECT &window_rect,
+      const std::wstring &class_name, const RECT &window_rect,
       const POINT &client_area_offset, const SIZE &client_area_size,
       double scale_factor) = 0;
 
@@ -292,7 +294,7 @@ class LayoutManager {
   //    displayed.
   bool LayoutCompositionWindow(
       const commands::RendererCommand &command,
-      vector<CompositionWindowLayout> *composition_window_layouts,
+     std::vector<CompositionWindowLayout> *composition_window_layouts,
       CandidateWindowLayout* candidate_layout) const;
 
   // Returns compatibility bits for given target application.
@@ -418,13 +420,13 @@ class LayoutManager {
   //  LineLayout: Layout information for each split line.
   static bool CalcLayoutWithTextWrapping(
       const LOGFONTW &font,
-      const wstring &text,
+      const std::wstring &text,
       int maximum_line_length,
       int initial_offset,
-      vector<LineLayout> *line_layouts);
+     std::vector<LineLayout> *line_layouts);
 
-  scoped_ptr<SystemPreferenceInterface> system_preference_;
-  scoped_ptr<WindowPositionInterface> window_position_;
+  std::unique_ptr<SystemPreferenceInterface> system_preference_;
+  std::unique_ptr<WindowPositionInterface> window_position_;
 
   DISALLOW_COPY_AND_ASSIGN(LayoutManager);
 };

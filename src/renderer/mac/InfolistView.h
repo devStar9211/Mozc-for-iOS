@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,7 +31,8 @@
 #define MOZC_RENDERER_MAC_INFOLIST_VIEW_H_
 
 #import <Cocoa/Cocoa.h>
-#include "renderer/renderer_command.pb.h"
+
+#include "protocol/renderer_command.pb.h"
 
 namespace mozc {
 namespace renderer {

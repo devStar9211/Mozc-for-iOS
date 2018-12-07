@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -53,14 +53,14 @@
       },
       'all_dependent_settings': {
         'cflags': [
-          '<!@(<(pkg_config_command) --cflags <@(target_libs))',
+          '<!@(pkg-config --cflags <@(target_libs))',
         ],
         'link_settings': {
           'libraries': [
-            '<!@(<(pkg_config_command) --libs-only-l <@(target_libs))',
+            '<!@(pkg-config --libs-only-l <@(target_libs))',
           ],
           'ldflags': [
-            '<!@(<(pkg_config_command) --libs-only-L <@(target_libs))',
+            '<!@(pkg-config --libs-only-L <@(target_libs))',
           ],
         },
       },
@@ -83,7 +83,6 @@
             './gen_mozc_xml.py',
             '--branding=Mozc',
             '--server_dir=<(server_dir)',
-            '--pkg_config_command=<(pkg_config_command)',
             '--ibus_mozc_path=<(ibus_mozc_path)',
             '--ibus_mozc_icon_path=<(ibus_mozc_icon_path)',
           ],
@@ -98,7 +97,7 @@
       ],
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../session/session_base.gyp:session_protocol',
+        '../../protocol/protocol.gyp:commands_proto',
         'ibus_build_environment',
       ],
     },
@@ -109,7 +108,7 @@
         'property_handler.cc',
       ],
       'dependencies': [
-        '../../session/session_base.gyp:session_protocol',
+        '../../protocol/protocol.gyp:commands_proto',
         'ibus_build_environment',
         'message_translator',
         'path_util',
@@ -149,8 +148,8 @@
       ],
       'dependencies': [
         '../../client/client.gyp:client',
+        '../../protocol/protocol.gyp:commands_proto',
         '../../session/session_base.gyp:ime_switch_util',
-        '../../session/session_base.gyp:session_protocol',
         'ibus_property_handler',
         'message_translator',
         'path_util',
@@ -217,8 +216,8 @@
         '../../base/base.gyp:base',
         '../../client/client.gyp:client',
         '../../client/client.gyp:client_mock',
-        '../../session/session_base.gyp:key_event_util',
-        '../../session/session_base.gyp:session_protocol',
+        '../../composer/composer.gyp:key_event_util',
+        '../../protocol/protocol.gyp:commands_proto',
         '../../testing/testing.gyp:gtest_main',
         'ibus_mozc_lib',
         'ibus_mozc_metadata',
@@ -231,6 +230,9 @@
     {
       'target_name': 'ibus_all_test',
       'type': 'none',
+      'dependencies': [
+        'ibus_mozc_test',
+      ],
       'conditions': [
         ['enable_gtk_renderer==1', {
           'dependencies': [
@@ -250,8 +252,8 @@
             'gtk_candidate_window_handler.cc',
           ],
           'dependencies': [
+            '../../protocol/protocol.gyp:renderer_proto',
             '../../renderer/renderer.gyp:renderer_client',
-            '../../renderer/renderer.gyp:renderer_protocol',
             'ibus_build_environment',
           ],
         },
@@ -284,14 +286,14 @@
           },
           'all_dependent_settings': {
             'cflags': [
-              '<!@(<(pkg_config_command) --cflags <@(target_libs))',
+              '<!@(pkg-config --cflags <@(target_libs))',
             ],
             'link_settings': {
               'libraries': [
-                '<!@(<(pkg_config_command) --libs-only-l <@(target_libs))',
+                '<!@(pkg-config --libs-only-l <@(target_libs))',
               ],
               'ldflags': [
-                '<!@(<(pkg_config_command) --libs-only-L <@(target_libs))',
+                '<!@(pkg-config --libs-only-L <@(target_libs))',
               ],
             },
             'defines': [

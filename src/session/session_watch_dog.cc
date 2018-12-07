@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,16 +31,16 @@
 
 #include <algorithm>
 #include <cstring>
+#include <memory>
 #include <numeric>
 #include <string>
 
+#include "base/clock.h"
 #include "base/cpu_stats.h"
 #include "base/logging.h"
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "base/system_util.h"
 #include "base/unnamed_event.h"
-#include "base/util.h"
 #include "client/client_interface.h"
 
 namespace mozc {
@@ -67,7 +67,7 @@ SessionWatchDog::SessionWatchDog(int32 interval_sec)
     : interval_sec_(interval_sec),
       client_(NULL), cpu_stats_(NULL), event_(new UnnamedEvent) {
   // allow [1..600].
-  interval_sec_ = max(1, min(interval_sec_, 600));
+  interval_sec_ = std::max(1, std::min(interval_sec_, 600));
   DCHECK(event_->IsAvailable())
       << "Unnamed event is not available";
 }
@@ -98,14 +98,14 @@ void SessionWatchDog::Terminate() {
 }
 
 void SessionWatchDog::Run() {
-  scoped_ptr<client::ClientInterface> client_impl;
+  std::unique_ptr<client::ClientInterface> client_impl;
   if (client_ == NULL) {
     VLOG(2) << "default client is used";
     client_impl.reset(client::ClientFactory::NewClient());
     client_ = client_impl.get();
   }
 
-  scoped_ptr<CPUStatsInterface> cpu_stats_impl;
+  std::unique_ptr<CPUStatsInterface> cpu_stats_impl;
   if (cpu_stats_ == NULL) {
     VLOG(2) << "default cpu_stats is used";
     cpu_stats_impl.reset(new CPUStats);
@@ -128,17 +128,17 @@ void SessionWatchDog::Run() {
   DCHECK_GE(number_of_processors, 1);
 
   // the first (interval_sec_ - 60) sec: -> Do nothing
-  const int32 idle_interval_msec = max(0, (interval_sec_ - 60)) * 1000;
+  const int32 idle_interval_msec = std::max(0, (interval_sec_ - 60)) * 1000;
 
   // last 60 sec: -> check CPU usage
-  const int32 cpu_check_interval_msec = min(60, interval_sec_) * 1000;
+  const int32 cpu_check_interval_msec = std::min(60, interval_sec_) * 1000;
 
   // for every 5 second, get CPU load percentage
-  const int32 cpu_check_duration_msec = min(5, interval_sec_) * 1000;
+  const int32 cpu_check_duration_msec = std::min(5, interval_sec_) * 1000;
 
-  fill(cpu_loads, cpu_loads + arraysize(cpu_loads), 0.0);
+  std::fill(cpu_loads, cpu_loads + arraysize(cpu_loads), 0.0);
 
-  uint64 last_cleanup_time = Util::GetTime();
+  uint64 last_cleanup_time = Clock::GetTime();
 
   while (true) {
     VLOG(1) << "Start sleeping " << idle_interval_msec;
@@ -166,12 +166,12 @@ void SessionWatchDog::Run() {
       // This is required for running stress test.
       const float extracted_cpu_load =
           total_cpu_load - current_process_cpu_load / number_of_processors;
-      cpu_loads[cpu_loads_index++] = max(0.0f, extracted_cpu_load);
+      cpu_loads[cpu_loads_index++] = std::max(0.0f, extracted_cpu_load);
     }
 
     DCHECK_GT(cpu_loads_index, 0);
 
-    const uint64 current_cleanup_time = Util::GetTime();
+    const uint64 current_cleanup_time = Clock::GetTime();
     if (!CanSendCleanupCommand(cpu_loads,
                                cpu_loads_index,
                                current_cleanup_time,
@@ -246,7 +246,7 @@ bool SessionWatchDog::CanSendCleanupCommand(
       std::accumulate(cpu_loads, cpu_loads + cpu_loads_index, 0.0)
       / cpu_loads_index;
 
-  const size_t latest_size = min(2, cpu_loads_index);
+  const size_t latest_size = std::min(2, cpu_loads_index);
   const float latest_avg =
       std::accumulate(cpu_loads, cpu_loads + latest_size, 0.0)
       / latest_size;

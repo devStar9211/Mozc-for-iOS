@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,27 +30,28 @@
 #ifndef MOZC_REWRITER_USAGE_REWRITER_H_
 #define MOZC_REWRITER_USAGE_REWRITER_H_
 
-#include <list>
+#ifndef NO_USAGE_REWRITER
+
 #include <map>
 #include <string>
 #include <utility>
 
+#include "base/port.h"
+#include "base/serialized_string_array.h"
 #include "converter/segments.h"
+#include "dictionary/dictionary_interface.h"
+#include "dictionary/pos_matcher.h"
 #include "rewriter/rewriter_interface.h"
-#include "rewriter/usage_rewriter_data_structs.h"
 #include "testing/base/public/gunit_prod.h"  // for FRIEND_TEST()
 
 namespace mozc {
 
-class ConversionRequest;
 class DataManagerInterface;
-class DictionaryInterface;
-class POSMatcher;
 
 class UsageRewriter : public RewriterInterface  {
  public:
   UsageRewriter(const DataManagerInterface *data_manager,
-                const DictionaryInterface *dictionary);
+                const dictionary::DictionaryInterface *dictionary);
   virtual ~UsageRewriter();
   virtual bool Rewrite(const ConversionRequest &request,
                        Segments *segments) const;
@@ -63,20 +64,63 @@ class UsageRewriter : public RewriterInterface  {
  private:
   FRIEND_TEST(UsageRewriterTest, GetKanjiPrefixAndOneHiragana);
 
-  typedef pair<string, string> StrPair;
+  static const size_t kUsageItemByteLength = 20;
+
+  class UsageDictItemIterator {
+   public:
+    UsageDictItemIterator() : ptr_(nullptr) {}
+    explicit UsageDictItemIterator(const char *ptr) : ptr_(ptr) {}
+
+    size_t usage_id() const { return *reinterpret_cast<const uint32 *>(ptr_); }
+    size_t key_index() const {
+      return *reinterpret_cast<const uint32 *>(ptr_ + 4);
+    }
+    size_t value_index() const {
+      return *reinterpret_cast<const uint32 *>(ptr_ + 8);
+    }
+    size_t conjugation_id() const {
+      return *reinterpret_cast<const uint32 *>(ptr_ + 12);
+    }
+    size_t meaning_index() const {
+      return *reinterpret_cast<const uint32 *>(ptr_ + 16);
+    }
+
+    UsageDictItemIterator &operator++() {
+      ptr_ += kUsageItemByteLength;
+      return *this;
+    }
+
+    bool IsValid() const { return ptr_ != nullptr; }
+
+    friend bool operator==(UsageDictItemIterator x, UsageDictItemIterator y) {
+      return x.ptr_ == y.ptr_;
+    }
+
+    friend bool operator!=(UsageDictItemIterator x, UsageDictItemIterator y) {
+      return x.ptr_ != y.ptr_;
+    }
+
+   private:
+    const char *ptr_;
+  };
+
+  using StrPair = std::pair<string, string>;
   static string GetKanjiPrefixAndOneHiragana(const string &word);
 
-  const UsageDictItem *LookupUnmatchedUsageHeuristically(
+  UsageDictItemIterator LookupUnmatchedUsageHeuristically(
       const Segment::Candidate &candidate) const;
-  const UsageDictItem *LookupUsage(
+  UsageDictItemIterator LookupUsage(
       const Segment::Candidate &candidate) const;
 
-  map<StrPair, const UsageDictItem *> key_value_usageitem_map_;
-  const POSMatcher *pos_matcher_;
-  const DictionaryInterface *dictionary_;
-  const ConjugationSuffix *base_conjugation_suffix_;
+  std::map<StrPair, UsageDictItemIterator> key_value_usageitem_map_;
+  const dictionary::POSMatcher pos_matcher_;
+  const dictionary::DictionaryInterface *dictionary_;
+  const uint32 *base_conjugation_suffix_;
+  SerializedStringArray string_array_;
 };
 
 }  // namespace mozc
+
+#endif  // NO_USAGE_REWRITER
 
 #endif  // MOZC_REWRITER_USAGE_REWRITER_H_

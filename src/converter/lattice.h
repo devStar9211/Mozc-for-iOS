@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,25 +30,23 @@
 #ifndef MOZC_CONVERTER_LATTICE_H_
 #define MOZC_CONVERTER_LATTICE_H_
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "base/string_piece.h"
+#include "converter/node.h"
+#include "converter/node_allocator.h"
 
 namespace mozc {
-
-struct Node;
-class NodeAllocator;
-class NodeAllocatorInterface;
 
 class Lattice {
  public:
   Lattice();
   ~Lattice();
 
-  NodeAllocatorInterface *node_allocator() const;
+  NodeAllocator *node_allocator() const;
 
   // set key and initalizes lattice with key.
   void SetKey(StringPiece key);
@@ -124,14 +122,14 @@ class Lattice {
   // TODO(team): Splitting the cache module may make this module simpler.
   string key_;
   size_t history_end_pos_;
-  vector<Node *> begin_nodes_;
-  vector<Node *> end_nodes_;
-  scoped_ptr<NodeAllocator> node_allocator_;
+  std::vector<Node *> begin_nodes_;
+  std::vector<Node *> end_nodes_;
+  std::unique_ptr<NodeAllocator> node_allocator_;
 
   // cache_info_ holds cache information about lookup.
   // If cache_info_[pos] equals to len, it means key.substr(pos, k)
   // (1 <= k <= len) is already looked up.
-  vector<size_t> cache_info_;
+  std::vector<size_t> cache_info_;
 };
 
 }  // namespace mozc

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,8 +30,9 @@
 #include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
 
+#include "base/logging.h"
 #include "base/util.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "win32/ime/ime_candidate_info.h"
 
 namespace mozc {
@@ -94,19 +95,18 @@ namespace {
 const size_t kNumCandidates = 13;
 const char* kValueList[kNumCandidates] = {
     "Beta",
-    "\343\203\231\343\203\274\343\202\277",  // "ベータ"
+    "ベータ",
     "BETA",
     "beta",
-    "\316\262",                              // "β"
-    "\316\222",                              // "Β"
-    "\343\214\274",                          // "㌼"
+    "β",
+    "Β",
+    "㌼",
     "Beta",
-    "\343\201\271\343\203\274\343\201\237",  // "べーた"
-    "\343\203\231\343\203\274\343\202\277",  // "ベータ"
+    "べーた",
+    "ベータ",
     "be-ta",
-    // "ｂｅ－ｔａ"
-    "\357\275\202\357\275\205\357\274\215\357\275\224\357\275\201",
-    "\357\276\215\357\276\236\357\275\260\357\276\200",  // "ﾍﾞｰﾀ"
+    "ｂｅ－ｔａ",
+    "ﾍﾞｰﾀ",
 };
 const int32 kValueLengths[kNumCandidates] = {
     4, 3, 4, 4, 1, 1, 1, 4, 3, 3, 5, 5, 4,
@@ -135,7 +135,7 @@ class ScopedCanidateInfoBuffer {
         reinterpret_cast<const BYTE *>(header_) +
         header_->dwOffset[candidate_list_no]);
   }
-  const wstring GetCandidateString(int candidate_list_no,
+  const std::wstring GetCandidateString(int candidate_list_no,
                                    int candidate_index) const {
     const CANDIDATELIST *list = GetList(candidate_list_no);
     DCHECK_GE(candidate_index, 0);
@@ -167,11 +167,9 @@ void FillOutputForSuggestion(commands::Output *output) {
     {
       commands::Preedit::Segment *segment = preedit->add_segment();
       segment->set_annotation(commands::Preedit::Segment::UNDERLINE);
-      // "あるふぁ"
-      segment->set_value("\343\201\202\343\202\213\343\201\265\343\201\201");
+      segment->set_value("あるふぁ");
       segment->set_value_length(4);
-      // "あるふぁ"
-      segment->set_key("\343\201\202\343\202\213\343\201\265\343\201\201");
+      segment->set_key("あるふぁ");
     }
   }
   {
@@ -186,8 +184,7 @@ void FillOutputForSuggestion(commands::Output *output) {
     {
       commands::Candidates::Candidate *candidate = candidates->add_candidate();
       candidate->set_index(1);
-      // "アルファ"
-      candidate->set_value("\343\202\242\343\203\253\343\203\225\343\202\241");
+      candidate->set_value("アルファ");
       candidate->set_id(1);
     }
     candidates->set_position(0);
@@ -211,17 +208,14 @@ void FillOutputForSuggestion(commands::Output *output) {
       commands::CandidateWord *candidate = candidate_list->add_candidates();
       candidate->set_id(0);
       candidate->set_index(0);
-      // "あるふぁべーた"
-      candidate->set_key("\343\201\202\343\202\213\343\201\265\343\201\201"
-                         "\343\201\271\343\203\274\343\201\237");
+      candidate->set_key("あるふぁべーた");
       candidate->set_value("AlphaBeta");
     }
     {
       commands::CandidateWord *candidate = candidate_list->add_candidates();
       candidate->set_id(1);
       candidate->set_index(1);
-      // "アルファ"
-      candidate->set_value("\343\202\242\343\203\253\343\203\225\343\202\241");
+      candidate->set_value("アルファ");
     }
     candidate_list->set_category(commands::SUGGESTION);
   }
@@ -250,16 +244,14 @@ void FillOutputForConversion(
       segment->set_annotation(commands::Preedit::Segment::UNDERLINE);
       segment->set_value("Alpha");
       segment->set_value_length(alpha_length);
-      // "あるふぁ"
-      segment->set_key("\343\201\202\343\202\213\343\201\265\343\201\201");
+      segment->set_key("あるふぁ");
     }
     {
       commands::Preedit::Segment *segment = preedit->add_segment();
       segment->set_annotation(commands::Preedit::Segment::HIGHLIGHT);
       segment->set_value(focused_value);
       segment->set_value_length(focused_value_length);
-      // "べーた"
-      segment->set_key("\343\201\271\343\203\274\343\201\237");
+      segment->set_key("べーた");
     }
     preedit->set_highlighted_position(alpha_length);
   }
@@ -275,10 +267,7 @@ void FillOutputForConversion(
       candidate->set_value("BETA");
       {
         commands::Annotation *annotation = candidate->mutable_annotation();
-        // "[半] アルファベット"
-        annotation->set_description(
-            "[\345\215\212] \343\202\242\343\203\253\343\203\225\343\202\241"
-            "\343\203\231\343\203\203\343\203\210");
+        annotation->set_description("[半] アルファベット");
         annotation->set_shortcut("1");
       }
       candidate->set_id(0);
@@ -286,12 +275,10 @@ void FillOutputForConversion(
     {
       commands::Candidates::Candidate *candidate = candidates->add_candidate();
       candidate->set_index(1);
-      candidate->set_value("\343\203\231\343\203\274\343\202\277");
+      candidate->set_value("ベータ");
       {
         commands::Annotation *annotation = candidate->mutable_annotation();
-        // "[全] カタカナ"
-        annotation->set_description(
-            "[\345\215\212] \343\202\253\343\202\277\343\202\253\343\203\212");
+        annotation->set_description("[全] カタカナ");
         annotation->set_shortcut("2");
       }
       candidate->set_id(1);
@@ -302,10 +289,7 @@ void FillOutputForConversion(
       candidate->set_value("beta");
       {
         commands::Annotation *annotation = candidate->mutable_annotation();
-        // "[半] アルファベット"
-        annotation->set_description(
-            "[\345\215\212] \343\202\242\343\203\253\343\203\225\343\202\241"
-            "\343\203\231\343\203\203\343\203\210");
+        annotation->set_description("[半] アルファベット");
         annotation->set_shortcut("3");
       }
       candidate->set_id(2);
@@ -313,14 +297,10 @@ void FillOutputForConversion(
     {
       commands::Candidates::Candidate *candidate = candidates->add_candidate();
       candidate->set_index(3);
-      // "β"
-      candidate->set_value("\316\262");
+      candidate->set_value("β");
       {
         commands::Annotation *annotation = candidate->mutable_annotation();
-        // "ギリシャ文字(小文字)"
-        annotation->set_description(
-            "\343\202\256\343\203\252\343\202\267\343\203\243\346\226\207"
-            "\345\255\227(\345\260\217\346\226\207\345\255\227)");
+        annotation->set_description("ギリシャ文字(小文字)");
         annotation->set_shortcut("4");
       }
       candidate->set_id(3);
@@ -328,14 +308,10 @@ void FillOutputForConversion(
     {
       commands::Candidates::Candidate *candidate = candidates->add_candidate();
       candidate->set_index(4);
-      // "Β"
-      candidate->set_value("\316\222");
+      candidate->set_value("Β");
       {
         commands::Annotation *annotation = candidate->mutable_annotation();
-        // "ギリシャ文字(大文字)"
-        annotation->set_description(
-            "\343\202\256\343\203\252\343\202\267\343\203\243\346\226\207"
-            "\345\255\227(\345\244\247\346\226\207\345\255\227)");
+        annotation->set_description("ギリシャ文字(大文字)");
         annotation->set_shortcut("5");
       }
       candidate->set_id(4);
@@ -343,13 +319,10 @@ void FillOutputForConversion(
     {
       commands::Candidates::Candidate *candidate = candidates->add_candidate();
       candidate->set_index(5);
-      // "㌼"
-      candidate->set_value("\343\214\274");
+      candidate->set_value("㌼");
       {
         commands::Annotation *annotation = candidate->mutable_annotation();
-        // "<機種依存文字>"
-        annotation->set_description("<\346\251\237\347\250\256\344\276\235"
-                                    "\345\255\230\346\226\207\345\255\227>");
+        annotation->set_description("<機種依存文字>");
         annotation->set_shortcut("6");
       }
       candidate->set_id(5);
@@ -360,10 +333,7 @@ void FillOutputForConversion(
       candidate->set_value("Beta");
       {
         commands::Annotation *annotation = candidate->mutable_annotation();
-        // "[半] アルファベット"
-        annotation->set_description(
-            "[\345\215\212] \343\202\242\343\203\253\343\203\225\343\202\241"
-            "\343\203\231\343\203\203\343\203\210");
+        annotation->set_description("[半] アルファベット");
         annotation->set_shortcut("7");
       }
       candidate->set_id(6);
@@ -371,13 +341,10 @@ void FillOutputForConversion(
     {
       commands::Candidates::Candidate *candidate = candidates->add_candidate();
       candidate->set_index(7);
-      // "べーた"
-      candidate->set_value("\343\201\271\343\203\274\343\201\237");
+      candidate->set_value("べーた");
       {
         commands::Annotation *annotation = candidate->mutable_annotation();
-        // "ひらがな"
-        annotation->set_description(
-            "\343\201\262\343\202\211\343\201\214\343\201\252");
+        annotation->set_description("ひらがな");
         annotation->set_shortcut("8");
       }
       candidate->set_id(7);
@@ -385,9 +352,7 @@ void FillOutputForConversion(
     {
       commands::Candidates::Candidate *candidate = candidates->add_candidate();
       candidate->set_index(8);
-      // "そのほかの文字種"
-      candidate->set_value("\343\201\235\343\201\256\343\201\273\343\201\213"
-                           "\343\201\256\346\226\207\345\255\227\347\250\256");
+      candidate->set_value("そのほかの文字種");
       {
         commands::Annotation *annotation = candidate->mutable_annotation();
         annotation->set_shortcut("9");
@@ -405,13 +370,10 @@ void FillOutputForConversion(
           commands::Candidates::Candidate *candidate =
               sub_candidates->add_candidate();
           candidate->set_index(0);
-          // "べーた"
-          candidate->set_value("\343\201\271\343\203\274\343\201\237");
+          candidate->set_value("べーた");
           {
             commands::Annotation *annotation = candidate->mutable_annotation();
-            // "ひらがな"
-            annotation->set_description(
-                "\343\201\262\343\202\211\343\201\214\343\201\252");
+            annotation->set_description("ひらがな");
           }
           candidate->set_id(-1);
         }
@@ -419,14 +381,10 @@ void FillOutputForConversion(
           commands::Candidates::Candidate *candidate =
               sub_candidates->add_candidate();
           candidate->set_index(1);
-          // "ベータ"
-          candidate->set_value("\343\203\231\343\203\274\343\202\277");
+          candidate->set_value("ベータ");
           {
             commands::Annotation *annotation = candidate->mutable_annotation();
-            // "[全] カタカナ"
-            annotation->set_description(
-                "[\345\215\212] "
-                "\343\202\253\343\202\277\343\202\253\343\203\212");
+            annotation->set_description("[全] カタカナ");
           }
           candidate->set_id(-2);
         }
@@ -437,8 +395,7 @@ void FillOutputForConversion(
           candidate->set_value("be-ta");
           {
             commands::Annotation *annotation = candidate->mutable_annotation();
-            // "[半]"
-            annotation->set_description("[\345\215\212]");
+            annotation->set_description("[半]");
           }
           candidate->set_id(-3);
         }
@@ -446,13 +403,10 @@ void FillOutputForConversion(
           commands::Candidates::Candidate *candidate =
               sub_candidates->add_candidate();
           candidate->set_index(3);
-          // "ｂｅ－ｔａ"
-          candidate->set_value(
-              "\357\275\202\357\275\205\357\274\215\357\275\224\357\275\201");
+          candidate->set_value("ｂｅ－ｔａ");
           {
             commands::Annotation *annotation = candidate->mutable_annotation();
-            // "[全]"
-            annotation->set_description("[\345\205\250]");
+            annotation->set_description("[全]");
           }
           candidate->set_id(-7);
         }
@@ -460,15 +414,10 @@ void FillOutputForConversion(
           commands::Candidates::Candidate *candidate =
               sub_candidates->add_candidate();
           candidate->set_index(4);
-          // "ﾍﾞｰﾀ"
-          candidate->set_value(
-              "\357\276\215\357\276\236\357\275\260\357\276\200");
+          candidate->set_value("ﾍﾞｰﾀ");
           {
             commands::Annotation *annotation = candidate->mutable_annotation();
-            // "[半] カタカナ"
-            annotation->set_description(
-                "[\345\215\212] "
-                "\343\202\253\343\202\277\343\202\253\343\203\212");
+            annotation->set_description("[半] カタカナ");
           }
           candidate->set_id(-11);
         }
@@ -507,12 +456,12 @@ void FillOutputForConversion(
   }
 }
 
-string ToUTF8(const wstring &wstr) {
+string ToUTF8(const std::wstring &wstr) {
   string result;
   Util::WideToUTF8(wstr, &result);
   return result;
 }
-}  // anonymous namespace
+}  // namespace
 
 // Some games such as EMIL CHRONICLE ONLINE assumes that
 // CANDIDATELIST::dwPageSize never be zero nor grater than 10 despite that

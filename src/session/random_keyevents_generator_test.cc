@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,7 +32,7 @@
 #include <string>
 #include <vector>
 
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "testing/base/public/gunit.h"
 
 namespace mozc {
@@ -42,7 +42,7 @@ namespace session {
 TEST(RandomKeyEventsGeneratorTest, BasicTest) {
   RandomKeyEventsGenerator::PrepareForMemoryLeakTest();
 
-  vector<mozc::commands::KeyEvent> keys;
+  std::vector<mozc::commands::KeyEvent> keys;
   for (int i = 0; i < 1000; ++i) {
     keys.clear();
     RandomKeyEventsGenerator::GenerateSequence(&keys);

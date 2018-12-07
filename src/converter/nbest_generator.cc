@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,12 +36,15 @@
 #include "base/logging.h"
 #include "base/util.h"
 #include "converter/candidate_filter.h"
-#include "converter/connector_interface.h"
+#include "converter/connector.h"
 #include "converter/lattice.h"
 #include "converter/node.h"
-#include "converter/segmenter_interface.h"
+#include "converter/segmenter.h"
 #include "converter/segments.h"
 #include "dictionary/pos_matcher.h"
+
+using mozc::dictionary::POSMatcher;
+using mozc::dictionary::SuppressionDictionary;
 
 namespace mozc {
 namespace {
@@ -92,30 +95,32 @@ struct NBestGenerator::QueueElementComparator {
 inline void NBestGenerator::Agenda::Push(
     const NBestGenerator::QueueElement *element) {
   priority_queue_.push_back(element);
-  push_heap(priority_queue_.begin(), priority_queue_.end(),
-            QueueElementComparator());
+  std::push_heap(priority_queue_.begin(), priority_queue_.end(),
+                 QueueElementComparator());
 }
 
 inline void NBestGenerator::Agenda::Pop() {
   DCHECK(!priority_queue_.empty());
-  pop_heap(priority_queue_.begin(), priority_queue_.end(),
-           QueueElementComparator());
+  std::pop_heap(priority_queue_.begin(), priority_queue_.end(),
+                QueueElementComparator());
   priority_queue_.pop_back();
 }
 
 NBestGenerator::NBestGenerator(const SuppressionDictionary *suppression_dic,
-                               const SegmenterInterface *segmenter,
-                               const ConnectorInterface *connector,
+                               const Segmenter *segmenter,
+                               const Connector *connector,
                                const POSMatcher *pos_matcher,
                                const Lattice *lattice,
-                               const SuggestionFilter *suggestion_filter)
+                               const SuggestionFilter *suggestion_filter,
+                               bool apply_suggestion_filter_for_exact_match)
     : suppression_dictionary_(suppression_dic),
       segmenter_(segmenter), connector_(connector), pos_matcher_(pos_matcher),
       lattice_(lattice),
       begin_node_(NULL), end_node_(NULL),
       freelist_(kFreeListSize),
       filter_(new CandidateFilter(
-          suppression_dic, pos_matcher, suggestion_filter)),
+          suppression_dic, pos_matcher, suggestion_filter,
+          apply_suggestion_filter_for_exact_match)),
       viterbi_result_checked_(false),
       check_mode_(STRICT),
       boundary_checker_(NULL) {
@@ -171,10 +176,9 @@ void NBestGenerator::Reset(const Node *begin_node, const Node *end_node,
   }
 }
 
-void NBestGenerator::MakeCandidate(Segment::Candidate *candidate,
-                                   int32 cost, int32 structure_cost,
-                                   int32 wcost,
-                                   const vector<const Node *> &nodes) const {
+void NBestGenerator::MakeCandidate(
+    Segment::Candidate *candidate, int32 cost, int32 structure_cost,
+    int32 wcost, const std::vector<const Node *> &nodes) const {
   CHECK(!nodes.empty());
 
   candidate->Init();
@@ -223,27 +227,49 @@ void NBestGenerator::MakeCandidate(Segment::Candidate *candidate,
 
   candidate->inner_segment_boundary.clear();
   if (check_mode_ == ONLY_EDGE) {
-    // For realtime conversion.
-    // Set inner segment boundary for user history prediction from
-    // realtime conversion result.
-    int key_len, value_len;
-    key_len = Util::CharsLen(nodes[0]->key);
-    value_len = Util::CharsLen(nodes[0]->value);
+    // For realtime conversion.  Set inner segment boundary for user history
+    // prediction from realtime conversion result.
+    size_t key_len = nodes[0]->key.size(), value_len = nodes[0]->value.size();
+    size_t content_key_len = key_len, content_value_len = value_len;
+    bool is_content_boundary = false;
+    if (pos_matcher_->IsFunctional(nodes[0]->rid)) {
+      is_content_boundary = true;
+      content_key_len = 0;
+      content_value_len = 0;
+    }
     for (size_t i = 1; i < nodes.size(); ++i) {
       const Node *lnode = nodes[i - 1];
       const Node *rnode = nodes[i];
       const bool kMultipleSegments = false;
-      if (segmenter_->IsBoundary(lnode, rnode, kMultipleSegments)) {
-        candidate->inner_segment_boundary.push_back(
-            pair<int, int>(key_len, value_len));
+      if (segmenter_->IsBoundary(*lnode, *rnode, kMultipleSegments)) {
+        candidate->PushBackInnerSegmentBoundary(
+            key_len, value_len, content_key_len, content_value_len);
         key_len = 0;
         value_len = 0;
+        content_key_len = 0;
+        content_value_len = 0;
+        is_content_boundary = false;
       }
-      key_len += Util::CharsLen(rnode->key);
-      value_len += Util::CharsLen(rnode->value);
+      key_len += rnode->key.size();
+      value_len += rnode->value.size();
+      if (is_content_boundary) {
+        continue;
+      }
+      // Set boundary only after content nouns or pronouns.  For example,
+      // "走った" is formed as
+      //     "走っ" (content word) + "た" (functional).
+      // Since the content word is incomplete, we don't want to learn "走っ".
+      if ((pos_matcher_->IsContentNoun(lnode->rid) ||
+           pos_matcher_->IsPronoun(lnode->rid)) &&
+          pos_matcher_->IsFunctional(rnode->lid)) {
+        is_content_boundary = true;
+      } else {
+        content_key_len += rnode->key.size();
+        content_value_len += rnode->value.size();
+      }
     }
-    candidate->inner_segment_boundary.push_back(
-        pair<int, int>(key_len, value_len));
+    candidate->PushBackInnerSegmentBoundary(
+        key_len, value_len, content_key_len, content_value_len);
   }
 }
 
@@ -474,7 +500,7 @@ NBestGenerator::BoundaryCheckResult NBestGenerator::CheckOnlyMid(
   // is_boundary is true if there is a grammer-based boundary
   // between lnode and rnode
   const bool is_boundary = (lnode->node_type == Node::HIS_NODE ||
-                            segmenter_->IsBoundary(lnode, rnode, false));
+                            segmenter_->IsBoundary(*lnode, *rnode, false));
   if (!is_edge && is_boundary) {
     // There is a boundary within the segment.
     return INVALID;
@@ -501,7 +527,7 @@ NBestGenerator::BoundaryCheckResult NBestGenerator::CheckOnlyEdge(
   // between lnode and rnode
   const bool is_boundary = (
       lnode->node_type == Node::HIS_NODE ||
-      segmenter_->IsBoundary(lnode, rnode, true));
+      segmenter_->IsBoundary(*lnode, *rnode, true));
   if (is_edge != is_boundary) {
     // on the edge, have a boudnary.
     // not on the edge, not the case.
@@ -523,7 +549,7 @@ NBestGenerator::BoundaryCheckResult NBestGenerator::CheckStrict(
   // between lnode and rnode
   const bool is_boundary = (
       lnode->node_type == Node::HIS_NODE ||
-      segmenter_->IsBoundary(lnode, rnode, false));
+      segmenter_->IsBoundary(*lnode, *rnode, false));
 
   if (is_edge != is_boundary) {
     // on the edge, have a boudnary.

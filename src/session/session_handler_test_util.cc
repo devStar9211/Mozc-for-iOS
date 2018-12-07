@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,15 +29,19 @@
 
 #include "session/session_handler_test_util.h"
 
+#include <utility>
+
 #include "base/config_file_stream.h"
 #include "base/file_util.h"
+#include "base/logging.h"
 #include "base/system_util.h"
-#include "config/config.pb.h"
+#include "config/character_form_manager.h"
 #include "config/config_handler.h"
 #include "converter/converter_interface.h"
 #include "engine/engine_interface.h"
 #include "prediction/user_history_predictor.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 #include "session/session_handler.h"
 #include "session/session_handler_interface.h"
 #include "session/session_usage_observer.h"
@@ -57,6 +61,7 @@ namespace session {
 namespace testing {
 
 using commands::Command;
+using config::CharacterFormManager;
 using config::ConfigHandler;
 
 bool CreateSession(SessionHandlerInterface *handler, uint64 *id) {
@@ -65,7 +70,7 @@ bool CreateSession(SessionHandlerInterface *handler, uint64 *id) {
   command.mutable_input()->mutable_capability()->set_text_deletion(
       commands::Capability::DELETE_PRECEDING_TEXT);
   handler->EvalCommand(&command);
-  if (id != NULL) {
+  if (id != nullptr) {
     *id = command.has_output() ? command.output().id() : 0;
   }
   return (command.output().error_code() == commands::Output::SESSION_SUCCESS);
@@ -139,6 +144,10 @@ void SessionHandlerTestBase::ClearState() {
   ConfigHandler::GetDefaultConfig(&config);
   ConfigHandler::SetConfig(config);
 
+  // CharacterFormManager is not automatically updated when the config is
+  // updated.
+  CharacterFormManager::GetCharacterFormManager()->ReloadConfig(config);
+
   // Some destructors may save the state on storages. To clear the state, we
   // explicitly call destructors before clearing storages.
   storage::Registry::Clear();
@@ -147,10 +156,10 @@ void SessionHandlerTestBase::ClearState() {
   FileUtil::Unlink(UserHistoryPredictor::GetUserHistoryFileName());
 }
 
-TestSessionClient::TestSessionClient(EngineInterface *engine)
+TestSessionClient::TestSessionClient(std::unique_ptr<EngineInterface> engine)
   : id_(0),
     usage_observer_(new SessionUsageObserver),
-    handler_(new SessionHandler(engine)) {
+    handler_(new SessionHandler(std::move(engine))) {
   handler_->AddObserver(usage_observer_.get());
 }
 
@@ -212,14 +221,14 @@ bool TestSessionClient::SubmitCandidate(uint32 id, commands::Output *output) {
 bool TestSessionClient::Reload() {
   commands::Input input;
   input.set_type(commands::Input::RELOAD);
-  return EvalCommand(&input, NULL);
+  return EvalCommand(&input, nullptr);
 }
 
 bool TestSessionClient::ResetContext() {
   commands::Input input;
   input.set_type(commands::Input::SEND_COMMAND);
   input.mutable_command()->set_type(commands::SessionCommand::RESET_CONTEXT);
-  return EvalCommand(&input, NULL);
+  return EvalCommand(&input, nullptr);
 }
 
 bool TestSessionClient::UndoOrRewind(commands::Output *output) {
@@ -236,7 +245,7 @@ bool TestSessionClient::SwitchInputMode(
   input.mutable_command()->set_type(
       commands::SessionCommand::SWITCH_INPUT_MODE);
   input.mutable_command()->set_composition_mode(composition_mode);
-  return EvalCommand(&input, NULL);
+  return EvalCommand(&input, nullptr);
 }
 
 bool TestSessionClient::SetRequest(const commands::Request &request,
@@ -244,6 +253,14 @@ bool TestSessionClient::SetRequest(const commands::Request &request,
   commands::Input input;
   input.set_type(commands::Input::SET_REQUEST);
   input.mutable_request()->CopyFrom(request);
+  return EvalCommand(&input, output);
+}
+
+bool TestSessionClient::SetConfig(const config::Config &config,
+                                  commands::Output *output) {
+  commands::Input input;
+  input.set_type(commands::Input::SET_CONFIG);
+  *input.mutable_config() = config;
   return EvalCommand(&input, output);
 }
 
@@ -258,7 +275,7 @@ bool TestSessionClient::EvalCommandInternal(commands::Input *input,
   commands::Command command;
   command.mutable_input()->CopyFrom(*input);
   bool result = handler_->EvalCommand(&command);
-  if (result && output != NULL) {
+  if (result && output != nullptr) {
     output->CopyFrom(command.output());
   }
 

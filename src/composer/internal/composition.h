@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -42,7 +42,7 @@ namespace mozc {
 namespace composer {
 
 class CharChunk;
-typedef list<CharChunk*> CharChunkList;
+typedef std::list<CharChunk*> CharChunkList;
 
 class CompositionInput;
 class Table;
@@ -88,11 +88,11 @@ class Composition : public CompositionInterface {
   virtual void GetStringWithTrimMode(TrimMode trim_mode, string* output) const;
   // Get string with consideration for ambiguity from pending input
   virtual void GetExpandedStrings(string *base,
-                                  set<string> *expanded) const;
+                                  std::set<string> *expanded) const;
   virtual void GetExpandedStringsWithTransliterator(
       Transliterators::Transliterator transliterator,
       string *base,
-      set<string> *expanded) const;
+      std::set<string> *expanded) const;
   virtual void GetPreedit(
       size_t position, string *left, string *focused, string *right) const;
 

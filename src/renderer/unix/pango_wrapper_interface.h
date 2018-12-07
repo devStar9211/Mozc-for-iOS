@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,6 +32,8 @@
 
 #include <gtk/gtk.h>
 #include <string>
+
+#include "base/port_string.h"
 
 namespace mozc {
 

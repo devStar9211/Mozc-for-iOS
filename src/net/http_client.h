@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -62,7 +62,7 @@ class HTTPClient {
     bool   include_header;       // include header in output
     size_t max_data_size;        // maximum data size client can retrieve
     int32  timeout;              // timeout
-    vector<string> headers;      // additional headers;
+    std::vector<string> headers;      // additional headers;
 
     // set default parameter
     Option()

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,10 +33,11 @@
 #include "base/port.h"
 #include "base/system_util.h"
 #include "composer/internal/composition_input.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
+#include "data_manager/testing/mock_data_manager.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 #include "testing/base/public/gunit.h"
-#include "session/commands.pb.h"
 
 DECLARE_string(test_tmpdir);
 
@@ -47,30 +48,18 @@ using mozc::config::Config;
 using mozc::commands::Request;
 
 static void InitTable(Table* table) {
-  // "あ"
-  table->AddRule("a",  "\xe3\x81\x82", "");
-  // "い"
-  table->AddRule("i",  "\xe3\x81\x84", "");
-  // "か"
-  table->AddRule("ka", "\xe3\x81\x8b", "");
-  // "き"
-  table->AddRule("ki", "\xe3\x81\x8d", "");
-  // "く"
-  table->AddRule("ku", "\xe3\x81\x8f", "");
-  // "け"
-  table->AddRule("ke", "\xe3\x81\x91", "");
-  // "こ"
-  table->AddRule("ko", "\xe3\x81\x93", "");
-  // "っ"
-  table->AddRule("kk", "\xe3\x81\xa3", "k");
-  // "な"
-  table->AddRule("na", "\xe3\x81\xaa", "");
-  // "に"
-  table->AddRule("ni", "\xe3\x81\xab", "");
-  // "ん"
-  table->AddRule("n",  "\xe3\x82\x93", "");
-  // "ん"
-  table->AddRule("nn", "\xe3\x82\x93", "");
+  table->AddRule("a",  "あ", "");
+  table->AddRule("i",  "い", "");
+  table->AddRule("ka", "か", "");
+  table->AddRule("ki", "き", "");
+  table->AddRule("ku", "く", "");
+  table->AddRule("ke", "け", "");
+  table->AddRule("ko", "こ", "");
+  table->AddRule("kk", "っ", "k");
+  table->AddRule("na", "な", "");
+  table->AddRule("ni", "に", "");
+  table->AddRule("n",  "ん", "");
+  table->AddRule("nn", "ん", "");
 }
 
 string GetResult(const Table &table, const string &key) {
@@ -89,28 +78,17 @@ string GetInput(const Table &table, const string &key) {
   return entry->input();
 }
 
-class TableTest : public testing::Test {
+class TableTest : public ::testing::Test {
  protected:
-  TableTest() {}
+  TableTest() = default;
+  ~TableTest() override = default;
 
-  virtual void SetUp() {
-    SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
-    config::ConfigHandler::GetDefaultConfig(&default_config_);
-    config::ConfigHandler::SetConfig(default_config_);
+  void SetUp() override {
+    config::ConfigHandler::GetDefaultConfig(&config_);
   }
 
-  virtual void TearDown() {
-    config::ConfigHandler::SetConfig(default_config_);
-  }
-
-  void SetCustomRomanTable(const string &roman_table) {
-    config::Config config;
-    config::ConfigHandler::GetConfig(&config);
-    config.set_custom_roman_table(roman_table);
-    config::ConfigHandler::SetConfig(config);
-  }
-
-  config::Config default_config_;
+  const testing::MockDataManager mock_data_manager_;
+  config::Config config_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TableTest);
@@ -123,24 +101,16 @@ TEST_F(TableTest, LookUp) {
     const char* expected_output;
     const char* expected_pending;
   } test_cases[] = {
-    // "あ"
-    { "a", true, "\xe3\x81\x82", "" },
+    { "a", true, "あ", "" },
     { "k", false, "", "" },
-    // "か"
-    { "ka", true, "\xe3\x81\x8b", "" },
-    // "き"
-    { "ki", true, "\xe3\x81\x8d", "" },
-    // "く"
-    { "ku", true, "\xe3\x81\x8f", "" },
-    // "っ"
-    { "kk", true, "\xe3\x81\xa3", "k" },
+    { "ka", true, "か", "" },
+    { "ki", true, "き", "" },
+    { "ku", true, "く", "" },
+    { "kk", true, "っ", "k" },
     { "aka", false, "", "" },
-    // "な"
-    { "na", true, "\xe3\x81\xaa", "" },
-    // "ん"
-    { "n", true, "\xe3\x82\x93", "" },
-    // "ん"
-    { "nn", true, "\xe3\x82\x93", "" },
+    { "na", true, "な", "" },
+    { "n", true, "ん", "" },
+    { "nn", true, "ん", "" },
   };
   static const int size = arraysize(test_cases);
 
@@ -167,7 +137,7 @@ TEST_F(TableTest, LookUpPredictiveAll) {
   Table table;
   InitTable(&table);
 
-  vector<const Entry *> results;
+  std::vector<const Entry *> results;
   table.LookUpPredictiveAll("k", &results);
 
   EXPECT_EQ(6, results.size());
@@ -179,37 +149,24 @@ TEST_F(TableTest, Punctuations) {
     const char *input;
     const char *expected;
   } test_cases[] = {
-    // "、"
-    { config::Config::KUTEN_TOUTEN, ",",  "\xe3\x80\x81" },
-    // "。"
-    { config::Config::KUTEN_TOUTEN, ".",  "\xe3\x80\x82" },
-    // "，"
-    { config::Config::COMMA_PERIOD, ",",  "\xef\xbc\x8c" },
-    // "．"
-    { config::Config::COMMA_PERIOD, ".",  "\xef\xbc\x8e" },
-    // "、"
-    { config::Config::KUTEN_PERIOD, ",",  "\xe3\x80\x81" },
-    // "．"
-    { config::Config::KUTEN_PERIOD, ".",  "\xef\xbc\x8e" },
-    // "，"
-    { config::Config::COMMA_TOUTEN, ",",  "\xef\xbc\x8c" },
-    // "。"
-    { config::Config::COMMA_TOUTEN, ".",  "\xe3\x80\x82" },
+    { config::Config::KUTEN_TOUTEN, ",",  "、" },
+    { config::Config::KUTEN_TOUTEN, ".",  "。" },
+    { config::Config::COMMA_PERIOD, ",",  "，" },
+    { config::Config::COMMA_PERIOD, ".",  "．" },
+    { config::Config::KUTEN_PERIOD, ",",  "、" },
+    { config::Config::KUTEN_PERIOD, ".",  "．" },
+    { config::Config::COMMA_TOUTEN, ",",  "，" },
+    { config::Config::COMMA_TOUTEN, ".",  "。" },
   };
 
-  const string config_file = FileUtil::JoinPath(FLAGS_test_tmpdir,
-                                                "mozc_config_test_tmp");
-  FileUtil::Unlink(config_file);
-  config::ConfigHandler::SetConfigFileName(config_file);
-  config::ConfigHandler::Reload();
   commands::Request request;
 
   for (int i = 0; i < arraysize(test_cases); ++i) {
     config::Config config;
     config.set_punctuation_method(test_cases[i].method);
-    EXPECT_TRUE(config::ConfigHandler::SetConfig(config));
     Table table;
-    ASSERT_TRUE(table.InitializeWithRequestAndConfig(request, config));
+    ASSERT_TRUE(table.InitializeWithRequestAndConfig(request, config,
+                                                     mock_data_manager_));
     const Entry *entry = table.LookUp(test_cases[i].input);
     EXPECT_TRUE(entry != NULL) << "Failed index = " << i;
     if (entry) {
@@ -224,41 +181,28 @@ TEST_F(TableTest, Symbols) {
     const char *input;
     const char *expected;
   } test_cases[] = {
-    // "「"
-    { config::Config::CORNER_BRACKET_MIDDLE_DOT, "[",  "\xe3\x80\x8c" },
-    // "」"
-    { config::Config::CORNER_BRACKET_MIDDLE_DOT, "]",  "\xe3\x80\x8d" },
-    // "・"
-    { config::Config::CORNER_BRACKET_MIDDLE_DOT, "/",  "\xe3\x83\xbb" },
+    { config::Config::CORNER_BRACKET_MIDDLE_DOT, "[",  "「" },
+    { config::Config::CORNER_BRACKET_MIDDLE_DOT, "]",  "」" },
+    { config::Config::CORNER_BRACKET_MIDDLE_DOT, "/",  "・" },
     { config::Config::SQUARE_BRACKET_SLASH, "[",  "["      },
     { config::Config::SQUARE_BRACKET_SLASH, "]",  "]"      },
-    // "／"
-    { config::Config::SQUARE_BRACKET_SLASH, "/",  "\xef\xbc\x8f"      },
-    // "「"
-    { config::Config::CORNER_BRACKET_SLASH, "[",  "\xe3\x80\x8c"      },
-    // "」"
-    { config::Config::CORNER_BRACKET_SLASH, "]",  "\xe3\x80\x8d"      },
-    // "／"
-    { config::Config::CORNER_BRACKET_SLASH, "/",  "\xef\xbc\x8f"      },
+    { config::Config::SQUARE_BRACKET_SLASH, "/",  "／"      },
+    { config::Config::CORNER_BRACKET_SLASH, "[",  "「"      },
+    { config::Config::CORNER_BRACKET_SLASH, "]",  "」"      },
+    { config::Config::CORNER_BRACKET_SLASH, "/",  "／"      },
     { config::Config::SQUARE_BRACKET_MIDDLE_DOT, "[",  "[" },
     { config::Config::SQUARE_BRACKET_MIDDLE_DOT, "]",  "]" },
-    // "・"
-    { config::Config::SQUARE_BRACKET_MIDDLE_DOT, "/",  "\xe3\x83\xbb" },
+    { config::Config::SQUARE_BRACKET_MIDDLE_DOT, "/",  "・" },
   };
 
-  const string config_file = FileUtil::JoinPath(FLAGS_test_tmpdir,
-                                                "mozc_config_test_tmp");
-  FileUtil::Unlink(config_file);
-  config::ConfigHandler::SetConfigFileName(config_file);
-  config::ConfigHandler::Reload();
   commands::Request request;
 
   for (int i = 0; i < arraysize(test_cases); ++i) {
     config::Config config;
     config.set_symbol_method(test_cases[i].method);
-    EXPECT_TRUE(config::ConfigHandler::SetConfig(config));
     Table table;
-    ASSERT_TRUE(table.InitializeWithRequestAndConfig(request, config));
+    ASSERT_TRUE(table.InitializeWithRequestAndConfig(request, config,
+                                                     mock_data_manager_));
     const Entry *entry = table.LookUp(test_cases[i].input);
     EXPECT_TRUE(entry != NULL) << "Failed index = " << i;
     if (entry) {
@@ -268,33 +212,28 @@ TEST_F(TableTest, Symbols) {
 }
 
 TEST_F(TableTest, KanaSuppressed) {
-  config::Config config;
-  config::ConfigHandler::GetConfig(&config);
-
-  config.set_preedit_method(config::Config::KANA);
-  config::ConfigHandler::SetConfig(config);
+  config_.set_preedit_method(config::Config::KANA);
 
   commands::Request request;
 
   Table table;
-  ASSERT_TRUE(table.InitializeWithRequestAndConfig(request, config));
+  ASSERT_TRUE(table.InitializeWithRequestAndConfig(request, config_,
+                                                   mock_data_manager_));
 
   const Entry *entry = table.LookUp("a");
   ASSERT_TRUE(entry != NULL);
-  // "あ"
-  EXPECT_EQ("\xE3\x81\x82", entry->result());
+  EXPECT_EQ("あ", entry->result());
   EXPECT_TRUE(entry->pending().empty());
 }
 
 TEST_F(TableTest, KanaCombination) {
   Table table;
   commands::Request request;
-  ASSERT_TRUE(table.InitializeWithRequestAndConfig(request, default_config_));
-  // "か゛"
-  const Entry *entry = table.LookUp("\xE3\x81\x8B\xE3\x82\x9B");
+  ASSERT_TRUE(table.InitializeWithRequestAndConfig(request, config_,
+                                                   mock_data_manager_));
+  const Entry *entry = table.LookUp("か゛");
   ASSERT_TRUE(entry != NULL);
-  // "が"
-  EXPECT_EQ("\xE3\x81\x8C", entry->result());
+  EXPECT_EQ("が", entry->result());
   EXPECT_TRUE(entry->pending().empty());
 }
 
@@ -424,13 +363,11 @@ TEST_F(TableTest, CustomPunctuationsAndSymbols) {
   custom_roman_table.append("[\tOPEN\n");
   custom_roman_table.append("]\tCLOSE\n");
 
-  SetCustomRomanTable(custom_roman_table);
+  config_.set_custom_roman_table(custom_roman_table);
 
   Table table;
   commands::Request request;
-  config::Config config;
-  config::ConfigHandler::GetConfig(&config);
-  table.InitializeWithRequestAndConfig(request, config);
+  table.InitializeWithRequestAndConfig(request, config_, mock_data_manager_);
 
   const Entry *entry = NULL;
   entry = table.LookUp("mozc");
@@ -534,36 +471,36 @@ TEST_F(TableTest, CaseSensitivity) {
   commands::Request request;
   {
     Table table;
-    table.InitializeWithRequestAndConfig(request, default_config_);
+    table.InitializeWithRequestAndConfig(request, config_, mock_data_manager_);
     EXPECT_FALSE(table.case_sensitive());
   }
   {
     Table table;
-    table.InitializeWithRequestAndConfig(request, default_config_);
+    table.InitializeWithRequestAndConfig(request, config_, mock_data_manager_);
     table.AddRule("", "", "");
     EXPECT_FALSE(table.case_sensitive());
   }
   {
     Table table;
-    table.InitializeWithRequestAndConfig(request, default_config_);
+    table.InitializeWithRequestAndConfig(request, config_, mock_data_manager_);
     table.AddRule("a", "", "");
     EXPECT_FALSE(table.case_sensitive());
   }
   {
     Table table;
-    table.InitializeWithRequestAndConfig(request, default_config_);
+    table.InitializeWithRequestAndConfig(request, config_, mock_data_manager_);
     table.AddRule("A", "", "");
     EXPECT_TRUE(table.case_sensitive());
   }
   {
     Table table;
-    table.InitializeWithRequestAndConfig(request, default_config_);
+    table.InitializeWithRequestAndConfig(request, config_, mock_data_manager_);
     table.AddRule("a{A}a", "", "");
     EXPECT_FALSE(table.case_sensitive());
   }
   {
     Table table;
-    table.InitializeWithRequestAndConfig(request, default_config_);
+    table.InitializeWithRequestAndConfig(request, config_, mock_data_manager_);
     table.AddRule("A{A}A", "", "");
     EXPECT_TRUE(table.case_sensitive());
   }
@@ -573,15 +510,13 @@ TEST_F(TableTest, CaseSensitivity) {
 // by the configuration.
 // Currently the case sensitivity is independent from the configuration.
 TEST_F(TableTest, CaseSensitiveByConfiguration) {
-  config::Config config;
   commands::Request request;
   Table table;
 
   // config::Config::OFF
   {
-    config.set_shift_key_mode_switch(config::Config::OFF);
-    EXPECT_TRUE(config::ConfigHandler::SetConfig(config));
-    table.InitializeWithRequestAndConfig(request, config);
+    config_.set_shift_key_mode_switch(config::Config::OFF);
+    table.InitializeWithRequestAndConfig(request, config_, mock_data_manager_);
 
     table.AddRule("a", "[a]", "");
     table.AddRule("A", "[A]", "");
@@ -620,9 +555,8 @@ TEST_F(TableTest, CaseSensitiveByConfiguration) {
 
   // config::Config::ASCII_INPUT_MODE
   {
-    config.set_shift_key_mode_switch(config::Config::ASCII_INPUT_MODE);
-    EXPECT_TRUE(config::ConfigHandler::SetConfig(config));
-    table.InitializeWithRequestAndConfig(request, config);
+    config_.set_shift_key_mode_switch(config::Config::ASCII_INPUT_MODE);
+    table.InitializeWithRequestAndConfig(request, config_, mock_data_manager_);
 
     table.AddRule("a", "[a]", "");
     table.AddRule("A", "[A]", "");
@@ -661,9 +595,8 @@ TEST_F(TableTest, CaseSensitiveByConfiguration) {
 
   // config::Config::KATAKANA_INPUT_MODE
   {
-    config.set_shift_key_mode_switch(config::Config::KATAKANA_INPUT_MODE);
-    EXPECT_TRUE(config::ConfigHandler::SetConfig(config));
-    table.InitializeWithRequestAndConfig(request, config);
+    config_.set_shift_key_mode_switch(config::Config::KATAKANA_INPUT_MODE);
+    table.InitializeWithRequestAndConfig(request, config_, mock_data_manager_);
 
     table.AddRule("a", "[a]", "");
     table.AddRule("A", "[A]", "");
@@ -723,13 +656,13 @@ TEST_F(TableTest, AutomaticCaseSensitiveDetection) {
 
   {
     Table table;
-    SetCustomRomanTable(kCaseSensitiveRomanTable);
-    config::Config config;
-    config::ConfigHandler::GetConfig(&config);
+    config::Config config(config::ConfigHandler::DefaultConfig());
+    config.set_custom_roman_table(kCaseSensitiveRomanTable);
     EXPECT_FALSE(table.case_sensitive())
         << "case-sensitive mode should be desabled by default.";
     // Load a custom config with case-sensitive custom roman table.
-    ASSERT_TRUE(table.InitializeWithRequestAndConfig(request, config));
+    ASSERT_TRUE(table.InitializeWithRequestAndConfig(request, config,
+                                                     mock_data_manager_));
     EXPECT_TRUE(table.case_sensitive())
         << "Case sensitive roman table should enable case-sensitive mode.";
     // Explicitly disable case-sensitive mode.
@@ -740,10 +673,10 @@ TEST_F(TableTest, AutomaticCaseSensitiveDetection) {
   {
     Table table;
     // Load a custom config with case-insensitive custom roman table.
-    SetCustomRomanTable(kCaseInsensitiveRomanTable);
-    config::Config config;
-    config::ConfigHandler::GetConfig(&config);
-    ASSERT_TRUE(table.InitializeWithRequestAndConfig(request, config));
+    config::Config config(config::ConfigHandler::DefaultConfig());
+    config.set_custom_roman_table(kCaseInsensitiveRomanTable);
+    ASSERT_TRUE(table.InitializeWithRequestAndConfig(request, config,
+                                                     mock_data_manager_));
     EXPECT_FALSE(table.case_sensitive())
         << "Case insensitive roman table should disable case-sensitive mode.";
     // Explicitly enable case-sensitive mode.
@@ -756,14 +689,14 @@ TEST_F(TableTest, MobileMode) {
   mozc::commands::Request request;
   request.set_zero_query_suggestion(true);
   request.set_mixed_conversion(true);
-  request.set_combine_all_segments(true);
 
   {
     // To 12keys -> Hiragana mode
     request.set_special_romanji_table(
         mozc::commands::Request::TWELVE_KEYS_TO_HIRAGANA);
     mozc::composer::Table table;
-    table.InitializeWithRequestAndConfig(request, default_config_);
+    table.InitializeWithRequestAndConfig(request, config_,
+                                         mock_data_manager_);
     {
       const mozc::composer::Entry *entry = NULL;
       size_t key_length = 0;
@@ -771,8 +704,7 @@ TEST_F(TableTest, MobileMode) {
       entry = table.LookUpPrefix("2", &key_length, &fixed);
       EXPECT_EQ("2", entry->input());
       EXPECT_EQ("", entry->result());
-      // "か"
-      EXPECT_EQ("\xE3\x81\x8B", entry->pending());
+      EXPECT_EQ("か", entry->pending());
       EXPECT_EQ(1, key_length);
       EXPECT_TRUE(fixed);
     }
@@ -780,14 +712,11 @@ TEST_F(TableTest, MobileMode) {
       const mozc::composer::Entry *entry = NULL;
       size_t key_length = 0;
       bool fixed = false;
-      // "し*"
-      entry = table.LookUpPrefix("\xE3\x81\x97*", &key_length, &fixed);
-      // "し*"
-      EXPECT_EQ("\xE3\x81\x97*", entry->input());
+      entry = table.LookUpPrefix("し*", &key_length, &fixed);
+      EXPECT_EQ("し*", entry->input());
       EXPECT_EQ("", entry->result());
-      // "\x0F*\x0Eじ"
       // 0F and 0E are shift in/out characters.
-      EXPECT_EQ("\x0F*\x0E\xE3\x81\x98", entry->pending());
+      EXPECT_EQ("\x0F*\x0Eじ", entry->pending());
       EXPECT_EQ(4, key_length);
       EXPECT_TRUE(fixed);
     }
@@ -798,12 +727,13 @@ TEST_F(TableTest, MobileMode) {
     request.set_special_romanji_table(
         mozc::commands::Request::TWELVE_KEYS_TO_HALFWIDTHASCII);
     Table table;
-    table.InitializeWithRequestAndConfig(request, default_config_);
+    table.InitializeWithRequestAndConfig(request, config_, mock_data_manager_);
     const mozc::composer::Entry *entry = NULL;
     size_t key_length = 0;
     bool fixed = false;
     entry = table.LookUpPrefix("2", &key_length, &fixed);
-    EXPECT_EQ("a", entry->pending());
+    // "{?}" is to be replaced by "\x0F?\x0E".
+    EXPECT_EQ("\x0F?\x0E" "a", entry->pending());
   }
 
   {
@@ -811,16 +741,13 @@ TEST_F(TableTest, MobileMode) {
     request.set_special_romanji_table(
         mozc::commands::Request::GODAN_TO_HIRAGANA);
     Table table;
-    table.InitializeWithRequestAndConfig(request, default_config_);
+    table.InitializeWithRequestAndConfig(request, config_, mock_data_manager_);
     {
       const mozc::composer::Entry *entry = NULL;
       size_t key_length = 0;
       bool fixed = false;
-      // "しゃ*"
-      entry = table.LookUpPrefix("\xE3\x81\x97\xE3\x82\x83*", &key_length,
-                                 &fixed);
-      // "じゃ"
-      EXPECT_EQ("\xE3\x81\x98\xE3\x82\x83", entry->pending());
+      entry = table.LookUpPrefix("しゃ*", &key_length, &fixed);
+      EXPECT_EQ("じゃ", entry->pending());
     }
   }
 
@@ -829,16 +756,28 @@ TEST_F(TableTest, MobileMode) {
     request.set_special_romanji_table(
         mozc::commands::Request::FLICK_TO_HIRAGANA);
     Table table;
-    table.InitializeWithRequestAndConfig(request, default_config_);
+    table.InitializeWithRequestAndConfig(request, config_, mock_data_manager_);
 
     size_t key_length = 0;
     bool fixed = false;
     const mozc::composer::Entry *entry = table.LookUpPrefix("a", &key_length,
                                                             &fixed);
-    // "き"
-    EXPECT_EQ("\xE3\x81\x8D", entry->pending());
+    EXPECT_EQ("き", entry->pending());
   }
 
+  {
+    // To Notouch -> Hiragana mode.
+    request.set_special_romanji_table(
+        mozc::commands::Request::NOTOUCH_TO_HIRAGANA);
+    Table table;
+    table.InitializeWithRequestAndConfig(request, config_, mock_data_manager_);
+
+    size_t key_length = 0;
+    bool fixed = false;
+    const mozc::composer::Entry *entry = table.LookUpPrefix("a", &key_length,
+                                                            &fixed);
+    EXPECT_EQ("き", entry->pending());
+  }
 }
 
 TEST_F(TableTest, OrderOfAddRule) {
@@ -1041,23 +980,21 @@ TEST_F(TableTest, SpecialKeys) {
 
 TEST_F(TableTest, TableManager) {
   TableManager table_manager;
-  set<const Table*> table_set;
+  std::set<const Table*> table_set;
   static const commands::Request::SpecialRomanjiTable
       special_romanji_table[] = {
     commands::Request::DEFAULT_TABLE,
     commands::Request::TWELVE_KEYS_TO_HIRAGANA,
     commands::Request::TWELVE_KEYS_TO_HALFWIDTHASCII,
-    commands::Request::TWELVE_KEYS_TO_NUMBER,
     commands::Request::FLICK_TO_HIRAGANA,
     commands::Request::FLICK_TO_HALFWIDTHASCII,
-    commands::Request::FLICK_TO_NUMBER,
     commands::Request::TOGGLE_FLICK_TO_HIRAGANA,
     commands::Request::TOGGLE_FLICK_TO_HALFWIDTHASCII,
-    commands::Request::TOGGLE_FLICK_TO_NUMBER,
     commands::Request::GODAN_TO_HIRAGANA,
     commands::Request::QWERTY_MOBILE_TO_HIRAGANA,
-    commands::Request::QWERTY_MOBILE_TO_HIRAGANA_NUMBER,
     commands::Request::QWERTY_MOBILE_TO_HALFWIDTHASCII,
+    commands::Request::NOTOUCH_TO_HIRAGANA,
+    commands::Request::NOTOUCH_TO_HALFWIDTHASCII,
   };
   static const config::Config::PreeditMethod preedit_method[] = {
     config::Config::ROMAN,
@@ -1087,9 +1024,11 @@ TEST_F(TableTest, TableManager) {
           config.set_preedit_method(preedit_method[preedit]);
           config.set_punctuation_method(punctuation_method[punctuation]);
           config.set_symbol_method(symbol_method[symbol]);
-          const Table *table = table_manager.GetTable(request, config);
+          const Table *table = table_manager.GetTable(request, config,
+                                                      mock_data_manager_);
           EXPECT_TRUE(table != NULL);
-          EXPECT_TRUE(table_manager.GetTable(request, config) == table);
+          EXPECT_TRUE(table_manager.GetTable(request, config,
+                                             mock_data_manager_) == table);
           EXPECT_TRUE(table_set.find(table) == table_set.end());
           table_set.insert(table);
         }
@@ -1109,9 +1048,11 @@ TEST_F(TableTest, TableManager) {
     config.set_punctuation_method(Config::KUTEN_TOUTEN);
     config.set_symbol_method(Config::CORNER_BRACKET_MIDDLE_DOT);
     config.set_custom_roman_table(kRule);
-    const Table *table = table_manager.GetTable(request, config);
+    const Table *table = table_manager.GetTable(request, config,
+                                                mock_data_manager_);
     EXPECT_TRUE(table != NULL);
-    EXPECT_TRUE(table_manager.GetTable(request, config) == table);
+    EXPECT_TRUE(table_manager.GetTable(request, config,
+                                       mock_data_manager_) == table);
     EXPECT_TRUE(NULL != table->LookUp("a"));
     EXPECT_TRUE(NULL == table->LookUp("kk"));
 
@@ -1119,9 +1060,11 @@ TEST_F(TableTest, TableManager) {
         "a\t[A]\n"  // 2 entry rule
         "kk\t[X]\tk\n";  // 3 entry rule
     config.set_custom_roman_table(kRule2);
-    const Table *table2 = table_manager.GetTable(request, config);
+    const Table *table2 = table_manager.GetTable(request, config,
+                                                 mock_data_manager_);
     EXPECT_TRUE(table2 != NULL);
-    EXPECT_TRUE(table_manager.GetTable(request, config) == table2);
+    EXPECT_TRUE(table_manager.GetTable(request, config,
+                                       mock_data_manager_) == table2);
     EXPECT_TRUE(NULL != table2->LookUp("a"));
     EXPECT_TRUE(NULL != table2->LookUp("kk"));
   }

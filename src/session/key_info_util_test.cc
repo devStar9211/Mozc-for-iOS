@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,10 +29,13 @@
 
 #include "session/key_info_util.h"
 
-#include "config/config.pb.h"
+#include <algorithm>
+#include <vector>
+
+#include "composer/key_parser.h"
 #include "config/config_handler.h"
-#include "session/commands.pb.h"
-#include "session/key_parser.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 #include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
 
@@ -42,7 +45,7 @@ using ::mozc::commands::KeyEvent;
 using ::mozc::config::Config;
 using ::mozc::config::ConfigHandler;
 
-void PushKey(const string &key_string, vector<KeyInformation> *keys) {
+void PushKey(const string &key_string, std::vector<KeyInformation> *keys) {
   KeyEvent key;
   if (!KeyParser::ParseKey(key_string, &key)) {
     return;
@@ -70,12 +73,12 @@ TEST(KeyInfoUtilTest, ExtractSortedDirectModeKeys) {
 
   const auto &actual = KeyInfoUtil::ExtractSortedDirectModeKeys(config);
 
-  vector<KeyInformation> expected;
+  std::vector<KeyInformation> expected;
   PushKey("HENKAN", &expected);
   PushKey("Ctrl j", &expected);
   PushKey("Ctrl k", &expected);
   PushKey("Ctrl l", &expected);
-  sort(expected.begin(), expected.end());
+  std::sort(expected.begin(), expected.end());
 
   ASSERT_EQ(expected.size(), actual.size());
   for (size_t i = 0; i < expected.size(); ++i) {
@@ -84,12 +87,12 @@ TEST(KeyInfoUtilTest, ExtractSortedDirectModeKeys) {
 }
 
 TEST(KeyInfoUtilTest, ContainsKey) {
-  vector<KeyInformation> direct_mode_keys;
+  std::vector<KeyInformation> direct_mode_keys;
   PushKey("HENKAN", &direct_mode_keys);
   PushKey("Ctrl j", &direct_mode_keys);
   PushKey("Ctrl k", &direct_mode_keys);
   PushKey("Ctrl l", &direct_mode_keys);
-  sort(direct_mode_keys.begin(), direct_mode_keys.end());
+  std::sort(direct_mode_keys.begin(), direct_mode_keys.end());
 
   {
     KeyEvent key;

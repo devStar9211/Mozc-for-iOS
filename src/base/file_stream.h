@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,11 +30,14 @@
 #ifndef MOZC_BASE_FILE_STREAM_H_
 #define MOZC_BASE_FILE_STREAM_H_
 
+#include <string>
 #ifdef MOZC_USE_PEPPER_FILE_IO
 #include <sstream>
 #else  // MOZC_USE_PEPPER_FILE_IO
 #include <fstream>
 #endif  // MOZC_USE_PEPPER_FILE_IO
+
+#include "base/port_string.h"
 
 namespace mozc {
 
@@ -44,42 +47,50 @@ namespace mozc {
 // This class reads all of the file using Pepper FileIO and sotres the data in
 // string_buffer_ when open() is called. This class can't be used in the NaCl
 // main thread.
-class InputFileStream : public istream {
+class InputFileStream : public std::istream {
  public:
   InputFileStream();
   explicit InputFileStream(const char* filename,
-                           ios_base::openmode mode = ios_base::in);
+                           std::ios_base::openmode mode = std::ios_base::in);
   // Opens the file and reads the all data to string_buffer_.
-  void open(const char* filename, ios_base::openmode mode = ios_base::in);
+  void open(const char* filename, ios_base::openmode mode = std::ios_base::in);
   // Do nothing.
   // Note: Error handling after close() is not correctly implemented.
   // TODO(horo) Implement error handling correctly.
   void close();
 
+  // Helper functions to load the entire content of a file into string.
+  void ReadToString(string *s);
+  string Read();
+
  private:
-  stringbuf string_buffer_;
+  virtual void UnusedKeyMethod();  // go/definekeymethod
+
+  std::stringbuf string_buffer_;
 };
 
 // Implementation of ofstream for NaCl.
 // This class writes all of the data to the file using Pepper FileIO in the
 // destructor or when close() is called. This class can't be used in the NaCl
 // main thread.
-class OutputFileStream : public ostream {
+class OutputFileStream : public std::ostream {
  public:
   OutputFileStream();
   explicit OutputFileStream(const char* filename,
-                            ios_base::openmode mode = ios_base::in);
+                            std::ios_base::openmode mode = std::ios_base::in);
   ~OutputFileStream();
   // Sets filename_.
-  void open(const char* filename, ios_base::openmode mode = ios_base::in);
+  void open(const char* filename, ios_base::openmode mode = std::ios_base::in);
   // Write the data to the file using Pepper FileIO.
   // Note: Error handling after close() is not correctly implemented.
   // TODO(horo) Implement error handling correctly.
   void close();
 
  private:
+  virtual void UnusedKeyMethod();  // go/definekeymethod
+
   string filename_;
-  stringbuf string_buffer_;
+  std::stringbuf string_buffer_;
   bool write_done_;
 };
 
@@ -94,30 +105,42 @@ class OutputFileStream : public ostream {
 // Since these classes assume an input file is encoded in UTF-8, we have to
 // change the open() function and convert its encoding for platforms which use
 // encodings except UTF-8 for internationalized file names.
-class InputFileStream : public ifstream {
+class InputFileStream : public std::ifstream {
  public:
   InputFileStream();
   explicit InputFileStream(const char* filename,
-                           ios_base::openmode mode = ios_base::in);
+                           std::ios_base::openmode mode = std::ios_base::in);
 
   // Opens the specified file.
   // This function is a wrapper function for the ifstream::open() function
   // to change the encoding of the specified file name from UTF-8 to its native
   // one before calling the ifstream::open() function.
-  void open(const char* filename, ios_base::openmode mode = ios_base::in);
+  void open(const char* filename,
+            std::ios_base::openmode mode = std::ios_base::in);
+
+  // Helper functions to load the entire content of a file into string.
+  void ReadToString(string *s);
+  string Read();
+
+ private:
+  virtual void UnusedKeyMethod();  // go/definekeymethod
 };
 
-class OutputFileStream : public ofstream {
+class OutputFileStream : public std::ofstream {
  public:
   OutputFileStream();
   explicit OutputFileStream(const char* filename,
-                            ios_base::openmode mode = ios_base::out);
+                            std::ios_base::openmode mode = std::ios_base::out);
 
   // Opens the specified file.
   // This function is a wrapper function for the ofstream::open() function
   // to change the encoding of the specified file name from UTF-8 to its native
   // one before calling the ofstream::open() function.
-  void open(const char* filename, ios_base::openmode mode = ios_base::out);
+  void open(const char* filename,
+            std::ios_base::openmode mode = std::ios_base::out);
+
+ private:
+  virtual void UnusedKeyMethod();  // go/definekeymethod
 };
 #endif  // MOZC_USE_PEPPER_FILE_IO
 

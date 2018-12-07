@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,7 +37,7 @@
 #include "base/util.h"
 #include "base/version.h"
 #include "ipc/ipc.h"
-#include "renderer/renderer_command.pb.h"
+#include "protocol/renderer_command.pb.h"
 #include "renderer/renderer_interface.h"
 #include "testing/base/public/gunit.h"
 
@@ -47,7 +47,7 @@ namespace renderer {
 
 namespace {
 const string UpdateVersion(int diff) {
-  vector<string> tokens;
+  std::vector<string> tokens;
   Util::SplitStringUsing(Version::GetMozcVersion(), ".", &tokens);
   EXPECT_EQ(tokens.size(), 4);
   char buf[64];

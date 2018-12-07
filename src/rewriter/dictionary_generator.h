@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,11 +33,12 @@
 #define MOZC_REWRITER_DICTIONARY_GENERATOR_H_
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "base/port.h"
-#include "base/scoped_ptr.h"
+#include "data_manager/data_manager_interface.h"
 
 namespace mozc {
 
@@ -99,7 +100,7 @@ class Token {
 
 class DictionaryGenerator {
  public:
-  DictionaryGenerator();
+  explicit DictionaryGenerator(const DataManagerInterface &data_manager);
   virtual ~DictionaryGenerator();
 
   // Add the token into the pool.
@@ -109,15 +110,16 @@ class DictionaryGenerator {
   bool Output(const string &filename) const;
 
  private:
-  scoped_ptr<ObjectPool<Token> > token_pool_;
-  scoped_ptr<map<uint64, Token *> > token_map_;
-  scoped_ptr<const UserPOSInterface> user_pos_;
-  const uint16 open_bracket_id_;
-  const uint16 close_bracket_id_;
+  std::unique_ptr<ObjectPool<Token>> token_pool_;
+  std::unique_ptr<std::map<uint64, Token *>> token_map_;
+  std::unique_ptr<const UserPOSInterface> user_pos_;
+  uint16 open_bracket_id_;
+  uint16 close_bracket_id_;
 
   DISALLOW_COPY_AND_ASSIGN(DictionaryGenerator);
 };
 
 }  // namespace rewriter
 }  // namespace mozc
+
 #endif  // MOZC_REWRITER_DICTIONARY_GENERATOR_H_

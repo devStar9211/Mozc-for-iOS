@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,8 +35,8 @@
 #include "base/logging.h"
 #include "base/text_normalizer.h"
 #include "base/util.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
+#include "request/conversion_request.h"
 
 namespace mozc {
 namespace {
@@ -55,15 +55,10 @@ bool NormalizeCandidate(Segment::Candidate *candidate,
 
   string value, content_value;
   switch (type) {
-    case CANDIDATE:
-      TextNormalizer::NormalizeCandidateText(candidate->value, &value);
-      TextNormalizer::NormalizeCandidateText(candidate->content_value,
-                                             &content_value);
-      break;
+    case CANDIDATE:  // Go through to TRANSLITERATION
     case TRANSLITERATION:
-      TextNormalizer::NormalizeTransliterationText(candidate->value, &value);
-      TextNormalizer::NormalizeTransliterationText(candidate->content_value,
-                                                   &content_value);
+      TextNormalizer::NormalizeText(candidate->value, &value);
+      TextNormalizer::NormalizeText(candidate->content_value, &content_value);
       break;
     default:
       LOG(ERROR) << "unkown type";

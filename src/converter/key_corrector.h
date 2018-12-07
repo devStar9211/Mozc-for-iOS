@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -156,8 +156,8 @@ class KeyCorrector {
   InputMode mode_;
   string corrected_key_;
   string original_key_;
-  vector<size_t> alignment_;
-  vector<size_t> rev_alignment_;
+  std::vector<size_t> alignment_;
+  std::vector<size_t> rev_alignment_;
 
   DISALLOW_COPY_AND_ASSIGN(KeyCorrector);
 };

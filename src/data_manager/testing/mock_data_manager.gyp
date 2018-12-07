@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -40,12 +40,14 @@
     'platform_data_dir': '<(mozc_dir)/data/test/dictionary',
     'boundary_def': '<(mozc_dir)/data/rules/boundary.def',
     'dataset_tag': 'mock',
-    # Force using 2byte cost data for testing.
     'use_1byte_cost_for_connection_data': 'false',
     'dictionary_files': [
       '<(platform_data_dir)/dictionary.txt',
     ],
-    'gen_test_dictionary': 'true',
+    'magic_number': '\\x4D\\x4F\\x43\\x4B',  # MOCK
+    'mozc_data_varname': 'kMockMozcDataSet',
+    'out_mozc_data': 'mock_mozc.data',
+    'out_mozc_data_header': 'mock_mozc_data.inc',
   },
   # This 'includes' defines the following targets:
   #   - mock_data_manager  (type: static_library)

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,9 +30,10 @@
 #ifndef MOZC_SESSION_GENERIC_STORAGE_MANAGER_H_
 #define MOZC_SESSION_GENERIC_STORAGE_MANAGER_H_
 
+#include <memory>
+
 #include "base/port.h"
-#include "base/scoped_ptr.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 
 namespace mozc {
 
@@ -87,7 +88,7 @@ class GenericStorageInterface {
   virtual const char *Lookup(const string &key) = 0;
   // Lists all the values.
   // If something goes wrong, returns false.
-  virtual bool GetAllValues(vector<string> *values) = 0;
+  virtual bool GetAllValues(std::vector<string> *values) = 0;
   // Clears all the entries.
   virtual bool Clear() = 0;
 };
@@ -108,7 +109,7 @@ class GenericLruStorage : public GenericStorageInterface {
   virtual const char *Lookup(const string &key);
 
   // The order is new to old.
-  virtual bool GetAllValues(vector<string> *values);
+  virtual bool GetAllValues(std::vector<string> *values);
 
   virtual bool Clear();
 
@@ -119,13 +120,13 @@ class GenericLruStorage : public GenericStorageInterface {
 
  private:
   friend class GenericLruStorageProxy;
-  scoped_ptr<mozc::storage::LRUStorage> lru_storage_;
+  std::unique_ptr<mozc::storage::LRUStorage> lru_storage_;
   const string file_name_;
   const size_t value_size_;
   const size_t size_;
   const uint32 seed_;
   // Temporary buffer to insert a value into this storage.
-  scoped_ptr<char[]> value_buffer_;
+  std::unique_ptr<char[]> value_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(GenericLruStorage);
 };

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -36,8 +36,8 @@
 #include "base/logging.h"
 #include "base/system_util.h"
 #include "base/util.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
+#include "request/conversion_request.h"
 #include "testing/base/public/gunit.h"
 
 DECLARE_string(test_tmpdir);
@@ -70,7 +70,7 @@ void AddCandidate(const string &value,
 string GetCandidates(const Segments &segments) {
   CHECK_EQ(1, segments.segments_size());
   const Segment &seg = segments.segment(0);
-  vector<string> results;
+  std::vector<string> results;
   for (size_t i = 0; i < seg.candidates_size(); ++i) {
     results.push_back(seg.candidate(i).value);
   }

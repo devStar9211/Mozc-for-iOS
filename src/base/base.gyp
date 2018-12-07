@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -39,39 +39,23 @@
       'type': 'static_library',
       'toolsets': ['host', 'target'],
       'sources': [
-        'clock_mock.cc',
         'cpu_stats.cc',
-        'iconv.cc',
         'process.cc',
         'process_mutex.cc',
         'run_level.cc',
         'scheduler.cc',
         'stopwatch.cc',
-        'timer.cc',
         'unnamed_event.cc',
-        'update_checker.cc',
-        'update_util.cc',
-        'url.cc',
       ],
       'dependencies': [
         'base_core',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'conditions': [
         ['OS=="mac"', {
           'sources': [
             'mac_process.mm',
             'mac_util.mm',
           ],
-          'link_settings': {
-            'libraries': [
-              '/usr/lib/libiconv.dylib',  # used in iconv.cc
-            ],
-          },
         }],
         ['OS=="win"', {
           'sources': [
@@ -79,33 +63,35 @@
             'win_sandbox.cc',
           ],
         }],
-        # When the target platform is 'Android', build settings are currently
-        # shared among *host* binaries and *target* binaries. This means that
-        # you should implement *host* binaries by using limited libraries
-        # which are also available on NDK.
-        ['OS=="linux" and target_platform!="Android" and '
-         'not (target_platform=="NaCl" and _toolset=="target")', {
-          'defines': [
-            'HAVE_LIBRT=1',
-          ],
-          'link_settings': {
-            'libraries': [
-              '-lrt',  # used in util.cc for Util::GetTicks()/GetFrequency()
-            ],
-          },
-        }],
         ['target_platform=="Android"', {
           'sources!': [
-            'iconv.cc',
             'process.cc',
           ],
         }],
         ['target_platform=="NaCl" and _toolset=="target"', {
           'sources!': [
-            'crash_report_handler.cc',
             'process.cc',
           ],
+          # TODO(hsumita): Move this link settings to more suitable position.
+          'link_settings': {
+            'libraries': [
+              '-lppapi',
+              '-lppapi_cpp',
+            ],
+          },
         }],
+      ],
+    },
+    {
+      'target_name': 'url',
+      'type': 'static_library',
+      'toolsets': ['host', 'target'],
+      'sources': [
+        'url.cc',
+      ],
+      'dependencies': [
+        'base_core',  # for logging, util, version
+        'singleton',
       ],
     },
     {
@@ -113,23 +99,16 @@
       'type': 'static_library',
       'toolsets': ['host', 'target'],
       'sources': [
-        '<(gen_out_dir)/character_set.h',
+        '<(gen_out_dir)/character_set.inc',
         '<(gen_out_dir)/version_def.h',
-        'debug.cc',
         'file_stream.cc',
         'file_util.cc',
-        'flags.cc',
-        'hash.cc',
-        'init.cc',
+        'init_mozc.cc',
+        'japanese_util_rule.cc',
         'logging.cc',
         'mmap.cc',
-        'mutex.cc',
         'number_util.cc',
-        'scoped_handle.cc',
-        'singleton.cc',
-        'string_piece.cc',
         'system_util.cc',
-        'text_converter.cc',
         'text_normalizer.cc',
         'thread.cc',
         'util.cc',
@@ -137,23 +116,26 @@
         'win_util.cc',
       ],
       'dependencies': [
+        'clock',
+        'flags',
         'gen_character_set#host',
         'gen_version_def#host',
+        'hash',
+        'mutex',
+        'singleton',
+        'string_piece',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'conditions': [
         ['OS=="win"', {
+          'dependencies': [
+            'scoped_handle',
+          ],
           'link_settings': {
             'msvs_settings': {
               'VCLinkerTool': {
                 'AdditionalDependencies': [
                   'aux_ulib.lib',  # used in 'win_util.cc'
-                  'propsys.lib',   # used in 'win_util.cc'
-                  'version.lib',  # used in 'util.cc'
+                  'KtmW32.lib',  # used in 'file_util.cc'
                 ],
               },
             },
@@ -173,9 +155,6 @@
           'sources': [
             'android_util.cc',
           ],
-          'dependencies': [
-            '../android/android_base.gyp:android_sysconf',
-          ],
         }],
         ['target_platform=="NaCl" and _toolset=="target"', {
           'sources': [
@@ -185,14 +164,85 @@
       ],
     },
     {
+      'target_name': 'update_util',
+      'type': 'static_library',
+      'toolsets': ['host', 'target'],
+      'sources': [
+        'update_util.cc',
+      ],
+    },
+    {
+      'target_name': 'scoped_handle',
+      'type': 'static_library',
+      'toolsets': ['host', 'target'],
+      'sources': [
+        'scoped_handle.cc',
+      ],
+    },
+    {
+      'target_name': 'string_piece',
+      'type': 'static_library',
+      'toolsets': ['host', 'target'],
+      'sources': [
+        'string_piece.cc',
+      ],
+    },
+    {
+      'target_name': 'mutex',
+      'type': 'static_library',
+      'toolsets': ['host', 'target'],
+      'sources': [
+        'mutex.cc',
+      ],
+    },
+    {
+      'target_name': 'singleton',
+      'type': 'static_library',
+      'toolsets': ['host', 'target'],
+      'sources': [
+        'singleton.cc',
+      ],
+      'dependencies': [
+        'mutex',
+      ],
+    },
+    {
+      'target_name': 'flags',
+      'type': 'static_library',
+      'toolsets': ['host', 'target'],
+      'sources': [
+        'flags.cc',
+      ],
+      'dependencies': [
+        'singleton',
+      ],
+    },
+    {
+      'target_name': 'clock',
+      'type': 'static_library',
+      'toolsets': ['host', 'target'],
+      'sources': [
+        'clock.cc',
+      ],
+      'dependencies': [
+        'singleton',
+      ],
+    },
+    {
+      'target_name': 'hash',
+      'type': 'static_library',
+      'toolsets': ['host', 'target'],
+      'sources': [
+        'hash.cc',
+      ],
+      'dependencies': [
+        'string_piece',
+      ],
+    },
+    {
       'target_name': 'gen_character_set',
       'type': 'none',
       'toolsets': ['host'],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'actions': [
         {
           'action_name': 'gen_character_set',
@@ -210,7 +260,7 @@
             '<@(input_files)',
           ],
           'outputs': [
-            '<(gen_out_dir)/character_set.h',
+            '<(gen_out_dir)/character_set.inc',
           ],
           'action': [
             'python', 'gen_character_set.py',
@@ -219,7 +269,7 @@
             '--jisx0208file=../data/unicode/JIS0208.TXT',
             '--jisx0212file=../data/unicode/JIS0212.TXT',
             '--jisx0213file=../data/unicode/jisx0213-2004-std.txt',
-            '--output=<(gen_out_dir)/character_set.h'
+            '--output=<(gen_out_dir)/character_set.inc'
           ],
         },
       ],
@@ -234,11 +284,6 @@
       'dependencies': [
         'base_core#host',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'obfuscator_support',
@@ -251,11 +296,6 @@
       'dependencies': [
         'base',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'encryptor',
@@ -269,11 +309,6 @@
         'base',
         'obfuscator_support',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'conditions': [
         ['OS=="win"', {
           'link_settings': {
@@ -292,11 +327,6 @@
       'target_name': 'gen_version_def',
       'type': 'none',
       'toolsets': ['host'],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'actions': [
         {
           'action_name': 'gen_version_def',
@@ -322,27 +352,17 @@
       'target_name': 'config_file_stream',
       'type': 'static_library',
       'sources': [
-        '<(gen_out_dir)/config_file_stream_data.h',
+        '<(gen_out_dir)/config_file_stream_data.inc',
         'config_file_stream.cc',
       ],
       'dependencies': [
         'gen_config_file_stream_data#host',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'gen_config_file_stream_data',
       'type': 'none',
       'toolsets': ['host'],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'actions': [
         {
           'action_name': 'gen_config_file_stream_data',
@@ -354,23 +374,20 @@
             '../data/keymap/ms-ime.tsv',
             '../data/preedit/12keys-halfwidthascii.tsv',
             '../data/preedit/12keys-hiragana.tsv',
-            '../data/preedit/12keys-number.tsv',
             '../data/preedit/flick-halfwidthascii.tsv',
             '../data/preedit/flick-hiragana.tsv',
-            '../data/preedit/flick-number.tsv',
             '../data/preedit/hiragana-romanji.tsv',
             '../data/preedit/kana.tsv',
+            '../data/preedit/notouch-hiragana.tsv',
             '../data/preedit/godan-hiragana.tsv',
             '../data/preedit/qwerty_mobile-halfwidthascii.tsv',
-            '../data/preedit/qwerty_mobile-hiragana-number.tsv',
             '../data/preedit/qwerty_mobile-hiragana.tsv',
             '../data/preedit/romanji-hiragana.tsv',
             '../data/preedit/toggle_flick-halfwidthascii.tsv',
             '../data/preedit/toggle_flick-hiragana.tsv',
-            '../data/preedit/toggle_flick-number.tsv',
           ],
           'outputs': [
-            '<(gen_out_dir)/config_file_stream_data.h',
+            '<(gen_out_dir)/config_file_stream_data.inc',
           ],
           'action': [
             'python', 'gen_config_file_stream_data.py',
@@ -393,11 +410,6 @@
       'dependencies': [
         'base_core',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'crash_report_handler',
@@ -408,11 +420,6 @@
       'dependencies': [
         'base',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
       'conditions': [
         ['OS=="win" and branding=="GoogleJapaneseInput"', {
           'dependencies': [
@@ -420,13 +427,35 @@
           ],
         }],
         ['OS=="mac"', {
+          'hard_dependency': 1,
           'sources': [
             'crash_report_handler_mac.mm',
           ],
           'sources!': [
             'crash_report_handler.cc',
-          ]
+          ],
+          'dependencies': [
+            'breakpad',
+          ],
         }],
+      ],
+    },
+    {
+      'target_name': 'debug',
+      'type': 'static_library',
+      'sources': [
+        'debug.cc',
+      ],
+    },
+    {
+      'target_name': 'serialized_string_array',
+      'type': 'static_library',
+      'toolsets': ['host', 'target'],
+      'sources': [
+        'serialized_string_array.cc',
+      ],
+      'dependencies': [
+        'base_core',
       ],
     },
   ],
@@ -502,6 +531,50 @@
               ],
               'destination': '<(PRODUCT_DIR)/data',
             },
+          ],
+        },
+      ]},
+    ],
+    ['OS=="mac"', {
+      'targets': [
+        {
+          'target_name': 'breakpad',
+          'type': 'none',
+          'variables': {
+            'pbdir': '<(third_party_dir)/breakpad',
+          },
+          'actions': [{
+            'action_name': 'build_breakpad',
+            'inputs': [
+              '<(pbdir)/src/client/mac/Breakpad.xcodeproj/project.pbxproj',
+            ],
+            'outputs': [
+              '<(mac_breakpad_dir)/Breakpad.framework',
+              '<(mac_breakpad_dir)/Inspector',
+              '<(mac_breakpad_dir)/dump_syms',
+              '<(mac_breakpad_dir)/symupload',
+            ],
+            'action': [
+              'python', '../build_tools/build_breakpad.py',
+              '--pbdir', '<(pbdir)',
+              '--outdir', '<(mac_breakpad_dir)',
+              '--sdk', 'macosx<(mac_sdk)',
+            ],
+          }],
+          'direct_dependent_settings': {
+            'mac_framework_dirs': [
+              '<(mac_breakpad_dir)',
+            ],
+          },
+        },
+        {
+          'target_name': 'mac_util_main',
+          'type': 'executable',
+          'sources': [
+            'mac_util_main.cc',
+          ],
+          'dependencies': [
+            'base',
           ],
         },
       ]},

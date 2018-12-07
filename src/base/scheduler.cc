@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,46 +30,99 @@
 #include "base/scheduler.h"
 
 #include <cstdlib>
+#include <functional>
 #include <map>
 #include <utility>
 
+#include "base/clock.h"
 #include "base/logging.h"
 #include "base/mutex.h"
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "base/singleton.h"
-#include "base/timer.h"
+#include "base/thread.h"
+#include "base/unnamed_event.h"
 #include "base/util.h"
 
 namespace mozc {
 namespace {
-class QueueTimer : public Timer {
+
+class TimerThread final : public Thread {
  public:
-  QueueTimer(void (*callback)(void *),  // NOLINT
-             void *arg,
-             uint32 due_time,
-             uint32 period)
-  : callback_(callback),
-    arg_(arg),
-    due_time_(due_time),
-    period_(period) {
+  TimerThread(std::function<void()> callback,
+              uint32 due_time,
+              uint32 interval)
+      : callback_(callback),
+        due_time_(due_time),
+        interval_(interval) {
+    CHECK(due_time_ != 0 || interval_ != 0)
+        << "Either of due_time or interval must be non 0.";
   }
 
-  virtual ~QueueTimer() {}
-
-  bool Start() {
-    return Timer::Start(due_time_, period_);
+  ~TimerThread() override {
+    SignalQuit();
+    Join();
   }
 
-  virtual void Signaled() {
-    callback_(arg_);
+  void Run() override {
+    if (event_.Wait(due_time_)) {
+      VLOG(1) << "Received notification event";
+      return;
+    }
+
+    VLOG(2) << "call TimerCallback()";
+    callback_();
+
+    if (interval_ == 0) {
+      VLOG(2) << "Run() end";
+      return;
+    }
+
+    while (true) {
+      if (event_.Wait(interval_)) {
+        VLOG(1) << "Received notification event";
+        return;
+      }
+      VLOG(2) << "call TimerCallback()";
+      callback_();
+    }
   }
 
  private:
-  void (*callback_)(void *);
-  void *arg_;
+  void SignalQuit() {
+    const bool result = event_.Notify();
+    DCHECK(result);
+  }
+
+  std::function<void()> callback_;
+
+  // The amount of time to elapse before the timer is to be set to the
+  // signaled state for the first time, in milliseconds.
   uint32 due_time_;
-  uint32 period_;
+
+  // The period of the timer, in milliseconds. If this is zero, the
+  // timer is one-shot timer. If this is greater than zero, the timer
+  // is periodic.
+  uint32 interval_;
+
+  UnnamedEvent event_;
+
+  DISALLOW_COPY_AND_ASSIGN(TimerThread);
+};
+
+class QueueTimer final {
+ public:
+  QueueTimer(std::function<void()> callback,
+             uint32 due_time,
+             uint32 period)
+      : timer_thread_(callback, due_time, period) {
+  }
+
+  void Start() {
+    timer_thread_.Start("QueueTimer");
+  }
+
+ private:
+  TimerThread timer_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(QueueTimer);
 };
@@ -143,7 +196,7 @@ class Job {
 class SchedulerImpl : public Scheduler::SchedulerInterface {
  public:
   SchedulerImpl() {
-    Util::SetRandomSeed(static_cast<uint32>(Util::GetTime()));
+    Util::SetRandomSeed(static_cast<uint32>(Clock::GetTime()));
   }
 
   virtual ~SchedulerImpl() {
@@ -172,8 +225,8 @@ class SchedulerImpl : public Scheduler::SchedulerInterface {
       return false;
     }
 
-    pair<map<string, Job>::iterator, bool> insert_result
-        = jobs_.insert(make_pair(job_setting.name(), Job(job_setting)));
+    std::pair<std::map<string, Job>::iterator, bool> insert_result =
+        jobs_.insert(std::make_pair(job_setting.name(), Job(job_setting)));
     if (!insert_result.second) {
       LOG(ERROR) << "insert failed";
       return false;
@@ -184,19 +237,14 @@ class SchedulerImpl : public Scheduler::SchedulerInterface {
     const uint32 delay = CalcDelay(job_setting);
     // DON'T copy job instance after set_timer() not to delete timer twice.
     // TODO(hsumita): Make Job class uncopiable.
-    job->set_timer(new QueueTimer(&TimerCallback, job, delay,
+    job->set_timer(new QueueTimer(std::bind(TimerCallback, job), delay,
                                   job_setting.default_interval()));
     if (job->timer() == NULL) {
       LOG(ERROR) << "failed to create QueueTimer";
       return false;
     }
-    const bool started = job->mutable_timer()->Start();
-    if (started) {
-      return true;
-    } else {
-      job->set_timer(NULL);
-      return false;
-    }
+    job->mutable_timer()->Start();
+    return true;
   }
 
   virtual bool RemoveJob(const string &name) {
@@ -206,6 +254,10 @@ class SchedulerImpl : public Scheduler::SchedulerInterface {
       return false;
     }
     return (jobs_.erase(name) != 0);
+  }
+
+  virtual bool HasJob(const string &name) const {
+    return (jobs_.find(name) != jobs_.end());
   }
 
  private:
@@ -239,10 +291,6 @@ class SchedulerImpl : public Scheduler::SchedulerInterface {
     }
   }
 
-  bool HasJob(const string &name) const {
-    return (jobs_.find(name) != jobs_.end());
-  }
-
   uint32 CalcDelay(const Scheduler::JobSetting &job_setting) {
     uint32 delay = job_setting.delay_start();
     if (job_setting.random_delay() != 0) {
@@ -251,7 +299,7 @@ class SchedulerImpl : public Scheduler::SchedulerInterface {
     return delay;
   }
 
-  map<string, Job> jobs_;
+  std::map<string, Job> jobs_;
   Mutex mutex_;
 
   DISALLOW_COPY_AND_ASSIGN(SchedulerImpl);
@@ -278,6 +326,10 @@ bool Scheduler::RemoveJob(const string &name) {
 
 void Scheduler::RemoveAllJobs() {
   GetSchedulerHandler()->RemoveAllJobs();
+}
+
+bool Scheduler::HasJob(const string &name) {
+  return GetSchedulerHandler()->HasJob(name);
 }
 
 void Scheduler::SetSchedulerHandler(SchedulerInterface *handler) {

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,9 +29,7 @@
 
 #include "win32/ime/ime_input_context.h"
 
-#define _ATL_NO_HOSTING  // prevents including <dimm.h>
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlwin.h>
 
 #include "base/logging.h"

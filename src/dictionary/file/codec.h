@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -41,31 +41,37 @@
 #include "dictionary/file/section.h"
 
 namespace mozc {
-
+namespace dictionary {
 
 class DictionaryFileCodec : public DictionaryFileCodecInterface {
  public:
   DictionaryFileCodec();
-  virtual ~DictionaryFileCodec();
+  ~DictionaryFileCodec() override;
 
-  virtual void WriteSections(const vector<DictionaryFileSection> &sections,
-                             ostream *ofs) const;
-  virtual bool ReadSections(const char *image, int length,
-                            vector<DictionaryFileSection> *sections) const;
-  virtual string GetSectionName(const string &name) const;
+  void WriteSections(const std::vector<DictionaryFileSection> &sections,
+                     std::ostream *ofs) const override;
+  bool ReadSections(
+      const char *image, int length,
+      std::vector<DictionaryFileSection> *sections) const override;
+  string GetSectionName(const string &name) const override;
 
  private:
-  void WriteHeader(ostream *ofs) const;
-  void WriteSection(const DictionaryFileSection &section, ostream *ofs) const;
+  void WriteHeader(std::ostream *ofs) const;
+  void WriteSection(const DictionaryFileSection &section,
+                    std::ostream *ofs) const;
 
-  static void Pad4(int length, ostream *ofs);
+  static void Pad4(int length, std::ostream *ofs);
 
+  // Seed value for name string finger print
+  // Made it mutable for reading sections.
+  mutable int seed_;
   // Magic value for simple file validation
   const int filemagic_;
 
   DISALLOW_COPY_AND_ASSIGN(DictionaryFileCodec);
 };
 
+}  // namespace dictionary
 }  // namespace mozc
 
 #endif  // MOZC_DICTIONARY_FILE_CODEC_H_

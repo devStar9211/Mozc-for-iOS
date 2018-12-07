@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,7 @@
 #include "rewriter/transliteration_rewriter.h"
 
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "base/logging.h"
@@ -37,10 +38,10 @@
 #include "base/text_normalizer.h"
 #include "base/util.h"
 #include "composer/composer.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
 #include "dictionary/pos_matcher.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
+#include "request/conversion_request.h"
 // For T13n normalize
 #include "transliteration/transliteration.h"
 #include "usage_stats/usage_stats.h"
@@ -80,18 +81,41 @@ bool IsComposerApplicable(const ConversionRequest &request,
   return true;
 }
 
-void NormalizeT13ns(vector<string> *t13ns) {
+void NormalizeT13ns(std::vector<string> *t13ns) {
   DCHECK(t13ns);
   string normalized;
   for (size_t i = 0; i < t13ns->size(); ++i) {
     normalized.clear();
-    TextNormalizer::NormalizeTransliterationText(
-        t13ns->at(i), &normalized);
+    TextNormalizer::NormalizeText(t13ns->at(i), &normalized);
     t13ns->at(i) = normalized;
   }
 }
 
-void ModifyT13nsForGodan(const string &key, vector<string> *t13ns) {
+// Function object to check if c >= 0 && c < upper_bound, where T is
+// std::true_type when char is unsigned; otherwise T is std::false_type.  By
+// using template class instead of a function, we can avoid the compiler warning
+// about unused function.
+template <typename T>
+struct IsNonnegativeAndLessThan {
+  bool operator()(char c, size_t upper_bound) const;
+};
+
+template <>
+struct IsNonnegativeAndLessThan<std::true_type> {
+  bool operator()(char c, size_t upper_bound) const {
+    // No check for "0 <= *c" for unsigned case.
+    return c < upper_bound;
+  }
+};
+
+template <>
+struct IsNonnegativeAndLessThan<std::false_type> {
+  bool operator()(char c, size_t upper_bound) const {
+    return c >= 0 && static_cast<size_t>(c) < upper_bound;
+  }
+};
+
+void ModifyT13nsForGodan(const string &key, std::vector<string> *t13ns) {
   static const char * const kKeycodeToT13nMap[] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -106,13 +130,10 @@ void ModifyT13nsForGodan(const string &key, vector<string> *t13ns) {
   const string &src = (*t13ns)[transliteration::HALF_ASCII];
   string dst;
   for (string::const_iterator c = src.begin(); c != src.end(); ++c) {
-    // Won't check "0 <= *c" here as string::value_type must be configured
-    // to be unsigned in Mozc.
-    // TODO(yukawa): use std::is_unsigned in <type_traits> instead
-    //     when C++11 becomes available.
-    static_assert(string::value_type(-1) > 0,
-                  "string::value must be unsigned.");
-    if (*c < arraysize(kKeycodeToT13nMap) && kKeycodeToT13nMap[*c] != NULL) {
+    using IsNonnegativeAndLessThanType =
+        IsNonnegativeAndLessThan<std::is_unsigned<string::value_type>::type>;
+    if (IsNonnegativeAndLessThanType()(*c, arraysize(kKeycodeToT13nMap)) &&
+        kKeycodeToT13nMap[*c] != NULL) {
       dst.append(kKeycodeToT13nMap[*c]);
     } else {
       dst.append(1, *c);
@@ -150,7 +171,7 @@ void ModifyT13nsForGodan(const string &key, vector<string> *t13ns) {
   (*t13ns)[transliteration::FULL_ASCII_CAPITALIZED] = full_ascii_capitalized;
 }
 
-bool IsTransliterated(const vector<string> &t13ns) {
+bool IsTransliterated(const std::vector<string> &t13ns) {
   if (t13ns.empty() || t13ns[0].empty()) {
     return false;
   }
@@ -197,7 +218,7 @@ void GetIds(const Segment &segment, T13nIds *ids) {
 }
 
 void ModifyT13ns(const ConversionRequest &request,
-                 const Segment &segment, vector<string> *t13ns) {
+                 const Segment &segment, std::vector<string> *t13ns) {
   commands::Request::SpecialRomanjiTable special_romanji_table =
       request.request().special_romanji_table();
   if (special_romanji_table == commands::Request::GODAN_TO_HIRAGANA) {
@@ -218,7 +239,7 @@ bool TransliterationRewriter::FillT13nsFromComposer(
   // the composition string.
   if (segments->conversion_segments_size() == 1 &&
       request.composer().GetLength() == request.composer().GetCursor()) {
-    vector<string> t13ns;
+    std::vector<string> t13ns;
     request.composer().GetTransliterations(&t13ns);
     Segment *segment = segments->mutable_conversion_segment(0);
     CHECK(segment);
@@ -238,7 +259,7 @@ bool TransliterationRewriter::FillT13nsFromComposer(
       continue;
     }
     const size_t composition_len = Util::CharsLen(key);
-    vector<string> t13ns;
+    std::vector<string> t13ns;
     request.composer().GetSubTransliterations(composition_pos,
                                               composition_len,
                                               &t13ns);
@@ -282,7 +303,7 @@ bool TransliterationRewriter::FillT13nsFromKey(Segments *segments) const {
     Util::LowerString(&full_ascii_lower);
     Util::CapitalizeString(&full_ascii_capitalized);
 
-    vector<string> t13ns;
+    std::vector<string> t13ns;
     t13ns.resize(transliteration::NUM_T13N_TYPES);
     t13ns[transliteration::HIRAGANA] = hiragana;
     t13ns[transliteration::FULL_KATAKANA] = full_katakana;
@@ -303,7 +324,7 @@ bool TransliterationRewriter::FillT13nsFromKey(Segments *segments) const {
 }
 
 TransliterationRewriter::TransliterationRewriter(
-    const POSMatcher &pos_matcher)
+    const dictionary::POSMatcher &pos_matcher)
     : unknown_id_(pos_matcher.GetUnknownId()) {}
 
 TransliterationRewriter::~TransliterationRewriter() {}
@@ -417,7 +438,8 @@ void TransliterationRewriter::InitT13nCandidate(
 }
 
 bool TransliterationRewriter::SetTransliterations(
-    const vector<string> &t13ns, const string &key, Segment *segment) const {
+    const std::vector<string> &t13ns, const string &key,
+    Segment *segment) const {
   if (t13ns.size() != transliteration::NUM_T13N_TYPES ||
       !IsTransliterated(t13ns)) {
     return false;
@@ -428,7 +450,7 @@ bool TransliterationRewriter::SetTransliterations(
   T13nIds ids;
   GetIds(*segment, &ids);
 
-  vector<Segment::Candidate> *meta_candidates =
+  std::vector<Segment::Candidate> *meta_candidates =
       segment->mutable_meta_candidates();
   meta_candidates->resize(transliteration::NUM_T13N_TYPES);
 

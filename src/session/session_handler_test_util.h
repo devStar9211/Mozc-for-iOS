@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,17 +32,18 @@
 #ifndef MOZC_SESSION_SESSION_HANDLER_TEST_UTIL_H_
 #define MOZC_SESSION_SESSION_HANDLER_TEST_UTIL_H_
 
+#include <memory>
 #include <string>
+
 #include "base/port.h"
-#include "base/scoped_ptr.h"
-#include "config/config.pb.h"
-#include "session/commands.pb.h"
+#include "engine/engine_interface.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 #include "testing/base/public/gunit.h"
 #include "usage_stats/usage_stats_testing_util.h"
 
 namespace mozc {
 
-class EngineInterface;
 class SessionHandlerInterface;
 
 namespace session {
@@ -73,12 +74,12 @@ bool IsGoodSession(SessionHandlerInterface *handler, uint64 id);
 // Base implementation of test cases.
 class SessionHandlerTestBase : public ::testing::Test {
  protected:
-  virtual void SetUp();
-  virtual void TearDown();
+  void SetUp() override;
+  void TearDown() override;
 
   // This class should not be instantiated directly.
   SessionHandlerTestBase();
-  virtual ~SessionHandlerTestBase();
+  ~SessionHandlerTestBase() override;
 
   void ClearState();
 
@@ -92,8 +93,7 @@ class SessionHandlerTestBase : public ::testing::Test {
   int32 flags_last_command_timeout_backup_;
   int32 flags_last_create_session_timeout_backup_;
   bool flags_restricted_backup_;
-
-  const usage_stats::scoped_usage_stats_enabler usage_stats_enabler_;
+  usage_stats::scoped_usage_stats_enabler usage_stats_enabler_;
 
   DISALLOW_COPY_AND_ASSIGN(SessionHandlerTestBase);
 };
@@ -101,8 +101,7 @@ class SessionHandlerTestBase : public ::testing::Test {
 // Session utility for stress tests.
 class TestSessionClient {
  public:
-  // This class doesn't take an ownership of *engine.
-  explicit TestSessionClient(EngineInterface *engine);
+  explicit TestSessionClient(std::unique_ptr<EngineInterface> engine);
   ~TestSessionClient();
 
   bool CreateSession();
@@ -131,6 +130,7 @@ class TestSessionClient {
   bool UndoOrRewind(commands::Output *output);
   bool SwitchInputMode(commands::CompositionMode composition_mode);
   bool SetRequest(const commands::Request &request, commands::Output *output);
+  bool SetConfig(const config::Config &config, commands::Output *output);
   void SetCallbackText(const string &text);
 
  private:
@@ -139,8 +139,8 @@ class TestSessionClient {
                            bool allow_callback);
 
   uint64 id_;
-  scoped_ptr<SessionObserverInterface> usage_observer_;
-  scoped_ptr<SessionHandlerInterface> handler_;
+  std::unique_ptr<SessionObserverInterface> usage_observer_;
+  std::unique_ptr<SessionHandlerInterface> handler_;
   string callback_text_;
 
   DISALLOW_COPY_AND_ASSIGN(TestSessionClient);

@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,9 +32,10 @@
 // MutexLocker locks in the constructor and unlocks in the destructor.
 #include <QtCore/QMutexLocker>
 #include <QtGui/QtGui>
+#include <QtWidgets/QListWidgetItem>
 
+#include "base/clock.h"
 #include "base/logging.h"
-#include "base/util.h"
 #include "config/stats_config_util.h"
 
 namespace {
@@ -57,8 +58,9 @@ void CopyStrokes(const mozc::handwriting::Strokes &source,
 }
 
 // Thread-safe copying of candidates.
-void CopyCandidates(
-    const vector<string> &source, vector<string> *target, QMutex *mutex) {
+void CopyCandidates(const std::vector<string> &source,
+                    std::vector<string> *target,
+                    QMutex *mutex) {
   DCHECK(target);
   DCHECK(mutex);
   QMutexLocker l(mutex);
@@ -95,10 +97,10 @@ void HandWritingThread::Start() {
 void HandWritingThread::SetStrokes(const handwriting::Strokes &strokes) {
   CopyStrokes(strokes, &strokes_, &strokes_mutex_);
   // This is absolutely thread-unsafe but practically no problems.
-  Util::GetTimeOfDay(&strokes_sec_, &strokes_usec_);
+  Clock::GetTimeOfDay(&strokes_sec_, &strokes_usec_);
 }
 
-void HandWritingThread::GetCandidates(vector<string> *candidates) {
+void HandWritingThread::GetCandidates(std::vector<string> *candidates) {
   CopyCandidates(candidates_, candidates, &candidates_mutex_);
 }
 
@@ -117,7 +119,7 @@ void HandWritingThread::startRecognition() {
     return;
   }
 
-  vector<string> candidates;
+  std::vector<string> candidates;
   status = handwriting::HandwritingManager::Recognize(strokes, &candidates);
   CopyCandidates(candidates, &candidates_, &candidates_mutex_);
   last_requested_sec_ = strokes_sec_;

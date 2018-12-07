@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,23 +29,21 @@
 
 #include "rewriter/symbol_rewriter.h"
 
+#include <memory>
 #include <string>
 
 #include "base/logging.h"
-#include "base/scoped_ptr.h"
 #include "base/system_util.h"
 #include "base/util.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
 #include "data_manager/testing/mock_data_manager.h"
 #include "engine/engine_interface.h"
 #include "engine/mock_data_engine_factory.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
+#include "request/conversion_request.h"
+#include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
-
-DECLARE_string(test_tmpdir);
 
 namespace mozc {
 
@@ -97,14 +95,11 @@ bool HasCandidate(const Segments &segments, int index, const string &value) {
 
 class SymbolRewriterTest : public ::testing::Test {
  protected:
-  SymbolRewriterTest() {}
-  ~SymbolRewriterTest() {}
+  SymbolRewriterTest() = default;
+  ~SymbolRewriterTest() override = default;
 
-  virtual void SetUp() {
+  void SetUp() override {
     SystemUtil::SetUserProfileDirectory(FLAGS_test_tmpdir);
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config::ConfigHandler::SetConfig(config);
 
     // We cannot use mock converter here because SymbolRewriter uses
     // ResizeSegment of converter implementation. However, SymbolRewriter is
@@ -116,16 +111,9 @@ class SymbolRewriterTest : public ::testing::Test {
     data_manager_.reset(new testing::MockDataManager);
   }
 
-  virtual void TearDown() {
-    // Just in case, reset the config in test_tmpdir
-    config::Config config;
-    config::ConfigHandler::GetDefaultConfig(&config);
-    config::ConfigHandler::SetConfig(config);
-  }
-
-  scoped_ptr<EngineInterface> engine_;
+  std::unique_ptr<EngineInterface> engine_;
   const ConverterInterface *converter_;
-  scoped_ptr<testing::MockDataManager> data_manager_;
+  std::unique_ptr<testing::MockDataManager> data_manager_;
 };
 
 // Note that these tests are using default symbol dictionary.
@@ -138,25 +126,18 @@ TEST_F(SymbolRewriterTest, TriggerRewriteTest) {
 
   {
     Segments segments;
-    // "ー"
-    AddSegment("\xe3\x83\xbc", "test", &segments);
-    // ">"
-    AddSegment("\x3e", "test", &segments);
+    AddSegment("ー", "test", &segments);
+    AddSegment(">", "test", &segments);
     EXPECT_TRUE(symbol_rewriter.Rewrite(request, &segments));
-    // "→"
-    EXPECT_TRUE(HasCandidate(segments, 0, "\xe2\x86\x92"));
+    EXPECT_TRUE(HasCandidate(segments, 0, "→"));
   }
   {
     Segments segments;
-    // "ー"
-    AddSegment("\xe3\x83\xbc", "test", &segments);
-    // "ー"
-    AddSegment("\xe3\x83\xbc", "test", &segments);
+    AddSegment("ー", "test", &segments);
+    AddSegment("ー", "test", &segments);
     EXPECT_TRUE(symbol_rewriter.Rewrite(request, &segments));
-    // "―"
-    EXPECT_TRUE(HasCandidate(segments, 0, "\xe2\x80\x95"));
-    // "―"
-    EXPECT_TRUE(HasCandidate(segments, 1, "\xe2\x80\x95"));
+    EXPECT_TRUE(HasCandidate(segments, 0, "―"));
+    EXPECT_TRUE(HasCandidate(segments, 1, "―"));
   }
 }
 
@@ -165,20 +146,15 @@ TEST_F(SymbolRewriterTest, TriggerRewriteEntireTest) {
   const ConversionRequest request;
   {
     Segments segments;
-    // "ー"
-    AddSegment("\xe3\x83\xbc", "test", &segments);
-    // ">"
-    AddSegment("\x3e", "test", &segments);
+    AddSegment("ー", "test", &segments);
+    AddSegment(">", "test", &segments);
     EXPECT_TRUE(symbol_rewriter.RewriteEntireCandidate(request, &segments));
-    // "→"
-    EXPECT_TRUE(HasCandidate(segments, 0, "\xe2\x86\x92"));
+    EXPECT_TRUE(HasCandidate(segments, 0, "→"));
   }
   {
     Segments segments;
-    // "ー"
-    AddSegment("\xe3\x83\xbc", "test", &segments);
-    // "ー"
-    AddSegment("\xe3\x83\xbc", "test", &segments);
+    AddSegment("ー", "test", &segments);
+    AddSegment("ー", "test", &segments);
     EXPECT_FALSE(symbol_rewriter.RewriteEntireCandidate(request, &segments));
   }
 }
@@ -187,18 +163,13 @@ TEST_F(SymbolRewriterTest, TriggerRewriteEachTest) {
   SymbolRewriter symbol_rewriter(converter_, data_manager_.get());
   {
     Segments segments;
-    // "ー"
-    AddSegment("\xe3\x83\xbc", "test", &segments);
-    // ">"
-    AddSegment("\x3e", "test", &segments);
+    AddSegment("ー", "test", &segments);
+    AddSegment(">", "test", &segments);
     EXPECT_TRUE(symbol_rewriter.RewriteEachCandidate(&segments));
     EXPECT_EQ(2, segments.segments_size());
-    // "―"
-    EXPECT_TRUE(HasCandidate(segments, 0, "\xe2\x80\x95"));
-    // "→"
-    EXPECT_FALSE(HasCandidate(segments, 0, "\xe2\x86\x92"));
-    // "〉"
-    EXPECT_TRUE(HasCandidate(segments, 1, "\xe3\x80\x89"));
+    EXPECT_TRUE(HasCandidate(segments, 0, "―"));
+    EXPECT_FALSE(HasCandidate(segments, 0, "→"));
+    EXPECT_TRUE(HasCandidate(segments, 1, "〉"));
   }
 }
 
@@ -206,18 +177,11 @@ TEST_F(SymbolRewriterTest, TriggerRewriteDescriptionTest) {
   SymbolRewriter symbol_rewriter(converter_, data_manager_.get());
   {
     Segments segments;
-    // "したつき"
-    AddSegment("\xE3\x81\x97\xE3\x81\x9F\xE3\x81\xA4\xE3\x81\x8D",
-               "test", &segments);
+    AddSegment("したつき", "test", &segments);
     EXPECT_TRUE(symbol_rewriter.RewriteEachCandidate(&segments));
     EXPECT_EQ(1, segments.segments_size());
-    // "₍"
-    EXPECT_TRUE(HasCandidateAndDescription(segments, 0, "\xE2\x82\x8D",
-        // "下付き文字(始め丸括弧)"
-        "\xE4\xB8\x8B\xE4\xBB\x98\xE3\x81\x8D\xE6\x96\x87\xE5\xAD\x97"
-        "("
-        "\xE5\xA7\x8B\xE3\x82\x81\xE4\xB8\xB8\xE6\x8B\xAC\xE5\xBC\xA7"
-        ")"));
+    EXPECT_TRUE(HasCandidateAndDescription(segments, 0, "₍",
+                                           "下付き文字(始め丸括弧)"));
   }
 }
 
@@ -226,41 +190,24 @@ TEST_F(SymbolRewriterTest, InsertAfterSingleKanjiAndT13n) {
   const ConversionRequest request;
   {
     Segments segments;
-    // "てん", "てん"
-    AddSegment("\xe3\x81\xa6\xe3\x82\x93", "\xe3\x81\xa6\xe3\x82\x93",
-               &segments);
+    AddSegment("てん", "てん", &segments);
     Segment *seg = segments.mutable_segment(0);
     // Add 15 single-kanji and transliterated candidates
-    // "点"
-    AddCandidate("\xe7\x82\xb9", seg);
-    // "転"
-    AddCandidate("\xe8\xbb\xa2", seg);
-    // "天"
-    AddCandidate("\xe5\xa4\xa9", seg);
-    // "てん"
-    AddCandidate("\xe3\x81\xa6\xe3\x82\x93", seg);
-    // "テン"
-    AddCandidate("\xe3\x83\x86\xe3\x83\xb3", seg);
-    // "展"
-    AddCandidate("\xe5\xb1\x95", seg);
-    // "店"
-    AddCandidate("\xe5\xba\x97", seg);
-    // "典"
-    AddCandidate("\xe5\x85\xb8", seg);
-    // "添"
-    AddCandidate("\xe6\xb7\xbb", seg);
-    // "填"
-    AddCandidate("\xe5\xa1\xab", seg);
-    // "顛"
-    AddCandidate("\xe9\xa1\x9b", seg);
-    // "辿"
-    AddCandidate("\xe8\xbe\xbf", seg);
-    // "纏"
-    AddCandidate("\xe7\xba\x8f", seg);
-    // "甜"
-    AddCandidate("\xe7\x94\x9c", seg);
-    // "貼"
-    AddCandidate("\xe8\xb2\xbc", seg);
+    AddCandidate("点", seg);
+    AddCandidate("転", seg);
+    AddCandidate("天", seg);
+    AddCandidate("てん", seg);
+    AddCandidate("テン", seg);
+    AddCandidate("展", seg);
+    AddCandidate("店", seg);
+    AddCandidate("典", seg);
+    AddCandidate("添", seg);
+    AddCandidate("填", seg);
+    AddCandidate("顛", seg);
+    AddCandidate("辿", seg);
+    AddCandidate("纏", seg);
+    AddCandidate("甜", seg);
+    AddCandidate("貼", seg);
 
     EXPECT_TRUE(symbol_rewriter.Rewrite(request, &segments));
     EXPECT_GT(segments.segment(0).candidates_size(), 16);
@@ -278,8 +225,7 @@ TEST_F(SymbolRewriterTest, SetKey) {
   const ConversionRequest request;
 
   Segment *segment = segments.push_back_segment();
-  // "てん"
-  const string kKey = "\xe3\x81\xa6\xe3\x82\x93";
+  const string kKey = "てん";
   segment->set_key(kKey);
   Segment::Candidate *candidate = segment->add_candidate();
   candidate->Init();
@@ -296,20 +242,56 @@ TEST_F(SymbolRewriterTest, SetKey) {
 }
 
 TEST_F(SymbolRewriterTest, MobileEnvironmentTest) {
-  commands::Request input;
+  ConversionRequest convreq;
+  commands::Request request;
+  convreq.set_request(&request);
   SymbolRewriter rewriter(converter_, data_manager_.get());
 
   {
-    input.set_mixed_conversion(true);
-    const ConversionRequest request(NULL, &input);
-    EXPECT_EQ(RewriterInterface::ALL, rewriter.capability(request));
+    request.set_mixed_conversion(true);
+    EXPECT_EQ(RewriterInterface::ALL, rewriter.capability(convreq));
   }
 
   {
-    input.set_mixed_conversion(false);
-    const ConversionRequest request(NULL, &input);
-    EXPECT_EQ(RewriterInterface::CONVERSION, rewriter.capability(request));
+    request.set_mixed_conversion(false);
+    EXPECT_EQ(RewriterInterface::CONVERSION, rewriter.capability(convreq));
   }
+}
+
+TEST_F(SymbolRewriterTest, ExpandSpace) {
+  SymbolRewriter symbol_rewriter(converter_, data_manager_.get());
+  Segments segments;
+  const ConversionRequest request;
+
+  Segment *segment = segments.push_back_segment();
+  segment->set_key(" ");
+  Segment::Candidate *candidate = segment->add_candidate();
+  candidate->Init();
+  candidate->key = " ";
+  candidate->value = " ";
+  candidate->content_key = " ";
+  candidate->content_value = " ";
+  candidate->PushBackInnerSegmentBoundary(1, 1, 1, 1);
+
+  EXPECT_TRUE(symbol_rewriter.Rewrite(request, &segments));
+  EXPECT_LE(2, segment->candidates_size());
+
+  const Segment::Candidate &cand0 = segment->candidate(0);
+  EXPECT_EQ(" ", cand0.key);
+  EXPECT_EQ(" ", cand0.value);
+  EXPECT_EQ(" ", cand0.content_key);
+  EXPECT_EQ(" ", cand0.content_value);
+  ASSERT_EQ(1, cand0.inner_segment_boundary.size());
+  EXPECT_EQ(Segment::Candidate::EncodeLengths(1, 1, 1, 1),
+            cand0.inner_segment_boundary[0]);
+
+  const char *kFullWidthSpace = "　";
+  const Segment::Candidate &cand1 = segment->candidate(1);
+  EXPECT_EQ(" ", cand1.key);
+  EXPECT_EQ(kFullWidthSpace, cand1.value);
+  EXPECT_EQ(" ", cand1.content_key);
+  EXPECT_EQ(kFullWidthSpace, cand1.content_value);
+  EXPECT_TRUE(cand1.inner_segment_boundary.empty());
 }
 
 }  // namespace mozc

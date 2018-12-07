@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -39,18 +39,19 @@
 #include "base/port.h"
 #include "base/util.h"
 #include "composer/composer.h"
-#include "converter/connector_interface.h"
-#include "converter/conversion_request.h"
 #include "converter/immutable_converter_interface.h"
 #include "converter/segments.h"
 #include "dictionary/dictionary_interface.h"
 #include "dictionary/pos_matcher.h"
 #include "dictionary/suppression_dictionary.h"
 #include "prediction/predictor_interface.h"
+#include "request/conversion_request.h"
 #include "rewriter/rewriter_interface.h"
 #include "transliteration/transliteration.h"
 #include "usage_stats/usage_stats.h"
 
+using mozc::dictionary::POSMatcher;
+using mozc::dictionary::SuppressionDictionary;
 using mozc::usage_stats::UsageStats;
 
 namespace mozc {
@@ -137,7 +138,7 @@ bool ExtractLastTokenWithScriptType(const string &text,
     }
   }
 
-  vector<char32> reverse_last_token;
+  std::vector<char32> reverse_last_token;
   Util::ScriptType last_script_type_found = Util::GetScriptType(iter.Get());
   for (; !iter.Done(); iter.Next()) {
     const char32 w = iter.Get();
@@ -150,7 +151,7 @@ bool ExtractLastTokenWithScriptType(const string &text,
   *last_script_type = last_script_type_found;
   // TODO(yukawa): Replace reverse_iterator with const_reverse_iterator when
   //     build failure on Android is fixed.
-  for (vector<char32>::reverse_iterator it = reverse_last_token.rbegin();
+  for (std::vector<char32>::reverse_iterator it = reverse_last_token.rbegin();
        it != reverse_last_token.rend(); ++it) {
     Util::UCS4ToUTF8Append(*it, last_token);
   }
@@ -246,20 +247,29 @@ bool ConverterImpl::StartConversionForRequest(const ConversionRequest &request,
     default:
       LOG(FATAL) << "Should never reach here";
   }
+  if (conversion_key.empty()) {
+    return false;
+  }
+
   SetKey(segments, conversion_key);
   segments->set_request_type(Segments::CONVERSION);
   immutable_converter_->ConvertForRequest(request, segments);
   RewriteAndSuppressCandidates(request, segments);
+  TrimCandidates(request, segments);
   return IsValidSegments(request, *segments);
 }
 
 bool ConverterImpl::StartConversion(Segments *segments,
                                     const string &key) const {
+  if (key.empty()) {
+    return false;
+  }
   SetKey(segments, key);
   segments->set_request_type(Segments::CONVERSION);
   const ConversionRequest default_request;
   immutable_converter_->ConvertForRequest(default_request, segments);
   RewriteAndSuppressCandidates(default_request, segments);
+  TrimCandidates(default_request, segments);
   return IsValidSegments(default_request, *segments);
 }
 
@@ -368,6 +378,7 @@ bool ConverterImpl::Predict(const ConversionRequest &request,
   segments->set_request_type(request_type);
   predictor_->PredictForRequest(request, segments);
   RewriteAndSuppressCandidates(request, segments);
+  TrimCandidates(request, segments);
   if (request_type == Segments::PARTIAL_SUGGESTION ||
       request_type == Segments::PARTIAL_PREDICTION) {
     // Here 1st segment's key is the query string of
@@ -484,14 +495,13 @@ bool ConverterImpl::FinishConversion(const ConversionRequest &request,
 
   segments->clear_revert_entries();
   rewriter_->Finish(request, segments);
-  predictor_->Finish(segments);
+  predictor_->Finish(request, segments);
 
   // Remove the front segments except for some segments which will be
   // used as history segments.
-  const int start_index = max(
-      0,
-      static_cast<int>(segments->segments_size()
-          - segments->max_history_segments_size()));
+  const int start_index =
+      std::max(0, static_cast<int>(segments->segments_size() -
+                                   segments->max_history_segments_size()));
   for (int i = 0; i < start_index; ++i) {
     segments->pop_front_segment();
   }
@@ -643,7 +653,7 @@ bool ConverterImpl::FreeSegmentValue(Segments *segments,
 
 bool ConverterImpl::CommitSegments(
     Segments *segments,
-    const vector<size_t> &candidate_index) const {
+    const std::vector<size_t> &candidate_index) const {
   const size_t conversion_segment_index = segments->history_segments_size();
   for (size_t i = 0; i < candidate_index.size(); ++i) {
     // 2nd argument must always be 0 because on each iteration
@@ -743,20 +753,20 @@ bool ConverterImpl::ResizeSegment(Segments *segments,
       Segment *segment2 = segments->mutable_segment(segment_index + 1);
       segment2->set_segment_type(Segment::FREE);
       string tmp;
-      Util::SubString(cur_segment_key,
-                      max(static_cast<size_t>(0), cur_length + offset_length),
-                      cur_length,
-                      &tmp);
+      Util::SubString(
+          cur_segment_key,
+          std::max(static_cast<size_t>(0), cur_length + offset_length),
+          cur_length, &tmp);
       tmp += segment2->key();
       segment2->set_key(tmp);
     } else {
       Segment *segment2 = segments->add_segment();
       segment2->set_segment_type(Segment::FREE);
       string new_key;
-      Util::SubString(cur_segment_key,
-                      max(static_cast<size_t>(0), cur_length + offset_length),
-                      cur_length,
-                      &new_key);
+      Util::SubString(
+          cur_segment_key,
+          std::max(static_cast<size_t>(0), cur_length + offset_length),
+          cur_length, &new_key);
       segment2->set_key(new_key);
     }
   }
@@ -765,6 +775,7 @@ bool ConverterImpl::ResizeSegment(Segments *segments,
 
   immutable_converter_->ConvertForRequest(request, segments);
   RewriteAndSuppressCandidates(request, segments);
+  TrimCandidates(request, segments);
   return true;
 }
 
@@ -799,7 +810,7 @@ bool ConverterImpl::ResizeSegment(Segments *segments,
 
   size_t consumed = 0;
   const size_t key_len = Util::CharsLen(key);
-  vector<string> new_keys;
+  std::vector<string> new_keys;
   new_keys.reserve(array_size + 1);
 
   for (size_t i = 0; i < array_size; ++i) {
@@ -824,6 +835,7 @@ bool ConverterImpl::ResizeSegment(Segments *segments,
 
   immutable_converter_->ConvertForRequest(request, segments);
   RewriteAndSuppressCandidates(request, segments);
+  TrimCandidates(request, segments);
   return true;
 }
 
@@ -910,6 +922,28 @@ void ConverterImpl::RewriteAndSuppressCandidates(
         ++j;
       }
     }
+  }
+}
+
+void ConverterImpl::TrimCandidates(const ConversionRequest &request,
+                                   Segments *segments) const {
+  const mozc::commands::Request &request_proto = request.request();
+  if (!request_proto.has_candidates_size_limit()) {
+    return;
+  }
+
+  const int limit = request_proto.candidates_size_limit();
+  for (size_t segment_index = 0;
+       segment_index < segments->conversion_segments_size(); ++segment_index) {
+    Segment *seg = segments->mutable_conversion_segment(segment_index);
+    const int candidates_size = seg->candidates_size();
+    // A segment should have at least one candidate.
+    const int candidates_limit =
+        std::max(1, limit - static_cast<int>(seg->meta_candidates_size()));
+    if (candidates_size < candidates_limit) {
+      continue;
+    }
+    seg->erase_candidates(candidates_limit, candidates_size - candidates_limit);
   }
 }
 

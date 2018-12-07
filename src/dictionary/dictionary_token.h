@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,7 @@
 #include "base/port.h"
 
 namespace mozc {
+namespace dictionary {
 
 struct Token {
   typedef uint8 AttributesBitfield;
@@ -54,6 +55,9 @@ struct Token {
   };
 
   Token() : cost(0), lid(0), rid(0), attributes(NONE) {}
+  Token(const string &k, const string &v, int c, int l, int r,
+        AttributesBitfield a) : key(k), value(v), cost(c), lid(l), rid(r),
+                                attributes(a) {}
 
   string key;
   string value;
@@ -63,6 +67,7 @@ struct Token {
   AttributesBitfield attributes;
 };
 
+}  // namespace dictionary
 }  // namespace mozc
 
 #endif  // MOZC_DICTIONARY_DICTIONARY_TOKEN_H_

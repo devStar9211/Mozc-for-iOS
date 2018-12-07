@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,7 +32,7 @@
 #import <Carbon/Carbon.h>
 #import <Cocoa/Cocoa.h>
 
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
 
@@ -64,7 +64,7 @@ class KeyCodeMapTest : public testing::Test {
 
   bool CreateKeyEvent(NSString *characters, NSString *unmodCharacters,
                       int flags, uint16 keyCode, KeyEvent *mozcKeyEvent) {
-    if (mozcKeyEvent == NULL) {
+    if (mozcKeyEvent == nullptr) {
       return false;
     }
 

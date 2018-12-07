@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -45,11 +45,6 @@
         'system/system_dictionary.gyp:system_dictionary',
         'system/system_dictionary.gyp:value_dictionary',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'suffix_dictionary',
@@ -59,12 +54,8 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base.gyp:serialized_string_array',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'dictionary_impl',
@@ -75,28 +66,23 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../config/config.gyp:config_handler',
-        '../config/config.gyp:config_protocol',
-        'dictionary_base.gyp:dictionary_protocol',
+        '../protocol/protocol.gyp:commands_proto',
+        '../protocol/protocol.gyp:config_proto',
+        '../protocol/protocol.gyp:user_dictionary_storage_proto',
         'dictionary_base.gyp:pos_matcher',
         'dictionary_base.gyp:suppression_dictionary',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'gen_system_dictionary_data_main',
-      'type': 'none',
+      'type': 'executable',
       'toolsets': ['host'],
       'sources': [
         'gen_system_dictionary_data_main.cc',
       ],
       'dependencies': [
         '../base/base.gyp:base',
-        '../data_manager/data_manager.gyp:user_pos_manager',
-        '../data_manager/testing/mock_data_manager_base.gyp:mock_user_pos_manager',
+        '../data_manager/data_manager_base.gyp:data_manager',
         'dictionary_base.gyp:pos_matcher',
         'system/system_dictionary.gyp:system_dictionary_builder',
       ],
@@ -104,22 +90,6 @@
         'VCLinkerTool': {
           'LargeAddressAware': '2',
         },
-      },
-    },
-    {
-      'target_name': 'install_gen_system_dictionary_data_main',
-      'type': 'none',
-      'toolsets': ['host'],
-      'variables': {
-        'bin_name': 'gen_system_dictionary_data_main'
-      },
-      'includes' : [
-        '../gyp/install_build_tool.gypi'
-      ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
       },
     },
     {
@@ -131,11 +101,6 @@
       'dependencies': [
         '../base/base.gyp:base',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
     {
       'target_name': 'dictionary_test_util',
@@ -147,11 +112,6 @@
         '../base/base.gyp:base',
         '../testing/testing.gyp:testing',
       ],
-      'xcode_settings' : {
-        'SDKROOT': 'iphoneos',
-        'IPHONEOS_DEPLOYMENT_TARGET': '7.0',
-        'ARCHS': '$(ARCHS_UNIVERSAL_IPHONE_OS)',
-      },
     },
   ],
 }

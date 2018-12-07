@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,8 +37,8 @@
 #include "base/logging.h"
 #include "base/util.h"
 #include "client/client_interface.h"
-#include "renderer/renderer_command.pb.h"
-#include "renderer/renderer_style.pb.h"
+#include "protocol/renderer_command.pb.h"
+#include "protocol/renderer_style.pb.h"
 #include "renderer/renderer_style_handler.h"
 #include "renderer/table_layout.h"
 #include "renderer/win32/text_renderer.h"
@@ -171,15 +171,14 @@ Size InfolistWindow::DoPaint(CDCHandle dc) {
             infostyle.caption_background_color().g(),
             infostyle.caption_background_color().b()));
 
-    wstring caption_str;
+    std::wstring caption_str;
     const Rect caption_rect(
       infostyle.window_border() + infostyle.caption_padding()
       + caption_style.left_padding(),
       ypos + infostyle.caption_padding(),
       infostyle.window_width() - infostyle.window_border() * 2,
       caption_height);
-    mozc::Util::UTF8ToWide(infostyle.caption_string().c_str(),
-                           &caption_str);
+    mozc::Util::UTF8ToWide(infostyle.caption_string(), &caption_str);
 
     text_renderer_->RenderText(dc,
                                caption_str,
@@ -223,13 +222,13 @@ Size InfolistWindow::DoPaintRow(CDCHandle dc, int row, int ypos) {
       infostyle.row_rect_padding() * 2;
   const Information &info = usages.information(row);
 
-  wstring title_str;
-  mozc::Util::UTF8ToWide(info.title().c_str(), &title_str);
+  std::wstring title_str;
+  mozc::Util::UTF8ToWide(info.title(), &title_str);
   const Size title_size = text_renderer_->MeasureStringMultiLine(
       TextRenderer::FONTSET_INFOLIST_TITLE, title_str, title_width);
 
-  wstring desc_str;
-  mozc::Util::UTF8ToWide(info.description().c_str(), &desc_str);
+  std::wstring desc_str;
+  mozc::Util::UTF8ToWide(info.description(), &desc_str);
   const Size desc_size = text_renderer_->MeasureStringMultiLine(
       TextRenderer::FONTSET_INFOLIST_DESCRIPTION, desc_str, desc_width);
 

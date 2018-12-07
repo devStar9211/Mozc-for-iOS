@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,10 +30,12 @@
 #include "dictionary/file/dictionary_file.h"
 
 #include <cstdio>
+#include <string>
 
 #include "base/file_util.h"
 #include "base/flags.h"
 #include "base/logging.h"
+#include "dictionary/file/codec_factory.h"
 #include "dictionary/file/dictionary_file_builder.h"
 #include "testing/base/public/googletest.h"
 #include "testing/base/public/gunit.h"
@@ -41,6 +43,7 @@
 DECLARE_string(test_tmpdir);
 
 namespace mozc {
+namespace dictionary {
 namespace {
 
 TEST(DictionaryFileTest, Basic) {
@@ -58,7 +61,7 @@ TEST(DictionaryFileTest, Basic) {
   fclose(fp2);
 
   {
-    DictionaryFileBuilder builder;
+    DictionaryFileBuilder builder(DictionaryFileCodecFactory::GetCodec());
     EXPECT_TRUE(builder.AddSectionFromFile("sec1", fn1));
     EXPECT_TRUE(builder.AddSectionFromFile("sec2", fn2));
     EXPECT_FALSE(builder.AddSectionFromFile("sec2", fn2));
@@ -68,7 +71,7 @@ TEST(DictionaryFileTest, Basic) {
   EXPECT_TRUE(FileUtil::FileExists(dfn));
 
   {
-    DictionaryFile df;
+    DictionaryFile df(DictionaryFileCodecFactory::GetCodec());
     df.OpenFromFile(dfn);
     int len;
     const char* ptr = df.GetSection("sec1", &len);
@@ -89,4 +92,5 @@ TEST(DictionaryFileTest, Basic) {
 }
 
 }  // namespace
+}  // namespace dictionary
 }  // namespace mozc

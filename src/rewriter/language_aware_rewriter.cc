@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,20 +30,24 @@
 #include "rewriter/language_aware_rewriter.h"
 
 #include <string>
+#include <utility>
 
 #include "base/logging.h"
 #include "base/util.h"
 #include "composer/composer.h"
-#include "config/config.pb.h"
 #include "config/config_handler.h"
-#include "converter/conversion_request.h"
 #include "converter/segments.h"
 #include "dictionary/dictionary_interface.h"
 #include "dictionary/pos_matcher.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
+#include "request/conversion_request.h"
 #include "usage_stats/usage_stats.h"
 
 namespace mozc {
+
+using dictionary::DictionaryInterface;
+using dictionary::POSMatcher;
 
 LanguageAwareRewriter::LanguageAwareRewriter(
     const POSMatcher &pos_matcher,
@@ -51,34 +55,32 @@ LanguageAwareRewriter::LanguageAwareRewriter(
     : unknown_id_(pos_matcher.GetUnknownId()),
       dictionary_(dictionary) {}
 
-LanguageAwareRewriter::~LanguageAwareRewriter() {}
+LanguageAwareRewriter::~LanguageAwareRewriter() = default;
 
 namespace {
 
-bool IsEnabled(const mozc::commands::Request &request) {
-  // The current default value of language_aware_input is
-  // NO_LANGUAGE_AWARE_INPUT and only unittests set LANGUAGE_AWARE_SUGGESTION
-  // at this moment.  Thus, FillRawText is not performed in the productions
-  // yet.
-  if (request.language_aware_input() ==
-      mozc::commands::Request::NO_LANGUAGE_AWARE_INPUT) {
-    return false;
-  } else if (request.language_aware_input() ==
-             mozc::commands::Request::LANGUAGE_AWARE_SUGGESTION) {
-    return true;
+bool IsRomanHiraganaInput(const ConversionRequest &request) {
+  const auto table = request.request().special_romanji_table();
+  switch (table) {
+    case commands::Request::DEFAULT_TABLE:
+      return (request.config().preedit_method() == config::Config::ROMAN);
+    case commands::Request::QWERTY_MOBILE_TO_HIRAGANA:
+      return true;
+    default:
+      return false;
   }
-  DCHECK_EQ(mozc::commands::Request::DEFAULT_LANGUAGE_AWARE_BEHAVIOR,
-            request.language_aware_input());
+}
 
-  if (!GET_CONFIG(use_spelling_correction)) {
+bool IsEnabled(const ConversionRequest &request) {
+  const auto mode = request.request().language_aware_input();
+  if (mode == commands::Request::NO_LANGUAGE_AWARE_INPUT) {
     return false;
   }
-
-#ifdef OS_ANDROID
-  return false;
-#else  // OS_ANDROID
-  return true;
-#endif  // OS_ANDROID
+  if (mode == commands::Request::LANGUAGE_AWARE_SUGGESTION) {
+    return IsRomanHiraganaInput(request);
+  }
+  DCHECK_EQ(commands::Request::DEFAULT_LANGUAGE_AWARE_BEHAVIOR, mode);
+  return request.config().use_spelling_correction();
 }
 
 }  // namespace
@@ -86,7 +88,7 @@ bool IsEnabled(const mozc::commands::Request &request) {
 int LanguageAwareRewriter::capability(
     const ConversionRequest &request) const {
   // Language aware input is performed only on suggestion or prediction.
-  if (!IsEnabled(request.request())) {
+  if (!IsEnabled(request)) {
     return RewriterInterface::NOT_AVAILABLE;
   }
 
@@ -115,6 +117,15 @@ bool IsRawQuery(const composer::Composer &composer,
     return false;
   }
 
+  // If the composition string is the full width form of the raw_text,
+  // there is no need to add the candidate to suggestions.
+  string composition_in_half_width_ascii;
+  Util::FullWidthAsciiToHalfWidthAscii(composition,
+                                       &composition_in_half_width_ascii);
+  if (composition_in_half_width_ascii == raw_text) {
+    return false;
+  }
+
   // If alphabet characters are in the middle of the composition, it is
   // probably a raw query.  For example, "えぁｍｐぇ" (example) contains
   // "m" and "p" in the middle.  So it is treated as a raw query.  On the
@@ -130,11 +141,16 @@ bool IsRawQuery(const composer::Composer &composer,
     return true;
   }
 
+  // If the composition is storead as a key in the dictionary like
+  // "はな" (hana), "たけ" (take), the query is not handled as a raw query.
+  // It is a little conservative, but a safer way.
+  if (dictionary->HasKey(key)) {
+    return false;
+  }
+
   // If the input text is stored in the dictionary, it is perhaps a raw query.
   // For example, the input characters of "れもヴぇ" (remove) is in the
-  // dictionary, so it is treated as a raw text.  This logic is a little
-  // aggressive because "たけ" (take), "ほうせ" (house) and so forth are also
-  // treated as raw texts.
+  // dictionary, so it is treated as a raw text.
   if (dictionary->HasValue(raw_text)) {
     *rank = 2;
     return true;
@@ -197,16 +213,15 @@ bool LanguageAwareRewriter::FillRawText(
   candidate->value = raw_string;
   candidate->key = raw_string;
   candidate->content_value = raw_string;
-  candidate->content_key = raw_string;
+  // raw_string is no longer used, so move it.
+  candidate->content_key = std::move(raw_string);
   candidate->lid = lid;
   candidate->rid = rid;
 
   candidate->attributes |= (Segment::Candidate::NO_VARIANTS_EXPANSION |
                             Segment::Candidate::NO_EXTRA_DESCRIPTION);
-  candidate->prefix = "\xE2\x86\x92 ";  // "→ "
-  candidate->description =
-    // "もしかして"
-    "\xE3\x82\x82\xE3\x81\x97\xE3\x81\x8B\xE3\x81\x97\xE3\x81\xA6";
+  candidate->prefix = "→ ";
+  candidate->description = "もしかして";
 
   // Set usage stats
   usage_stats::UsageStats::IncrementCount("LanguageAwareSuggestionTriggered");
@@ -216,20 +231,18 @@ bool LanguageAwareRewriter::FillRawText(
 
 bool LanguageAwareRewriter::Rewrite(
     const ConversionRequest &request, Segments *segments) const {
-  if (!IsEnabled(request.request())) {
+  if (!IsEnabled(request)) {
     return false;
   }
   return FillRawText(request, segments);
 }
 
 namespace {
-bool IsLangaugeAwareInputCandidate(const composer::Composer &composer,
+bool IsLanguageAwareInputCandidate(const composer::Composer &composer,
                                    const Segment::Candidate &candidate) {
   // Check candidate.prefix to filter if the candidate is probably generated
   // from LanguangeAwareInput or not.
-  //
-  // "→ "
-  if (candidate.prefix != "\xE2\x86\x92 ") {
+  if (candidate.prefix != "→ ") {
     return false;
   }
 
@@ -243,9 +256,8 @@ bool IsLangaugeAwareInputCandidate(const composer::Composer &composer,
 }  // namespace
 
 void LanguageAwareRewriter::Finish(const ConversionRequest &request,
-                                     Segments *segments) {
-  if (request.request().language_aware_input() !=
-      mozc::commands::Request::LANGUAGE_AWARE_SUGGESTION) {
+                                   Segments *segments) {
+  if (!IsEnabled(request)) {
     return;
   }
 
@@ -261,7 +273,7 @@ void LanguageAwareRewriter::Finish(const ConversionRequest &request,
     return;
   }
 
-  if (IsLangaugeAwareInputCandidate(request.composer(),
+  if (IsLanguageAwareInputCandidate(request.composer(),
                                     segment.candidate(0))) {
     usage_stats::UsageStats::IncrementCount("LanguageAwareSuggestionCommitted");
   }

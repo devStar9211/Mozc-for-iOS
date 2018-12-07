@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -154,6 +154,7 @@ void SessionOutput::FillCandidates(const Segment &segment,
     candidates_proto->set_focused_index(candidate_list.focused_index());
   }
   candidates_proto->set_size(candidate_list.size());
+  candidates_proto->set_page_size(candidate_list.page_size());
   candidates_proto->set_position(position);
 
   size_t c_begin = 0;
@@ -231,8 +232,8 @@ void SessionOutput::FillUsages(const Segment &segment,
   size_t c_end = 0;
   cand_list.GetPageRange(cand_list.focused_index(), &c_begin, &c_end);
 
-  typedef pair<int32, commands::Information *> IndexInfoPair;
-  map<int32, IndexInfoPair> usageid_information_map;
+  typedef std::pair<int32, commands::Information *> IndexInfoPair;
+  std::map<int32, IndexInfoPair> usageid_information_map;
   // Store usages.
   for (size_t i = c_begin; i <= c_end; ++i) {
     if (cand_list.candidate(i).IsSubcandidateList()) {
@@ -246,7 +247,7 @@ void SessionOutput::FillUsages(const Segment &segment,
 
     int index;
     commands::Information *info;
-    map<int32, IndexInfoPair>::iterator info_itr =
+    std::map<int32, IndexInfoPair>::iterator info_itr =
       usageid_information_map.find(candidate.usage_id);
 
     if (info_itr == usageid_information_map.end()) {
@@ -257,7 +258,7 @@ void SessionOutput::FillUsages(const Segment &segment,
       info->set_description(candidate.usage_description);
       info->add_candidate_id(cand_list.candidate(i).id());
       usageid_information_map.insert(
-          make_pair(candidate.usage_id, make_pair(index, info)));
+          std::make_pair(candidate.usage_id, std::make_pair(index, info)));
     } else {
       index = info_itr->second.first;
       info = info_itr->second.second;
@@ -273,9 +274,9 @@ void SessionOutput::FillUsages(const Segment &segment,
 // static
 void SessionOutput::FillShortcuts(const string &shortcuts,
                                   commands::Candidates *candidates_proto) {
-  const size_t num_loop = min(
-      static_cast<size_t>(candidates_proto->candidate_size()),
-      shortcuts.size());
+  const size_t num_loop =
+      std::min(static_cast<size_t>(candidates_proto->candidate_size()),
+               shortcuts.size());
   for (size_t i = 0; i < num_loop; ++i) {
     const string shortcut = shortcuts.substr(i, 1);
     candidates_proto->mutable_candidate(i)->mutable_annotation()->
@@ -291,7 +292,7 @@ void SessionOutput::FillSubLabel(commands::Footer *footer) {
 
   // Append third number of the version to sub_label.
   const string version = Version::GetMozcVersion();
-  vector<string> version_numbers;
+  std::vector<string> version_numbers;
   Util::SplitStringUsing(version, ".", &version_numbers);
   if (version_numbers.size() > 2) {
     string sub_label("build ");
@@ -315,9 +316,7 @@ bool SessionOutput::FillFooter(const commands::Category category,
   commands::Footer *footer = candidates->mutable_footer();
   if (category == commands::SUGGESTION) {
     // TODO(komatsu): Enable to localized the message.
-    // "Tabキーで選択"
-    const char kLabel[] = ("Tab\xE3\x82\xAD\xE3\x83\xBC\xE3\x81\xA7"
-                           "\xE9\x81\xB8\xE6\x8A\x9E");
+    const char kLabel[] = "Tabキーで選択";
     // TODO(komatsu): Need to check if Tab is not changed to other key binding.
     footer->set_label(kLabel);
   } else {
@@ -336,23 +335,12 @@ bool SessionOutput::FillFooter(const commands::Category category,
         if (cand.has_annotation() && cand.annotation().deletable()) {
           // TODO(noriyukit): Change the message depending on user's keymap.
 #if defined(OS_MACOSX)
-          // "control+fn+deleteで履歴から削除"
-          const char kDeleteInstruction[] =
-              "\x63\x6F\x6E\x74\x72\x6F\x6C\x2B\x66\x6E\x2B\x64\x65\x6C\x65"
-              "\x74\x65\xE3\x81\xA7\xE5\xB1\xA5\xE6\xAD\xB4\xE3\x81\x8B\xE3"
-              "\x82\x89\xE5\x89\x8A\xE9\x99\xA4";
-#elif defined(__native_client__)
-          // "ctrl+alt+backspaceで履歴から削除"
-          const char kDeleteInstruction[] =
-              "\x63\x74\x72\x6C\x2B\x61\x6C\x74\x2B\x62\x61\x63\x6B\x73\x70"
-              "\x61\x63\x65\xE3\x81\xA7\xE5\xB1\xA5\xE6\xAD\xB4\xE3\x81\x8B"
-              "\xE3\x82\x89\xE5\x89\x8A\xE9\x99\xA4";
-#else  // !OS_MACOSX && !__native_client__
-          // "Ctrl+Delで履歴から削除"
-          const char kDeleteInstruction[] =
-              "\x43\x74\x72\x6C\x2B\x44\x65\x6C\xE3\x81\xA7\xE5\xB1\xA5"
-              "\xE6\xAD\xB4\xE3\x81\x8B\xE3\x82\x89\xE5\x89\x8A\xE9\x99\xA4";
-#endif  // OS_MACOSX || __native_client__
+          const char kDeleteInstruction[] = "control+fn+deleteで履歴から削除";
+#elif defined(OS_NACL)
+          const char kDeleteInstruction[] = "ctrl+alt+backspaceで履歴から削除";
+#else   // !OS_MACOSX && !OS_NACL
+          const char kDeleteInstruction[] = "Ctrl+Delで履歴から削除";
+#endif  // OS_MACOSX || OS_NACL
           footer->set_label(kDeleteInstruction);
           show_build_number = false;
         }
@@ -379,11 +367,11 @@ bool SessionOutput::AddSegment(const string &key,
                                commands::Preedit *preedit) {
   // Key is always normalized as a preedit text.
   string normalized_key;
-  TextNormalizer::NormalizePreeditText(key, &normalized_key);
+  TextNormalizer::NormalizeText(key, &normalized_key);
 
   string normalized_value;
   if (segment_type_mask & PREEDIT) {
-    TextNormalizer::NormalizePreeditText(value, &normalized_value);
+    TextNormalizer::NormalizeText(value, &normalized_value);
   } else if (segment_type_mask & CONVERSION) {
     normalized_value = value;
   } else {
@@ -461,7 +449,7 @@ void SessionOutput::FillConversionResult(const string &key,
                                          commands::Result *result_proto) {
   // Key should be normalized as a preedit text.
   string normalized_key;
-  TextNormalizer::NormalizePreeditText(key, &normalized_key);
+  TextNormalizer::NormalizeText(key, &normalized_key);
 
   // value is already normalized by converter.
   FillConversionResultWithoutNormalization(
@@ -472,7 +460,7 @@ void SessionOutput::FillConversionResult(const string &key,
 void SessionOutput::FillPreeditResult(const string &preedit,
                                       commands::Result *result_proto) {
   string normalized_preedit;
-  TextNormalizer::NormalizePreeditText(preedit, &normalized_preedit);
+  TextNormalizer::NormalizeText(preedit, &normalized_preedit);
 
   FillConversionResultWithoutNormalization(
       normalized_preedit, normalized_preedit, result_proto);

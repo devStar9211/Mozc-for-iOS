@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -48,6 +48,8 @@ class CalculatorRewriter : public RewriterInterface {
 
   explicit CalculatorRewriter(const ConverterInterface *parent_converter);
   virtual ~CalculatorRewriter();
+
+  virtual int capability(const ConversionRequest &request) const;
 
   virtual bool Rewrite(const ConversionRequest &request,
                        Segments *segments) const;

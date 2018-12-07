@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,12 +29,10 @@
 
 
 #ifdef OS_WIN
-// Do not change the order of the following headers required for Windows.
-#include <winsock2.h>
 #include <windows.h>
 #include <ws2tcpip.h>
 #pragma comment(lib, "ws2_32.lib")
-#define ssize_t SSIZE_T
+using ssize_t = SSIZE_T;
 #else
 #include <fcntl.h>
 #include <netdb.h>
@@ -45,15 +43,16 @@
 
 #include <cstddef>
 #include <cstring>
-#include <vector>
+#include <memory>
 #include <string>
+#include <vector>
 
-#include "base/number_util.h"
+#include "base/flags.h"
+#include "base/init_mozc.h"
 #include "base/singleton.h"
-#include "base/scoped_ptr.h"
 #include "base/system_util.h"
 #include "engine/engine_factory.h"
-#include "session/commands.pb.h"
+#include "protocol/commands.pb.h"
 #include "session/random_keyevents_generator.h"
 #include "session/session_handler.h"
 #include "session/session_usage_observer.h"
@@ -129,8 +128,8 @@ void CloseSocket(int client_socket) {
 class RPCServer {
  public:
   RPCServer() : server_socket_(kInvalidSocket),
-                engine_(EngineFactory::Create()),
-                handler_(new SessionHandler(engine_.get())) {
+                handler_(new SessionHandler(
+                    std::unique_ptr<Engine>(EngineFactory::Create()))) {
     struct sockaddr_in sin;
 
     server_socket_ = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -195,7 +194,7 @@ class RPCServer {
       CHECK_LT(request_size, kMaxRequestSize);
 
       // Receive the body of serialized protobuf.
-      scoped_ptr<char[]> request_str(new char[request_size]);
+      std::unique_ptr<char[]> request_str(new char[request_size]);
       if (!Recv(client_socket,
                 request_str.get(), request_size, FLAGS_rpc_timeout)) {
         LOG(ERROR) << "cannot receive body of request.";
@@ -235,8 +234,7 @@ class RPCServer {
 
  private:
   int server_socket_;
-  scoped_ptr<EngineInterface> engine_;
-  scoped_ptr<SessionHandler> handler_;
+  std::unique_ptr<SessionHandler> handler_;
 };
 
 // Standalone RPCClient.
@@ -289,7 +287,7 @@ class RPCClient {
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_family = AF_INET;
 
-    const string port_str = NumberUtil::SimpleItoa(FLAGS_port);
+    const string port_str = std::to_string(FLAGS_port);
     CHECK_EQ(::getaddrinfo(FLAGS_host.c_str(), port_str.c_str(),
                            &hints, &res), 0)
         << "getaddrinfo failed";
@@ -321,7 +319,7 @@ class RPCClient {
     CHECK_GT(output_size, 0);
     CHECK_LT(output_size, kMaxOutputSize);
 
-    scoped_ptr<char[]> output_str(new char[output_size]);
+    std::unique_ptr<char[]> output_str(new char[output_size]);
     CHECK(Recv(client_socket,
                output_str.get(), output_size, FLAGS_rpc_timeout));
 
@@ -358,7 +356,7 @@ class ScopedWSAData {
 }  // namespace mozc
 
 int main(int argc, char *argv[]) {
-  InitGoogle(argv[0], &argc, &argv, false);
+  mozc::InitMozc(argv[0], &argc, &argv, false);
 
   mozc::ScopedWSAData wsadata;
 
@@ -372,7 +370,7 @@ int main(int argc, char *argv[]) {
     mozc::RPCClient client;
     CHECK(client.CreateSession());
     for (int n = 0; n < FLAGS_client_test_size; ++n) {
-      vector<mozc::commands::KeyEvent> keys;
+      std::vector<mozc::commands::KeyEvent> keys;
       mozc::session::RandomKeyEventsGenerator::GenerateSequence(&keys);
       for (size_t i = 0; i < keys.size(); ++i) {
         LOG(INFO) << "Sending to Server: " << keys[i].Utf8DebugString();

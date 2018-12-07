@@ -1,4 +1,4 @@
-# Copyright 2010-2014, Google Inc.
+# Copyright 2010-2018, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -35,23 +35,17 @@
       'sources': [
         'tool/mozc_tool_main.cc',
       ],
+      'mac_bundle_resources': ['../data/mac/qt.conf'],
       'dependencies': [
+        'config_dialog_mac',
         'gen_mozc_tool_info_plist',
         'mozc_tool_lib',
       ],
       'postbuilds': [
         {
-          'postbuild_name': 'create symbolic link to frameworks',
+          'postbuild_name': 'Change the reference to frameworks',
           'action': [
-            '/bin/ln', '-fs',
-            '/Library/Input Methods/<(branding).app/Contents/Resources/<(branding)Tool.app/Contents/Frameworks',
-            '${BUILT_PRODUCTS_DIR}/<(product_name).app/Contents',
-          ],
-        },
-        {
-          'postbuild_name': 'Change the reference to Qt frameworks',
-          'action': [
-            'python', '../build_tools/change_qt_reference_mac.py',
+            'python', '../build_tools/change_reference_mac.py',
             '--qtdir', '<(qt_dir)',
             '--target',
             '${BUILT_PRODUCTS_DIR}/<(product_name).app/Contents/MacOS/<(product_name)',
@@ -67,4 +61,5 @@
       ],
     }],
   ],
+  'includes': ['../gyp/postbuilds_mac.gypi'],
 }

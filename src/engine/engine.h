@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,61 +30,107 @@
 #ifndef MOZC_ENGINE_ENGINE_H_
 #define MOZC_ENGINE_ENGINE_H_
 
+#include <memory>
+
 #include "base/port.h"
-#include "base/scoped_ptr.h"
+#include "data_manager/data_manager_interface.h"
+#include "dictionary/dictionary_interface.h"
 #include "dictionary/pos_group.h"
 #include "engine/engine_interface.h"
 
 namespace mozc {
 
-class ConnectorInterface;
+class Connector;
 class ConverterInterface;
-class DataManagerInterface;
-class DictionaryInterface;
 class ImmutableConverterInterface;
 class PredictorInterface;
 class RewriterInterface;
-class SegmenterInterface;
+class Segmenter;
 class SuggestionFilter;
-class SuppressionDictionary;
 class UserDataManagerInterface;
+
+namespace dictionary {
+class POSMatcher;
 class UserDictionary;
+}  // namespace dictionary
 
 // Builds and manages a set of modules that are necessary for conversion engine.
 class Engine : public EngineInterface {
  public:
+  // There are two types of engine: desktop and mobile.  The differences are the
+  // underlying prediction engine (DesktopPredictor or MobilePredictor) and
+  // learning preference (to learn content word or not).  See Init() for the
+  // details of implementation.
+
+  // Creates an instance with desktop configuration from a data manager.  The
+  // ownership of data manager is passed to the engine instance.
+  static std::unique_ptr<Engine> CreateDesktopEngine(
+      std::unique_ptr<const DataManagerInterface> data_manager);
+
+  // Helper function for the above factory, where data manager is instantiated
+  // by a default constructor.  Intended to be used for OssDataManager etc.
+  template <typename DataManagerType>
+  static std::unique_ptr<Engine> CreateDesktopEngineHelper() {
+    return CreateDesktopEngine(
+        std::unique_ptr<const DataManagerType>(new DataManagerType()));
+  }
+
+  // Creates an instance with mobile configuration from a data manager.  The
+  // ownership of data manager is passed to the engine instance.
+  static std::unique_ptr<Engine> CreateMobileEngine(
+      std::unique_ptr<const DataManagerInterface> data_manager);
+
+  // Helper function for the above factory, where data manager is instantiated
+  // by a default constructor.  Intended to be used for OssDataManager etc.
+  template <typename DataManagerType>
+  static std::unique_ptr<Engine> CreateMobileEngineHelper() {
+    return CreateMobileEngine(
+        std::unique_ptr<const DataManagerType>(new DataManagerType()));
+  }
+
   Engine();
-  virtual ~Engine();
+  ~Engine() override;
 
-  // Initializes the object by given a data manager (providing embedded data
-  // set) and predictor factory function.
-  // Predictor factory is used to select DefaultPredictor and MobilePredictor.
-  void Init(const DataManagerInterface *data_manager,
-            PredictorInterface *(*predictor_factory)(PredictorInterface *,
-                                                     PredictorInterface *));
-
-  virtual ConverterInterface *GetConverter() const { return converter_.get(); }
-  virtual PredictorInterface *GetPredictor() const { return predictor_; }
-  virtual SuppressionDictionary *GetSuppressionDictionary() {
+  ConverterInterface *GetConverter() const override { return converter_.get(); }
+  PredictorInterface *GetPredictor() const override { return predictor_; }
+  dictionary::SuppressionDictionary *GetSuppressionDictionary() override {
     return suppression_dictionary_.get();
   }
 
-  virtual bool Reload();
+  bool Reload() override;
 
-  virtual UserDataManagerInterface *GetUserDataManager() {
+  UserDataManagerInterface *GetUserDataManager() override {
     return user_data_manager_.get();
   }
 
+  StringPiece GetDataVersion() const override {
+    return data_manager_->GetDataVersion();
+  }
+
+  const DataManagerInterface *GetDataManager() const override {
+    return data_manager_.get();
+  }
+
  private:
-  scoped_ptr<SuppressionDictionary> suppression_dictionary_;
-  scoped_ptr<const ConnectorInterface> connector_;
-  scoped_ptr<const SegmenterInterface> segmenter_;
-  scoped_ptr<UserDictionary> user_dictionary_;
-  scoped_ptr<DictionaryInterface> suffix_dictionary_;
-  scoped_ptr<DictionaryInterface> dictionary_;
-  scoped_ptr<const PosGroup> pos_group_;
-  scoped_ptr<ImmutableConverterInterface> immutable_converter_;
-  scoped_ptr<const SuggestionFilter> suggestion_filter_;
+  // Initializes the object by the given data manager and predictor factory
+  // function.  Predictor factory is used to select DefaultPredictor and
+  // MobilePredictor.
+  void Init(const DataManagerInterface *data_manager,
+            PredictorInterface *(*predictor_factory)(PredictorInterface *,
+                                                     PredictorInterface *),
+            bool enable_content_word_learning);
+
+  std::unique_ptr<const DataManagerInterface> data_manager_;
+  std::unique_ptr<const dictionary::POSMatcher> pos_matcher_;
+  std::unique_ptr<dictionary::SuppressionDictionary> suppression_dictionary_;
+  std::unique_ptr<const Connector> connector_;
+  std::unique_ptr<const Segmenter> segmenter_;
+  std::unique_ptr<dictionary::UserDictionary> user_dictionary_;
+  std::unique_ptr<dictionary::DictionaryInterface> suffix_dictionary_;
+  std::unique_ptr<dictionary::DictionaryInterface> dictionary_;
+  std::unique_ptr<const dictionary::PosGroup> pos_group_;
+  std::unique_ptr<ImmutableConverterInterface> immutable_converter_;
+  std::unique_ptr<const SuggestionFilter> suggestion_filter_;
 
   // TODO(noriyukit): Currently predictor and rewriter are created by this class
   // but owned by converter_. Since this class creates these two, it'd be better
@@ -92,8 +138,8 @@ class Engine : public EngineInterface {
   PredictorInterface *predictor_;
   RewriterInterface *rewriter_;
 
-  scoped_ptr<ConverterInterface> converter_;
-  scoped_ptr<UserDataManagerInterface> user_data_manager_;
+  std::unique_ptr<ConverterInterface> converter_;
+  std::unique_ptr<UserDataManagerInterface> user_data_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(Engine);
 };

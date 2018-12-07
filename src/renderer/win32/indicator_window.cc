@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,8 +32,7 @@
 #include <windows.h>
 #define _ATL_NO_AUTOMATIC_NAMESPACE
 #define _WTL_NO_AUTOMATIC_NAMESPACE
-// Workaround against KB813540
-#include <atlbase_mozc.h>
+#include <atlbase.h>
 #include <atlwin.h>
 #include <atlapp.h>
 #include <atlcrack.h>
@@ -43,8 +42,9 @@
 #include <vector>
 
 #include "base/const.h"
+#include "base/logging.h"
 #include "base/util.h"
-#include "renderer/renderer_command.pb.h"
+#include "protocol/renderer_command.pb.h"
 #include "renderer/win32/win32_image_util.h"
 #include "renderer/win32/win32_renderer_util.h"
 
@@ -231,7 +231,7 @@ class IndicatorWindow::WindowImpl
         SetTimer(kTimerEventFading, kFadingOutInterval);
         break;
       case kTimerEventFading:
-        alpha_ = max(static_cast<int>(alpha_) - kFadingOutAlphaDelta, 0);
+        alpha_ = std::max(static_cast<int>(alpha_) - kFadingOutAlphaDelta, 0);
         if (alpha_ == 0) {
           KillTimer(kTimerEventFading);
         }
@@ -296,23 +296,19 @@ class IndicatorWindow::WindowImpl
         info.label = "A";
         break;
       case commands::HIRAGANA:
-        // "あ"
-        info.label = "\xE3\x81\x82";
+        info.label = "あ";
         break;
       case commands::FULL_KATAKANA:
-        // "ア"
-        info.label = "\xE3\x82\xA2";
+        info.label = "ア";
         break;
       case commands::HALF_ASCII:
         info.label = "_A";
         break;
       case commands::FULL_ASCII:
-        // "Ａ"
-        info.label = "\xEF\xBC\xA1";
+        info.label = "Ａ";
         break;
       case commands::HALF_KATAKANA:
-        // "_ｱ"
-        info.label = "\x5F\xEF\xBD\xB1";
+        info.label = "_ｱ";
         break;
     }
     if (!info.label.empty()) {
@@ -325,7 +321,7 @@ class IndicatorWindow::WindowImpl
   CPoint top_left_;
   BYTE alpha_;
   double dpi_scaling_;
-  vector<Sprite> sprites_;
+  std::vector<Sprite> sprites_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowImpl);
 };

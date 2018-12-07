@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -85,7 +85,7 @@ class MultiConnections: public mozc::Thread {
       con.SetMachPortManager(mach_port_manager_);
 #endif
       ASSERT_TRUE(con.Connected());
-      const int size = max(mozc::Util::Random(8000), 1);
+      const int size = std::max(mozc::Util::Random(8000), 1);
       string input = "test";
       input += GenRandomString(size);
       size_t length = sizeof(buf);
@@ -137,14 +137,14 @@ TEST(IPCTest, IPCTest) {
 
   // mozc::Thread is not designed as value-semantics.
   // So here we use pointers to maintain these instances.
-  vector<MultiConnections *> cons(kNumThreads);
+  std::vector<MultiConnections *> cons(kNumThreads);
   for (size_t i = 0; i < cons.size(); ++i) {
     cons[i] = new MultiConnections;
 #ifdef OS_MACOSX
     cons[i]->SetMachPortManager(&manager);
 #endif
     cons[i]->SetJoinable(true);
-    cons[i]->Start();
+    cons[i]->Start("IPCTest");
   }
   for (size_t i = 0; i < cons.size(); ++i) {
     cons[i]->Join();

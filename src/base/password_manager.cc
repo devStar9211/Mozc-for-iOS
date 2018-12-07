@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -77,8 +77,8 @@ class ScopedReadWriteFile {
       return;
     }
 #ifdef OS_WIN
-    wstring wfilename;
-    Util::UTF8ToWide(filename_.c_str(), &wfilename);
+    std::wstring wfilename;
+    Util::UTF8ToWide(filename_, &wfilename);
     if (!::SetFileAttributesW(wfilename.c_str(), FILE_ATTRIBUTE_NORMAL)) {
       LOG(ERROR) << "Cannot make writable: " << filename_;
     }
@@ -116,7 +116,7 @@ bool SavePassword(const string &password) {
   ScopedReadWriteFile l(filename);
 
   {
-    OutputFileStream ofs(filename.c_str(), ios::out | ios::binary);
+    OutputFileStream ofs(filename.c_str(), std::ios::out | std::ios::binary);
     if (!ofs) {
       LOG(ERROR) << "cannot open: " << filename;
       return false;
@@ -264,9 +264,9 @@ bool WinMacPasswordManager::RemovePassword() const {
 // We use plain text file for password storage on Linux. If you port this module
 // to other Linux distro, you might want to implement a new password manager
 // which adopts some secure mechanism such like gnome-keyring.
-#if defined OS_LINUX
+#if defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_NACL)
 typedef PlainPasswordManager DefaultPasswordManager;
-#endif
+#endif  // OS_LINUX || OS_ANDROID || OS_NACL
 
 // Windows or Mac
 #if (defined(OS_WIN) || defined(OS_MACOSX))
@@ -326,7 +326,7 @@ class PasswordManagerImpl {
   PasswordManagerInterface *password_manager_;
   Mutex mutex_;
 };
-}  // anonymous namespace
+}  // namespace
 
 bool PasswordManager::InitPassword() {
   return Singleton<PasswordManagerImpl>::get()->InitPassword();

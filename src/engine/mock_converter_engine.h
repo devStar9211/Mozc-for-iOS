@@ -1,4 +1,4 @@
-// Copyright 2010-2014, Google Inc.
+// Copyright 2010-2018, Google Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,8 +30,9 @@
 #ifndef MOZC_ENGINE_MOCK_CONVERTER_ENGINE_H_
 #define MOZC_ENGINE_MOCK_CONVERTER_ENGINE_H_
 
+#include <memory>
+
 #include "base/port.h"
-#include "base/scoped_ptr.h"
 #include "engine/engine_interface.h"
 
 namespace mozc {
@@ -39,7 +40,6 @@ namespace mozc {
 class ConverterInterface;
 class ConverterMock;
 class PredictorInterface;
-class SuppressionDictionary;
 class UserDataManagerInterface;
 class UserDataManagerMock;
 
@@ -47,20 +47,28 @@ class UserDataManagerMock;
 class MockConverterEngine : public EngineInterface {
  public:
   MockConverterEngine();
-  virtual ~MockConverterEngine();
+  ~MockConverterEngine() override;
 
-  virtual ConverterInterface *GetConverter() const;
-  virtual PredictorInterface *GetPredictor() const;
-  virtual SuppressionDictionary *GetSuppressionDictionary();
-  virtual bool Reload();
-  virtual UserDataManagerInterface *GetUserDataManager();
+  ConverterInterface *GetConverter() const override;
+  PredictorInterface *GetPredictor() const override;
+  dictionary::SuppressionDictionary *GetSuppressionDictionary() override;
+  bool Reload() override;
+  UserDataManagerInterface *GetUserDataManager() override;
+
+  StringPiece GetDataVersion() const override {
+    return "mock converter engine";
+  }
+
+  const DataManagerInterface *GetDataManager() const override {
+    return nullptr;
+  }
 
   void SetUserDataManager(UserDataManagerMock *manager);
   ConverterMock* mutable_converter_mock();
 
  private:
-  scoped_ptr<ConverterMock> converter_mock_;
-  scoped_ptr<UserDataManagerMock> user_data_manager_mock_;
+  std::unique_ptr<ConverterMock> converter_mock_;
+  std::unique_ptr<UserDataManagerMock> user_data_manager_mock_;
 
   DISALLOW_COPY_AND_ASSIGN(MockConverterEngine);
 };
